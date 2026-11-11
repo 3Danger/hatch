@@ -13,9 +13,13 @@ struct FolderPickerView: View {
     @FocusState private var focused: Bool
 
     /// Высота строки фиксирована: высота списка считается по числу строк.
-    private static let rowHeight: CGFloat = 22
-    private static let maxHeight: CGFloat = 300
-    private static let padding: CGFloat = 4
+    private static let rowHeight: CGFloat = 26
+    private static let maxHeight: CGFloat = 320
+    /// Отступ строк от края карточки: скругление строки + отступ = скругление карточки (14),
+    /// иначе выделенная строка упирается в углы.
+    private static let padding: CGFloat = 6
+    private static let rowRadius: CGFloat = 8
+    private static let cardRadius: CGFloat = 14
 
     init(target: FolderListing.Target, onPick: @escaping (String) -> Void = { _ in }) {
         self.target = target
@@ -67,13 +71,16 @@ struct FolderPickerView: View {
                 }
                 .padding(Self.padding)
             }
+            .scrollIndicators(.never)
             .onChange(of: selection) { _, index in proxy.scrollTo(index) }
             .onAppear {
                 DispatchQueue.main.async { proxy.scrollTo(selection, anchor: .center) }
                 focused = true
             }
         }
-        .frame(width: 260, height: listHeight)
+        .frame(width: 280, height: listHeight)
+        // прокрученные строки не вылезают за скруглённые углы карточки
+        .clipShape(RoundedRectangle(cornerRadius: Self.cardRadius, style: .circular))
         .focusable()
         .focusEffectDisabled()
         .focused($focused)
@@ -98,18 +105,22 @@ struct FolderPickerView: View {
                 .frame(width: 16, height: 16)
                 .contentShape(Rectangle())
                 .onTapGesture { toggle(row.path) }
+            FolderGlyph(width: 15, height: 11)
             Text(row.name)
-                .font(.system(size: 12))
+                .font(.system(size: 13))
                 .lineLimit(1)
                 .truncationMode(.middle)
+                .padding(.leading, 3)
             Spacer(minLength: 0)
         }
-        .padding(.leading, CGFloat(row.depth) * 14 + 2)
-        .padding(.trailing, 6)
+        .padding(.leading, CGFloat(row.depth) * 14 + 4)
+        .padding(.trailing, 8)
         .frame(height: Self.rowHeight)
-        .background(selected ? Color.accentColor.opacity(0.25) : .clear, in: RoundedRectangle(cornerRadius: 5))
-        .overlay(RoundedRectangle(cornerRadius: 5)
-            .strokeBorder(selected ? Color.accentColor : .clear, lineWidth: 1))
+        // выделение как в списке «Избранное»
+        .background(selected ? Tactile.accent.opacity(0.22) : .clear,
+                    in: RoundedRectangle(cornerRadius: Self.rowRadius, style: .circular))
+        .overlay(RoundedRectangle(cornerRadius: Self.rowRadius, style: .circular)
+            .strokeBorder(selected ? Tactile.accent.opacity(0.55) : .clear, lineWidth: 1))
         .contentShape(Rectangle())
     }
 

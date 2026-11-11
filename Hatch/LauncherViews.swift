@@ -750,7 +750,8 @@ struct HistoryListView: View {
                     contentHeight = $0
                 }
               }
-              .scrollIndicators(.hidden)
+              // .never, а не .hidden: .hidden уступает настройке macOS «Показывать полосы прокрутки: всегда»
+              .scrollIndicators(.never)
               .scrollPosition(Bindable(metrics).position)
               .onScrollGeometryChange(for: [CGFloat].self) {
                   [$0.contentOffset.y, $0.contentSize.height, $0.containerSize.height]
@@ -1461,6 +1462,7 @@ struct CommandInputView: View {
                 }
                 .padding(4)
             }
+            .scrollIndicators(.never)
             .onChange(of: menu.index) { _, index in
                 if let index { proxy.scrollTo(index) }
             }

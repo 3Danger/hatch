@@ -132,6 +132,22 @@ final class InteractiveTerminal: NSObject, LocalProcessTerminalViewDelegate {
 final class SessionTerminalView: LocalProcessTerminalView {
     var onData: (() -> Void)?
 
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        hideScroller()
+    }
+
+    required init?(coder: NSCoder) {
+        super.init(coder: coder)
+        hideScroller()
+    }
+
+    /// Полосы прокрутки в Hatch нет: терминал листается колёсиком и трекпадом.
+    /// Скрытая полоса не занимает места — терминалу достаётся вся ширина.
+    private func hideScroller() {
+        subviews.compactMap { $0 as? NSScroller }.forEach { $0.isHidden = true }
+    }
+
     override func dataReceived(slice: ArraySlice<UInt8>) {
         super.dataReceived(slice: slice)
         onData?()
