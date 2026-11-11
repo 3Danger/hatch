@@ -22,10 +22,12 @@ enum LauncherMetrics {
     static let outputLineHeight: CGFloat = ceil(NSLayoutManager().defaultLineHeight(
         for: NSFont.monospacedSystemFont(ofSize: outputFontSize, weight: .regular)))
     /// Всё в блоке, кроме строк вывода: отступы, заголовок, промежуток до вывода.
-    static let blockChrome: CGFloat = blockPadding * 2 + 22 + 6
+    static let blockChrome: CGFloat = blockPadding * 2 + 36 + 8
     static let blockSpacing: CGFloat = 8
     /// Живой терминал в раскрытом блоке: блок занимает всю видимую область истории.
     static func terminalHeight(historyHeight: CGFloat) -> CGFloat { historyHeight - blockChrome }
+    /// Цвет умножения поверх стекла в тёмной теме: чем темнее, тем глубже фон; синеватый — как в макете.
+    static let glassMultiply = Color(red: 0.65, green: 0.66, blue: 0.74)
 }
 
 /// Корневое представление лаунчера: ввод, история, экшн-кнопки.
@@ -34,6 +36,7 @@ struct LauncherRootView: View {
     @Environment(ProcessRunner.self) private var runner
     @Environment(SettingsStore.self) private var settings
     @Environment(HotKeyController.self) private var hotKeys
+    @Environment(\.colorScheme) private var systemScheme
 
     @State private var text = ""
     @FocusState private var inputFocused: Bool
@@ -50,6 +53,9 @@ struct LauncherRootView: View {
     /// Раскрытый на всю область истории блок (интерактивный терминал или полный вывод).
     @State private var expandedID: UUID?
     @State private var keyMonitor: Any?
+    @State private var mouseMonitor: Any?
+    /// Рамки раскрытого блока и полосы прокрутки: клик вне блока его сворачивает.
+    @State private var frames = PanelFrames()
     /// Сессия, прерванная ⌃C из раскрытого блока: после остановки блок сворачивается.
     @State private var interruptedID: UUID?
 
@@ -57,6 +63,47 @@ struct LauncherRootView: View {
 
     var body: some View {
         // Высота панели — по содержимому (до предела истории); окно следует за ней.
+        // Настройки — слой стекла поверх: панель за ним отходит назад и размывается.
+        attachLifecycle(ZStack(alignment: .topTrailing) {
+            panelContent
+                .scaleEffect(showSettings ? 0.95 : 1, anchor: .top)
+                .opacity(showSettings ? 0.28 : 1)
+                .blur(radius: showSettings ? 3 : 0)
+                .allowsHitTesting(!showSettings)
+            if showSettings {
+                SettingsView(onClose: closeSettings)
+                    .padding(.top, 44)
+                    .transition(.settingsLayer)
+                    .zIndex(1)
+            }
+        }
+        .padding(LauncherMetrics.padding)
+        .frame(width: settings.panelWidth)
+        // правый и нижний края и угол между ними тянутся: ширина и предел высоты истории
+        .overlay { resizeHandles }
+        .background {
+            Color.clear
+                .glassEffect(in: RoundedRectangle(cornerRadius: LauncherMetrics.panelRadius))
+                // Стекло само подсвечивает размытый фон — он блёкнет. Умножение (как в Photoshop)
+                // затемняет его, сохраняя цвета: блоки и статусы на нём контрастнее.
+                .overlay {
+                    if isDark {
+                        RoundedRectangle(cornerRadius: LauncherMetrics.panelRadius)
+                            .fill(LauncherMetrics.glassMultiply)
+                            .blendMode(.multiply)
+                            .allowsHitTesting(false)
+                    }
+                }
+                // за пустые места панели (поля, промежутки) окно перетаскивается
+                .overlay { WindowDragArea() }
+        }
+        .background { PanelShadow() }
+        // прозрачный запас окна под тень: иначе её обрезает край окна
+        .padding(LauncherMetrics.shadowMargin)
+        .preferredColorScheme(colorScheme))
+    }
+
+    private var panelContent: some View {
         VStack(spacing: LauncherMetrics.padding) {
             // где мы сейчас: светлые «крошки» над полем, обновляются при cd
             DirectoryBreadcrumbsView(path: settings.currentDirectory,
@@ -79,33 +126,22 @@ struct LauncherRootView: View {
                                  // набранный текст заодно фильтрует блоки истории
                                  sessionStore.filterText = text.trimmingCharacters(in: .whitespaces)
                              },
-                             history: historyCommands)
+                             history: historyCommands,
+                             isFocused: inputFocused,
+                             trailing: AnyView(inputButtons))
             .focused($inputFocused)
 
-            // колонка кнопок отстоит от истории так же, как от края панели
-            HStack(alignment: .top, spacing: LauncherMetrics.padding) {
-                historyArea
-                    .frame(maxWidth: .infinity, alignment: .top)
-                    .onGeometryChange(for: CGFloat.self) { $0.size.height.rounded() } action: {
-                        historyVisibleHeight = $0
-                    }
-                actionsColumn
-            }
+            historyArea
+                .frame(maxWidth: .infinity, alignment: .top)
+                .onGeometryChange(for: CGFloat.self) { $0.size.height.rounded() } action: {
+                    historyVisibleHeight = $0
+                }
         }
-        .padding(LauncherMetrics.padding)
-        .frame(width: settings.panelWidth)
-        // правый и нижний края и угол между ними тянутся: ширина и предел высоты истории
-        .overlay { resizeHandles }
-        .background {
-            Color.clear
-                .glassEffect(in: RoundedRectangle(cornerRadius: LauncherMetrics.panelRadius))
-                // за пустые места панели (поля, промежутки) окно перетаскивается
-                .overlay { WindowDragArea() }
-        }
-        .background { PanelShadow() }
-        // прозрачный запас окна под тень: иначе её обрезает край окна
-        .padding(LauncherMetrics.shadowMargin)
-        .preferredColorScheme(colorScheme)
+    }
+
+    /// Жизненный цикл, горячие клавиши и диалоги панели — отдельно от раскладки.
+    private func attachLifecycle<V: View>(_ content: V) -> some View {
+        content
         .onAppear {
             inputFocused = true
             NotificationService().requestPermission()
@@ -114,6 +150,8 @@ struct LauncherRootView: View {
         .onDisappear {
             keyMonitor.map(NSEvent.removeMonitor)
             keyMonitor = nil
+            mouseMonitor.map(NSEvent.removeMonitor)
+            mouseMonitor = nil
         }
         // Выход из vim/top и т.п. или остановка по ⌃C — блок сворачивается до заголовка.
         // Обычная команда, завершившаяся сама, остаётся раскрытой: её вывод могут читать.
@@ -160,9 +198,29 @@ struct LauncherRootView: View {
         } message: {
             Text(L.t(clearMessageKey, lang))
         }
-        .sheet(isPresented: $showSettings) {
-            SettingsView()
+    }
+
+    // MARK: - Настройки и кнопки панели
+
+    /// Настройки и очистка истории — справа в поле ввода, а не отдельной колонкой.
+    private var inputButtons: some View {
+        HStack(spacing: 2) {
+            GlassIconButton(systemName: "gearshape", size: 28, help: L.t("settings", lang)) { openSettings() }
+            GlassIconButton(systemName: "trash", size: 28, help: L.t("clear", lang)) {
+                if sessionStore.clearScope != .nothing { confirmClear = true }
+            }
+            .disabled(sessionStore.clearScope == .nothing)
         }
+    }
+
+    private func openSettings() {
+        inputFocused = false
+        withAnimation(LayersDepth.spring) { showSettings = true }
+    }
+
+    private func closeSettings() {
+        withAnimation(LayersDepth.spring) { showSettings = false }
+        inputFocused = true
     }
 
     // MARK: - Размер панели
@@ -219,6 +277,7 @@ struct LauncherRootView: View {
             selectedID: navigator.selectedID,
             expandedID: expandedID,
             maxHeight: settings.historyMaxHeight,
+            frames: frames,
             terminalFor: { runner.terminal(for: $0) },
             onToggle: { session in
                 if expandedID == session.id { collapse() } else { expand(session.id) }
@@ -242,30 +301,6 @@ struct LauncherRootView: View {
                 }
             }
         )
-    }
-
-    /// Колонка кнопок-иконок справа от истории; сюда же лягут будущие действия.
-    private var actionsColumn: some View {
-        VStack(spacing: 10) {
-            sideButton("gearshape", help: L.t("settings", lang)) { showSettings = true }
-            sideButton("trash", help: L.t("clear", lang)) {
-                if sessionStore.clearScope != .nothing { confirmClear = true }
-            }
-            .disabled(sessionStore.clearScope == .nothing)
-        }
-        .frame(width: 32)
-    }
-
-    private func sideButton(_ systemName: String, help: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Image(systemName: systemName)
-                .font(.system(size: 14))
-                .frame(width: 32, height: 32)
-                .background(.white.opacity(0.12), in: RoundedRectangle(cornerRadius: 9))
-                .contentShape(RoundedRectangle(cornerRadius: 9))
-        }
-        .buttonStyle(.plain)
-        .help(help)
     }
 
     // MARK: - Actions
@@ -322,12 +357,13 @@ struct LauncherRootView: View {
 
     private func expand(_ id: UUID) {
         inputFocused = false
-        expandedID = id
+        withAnimation(LayersDepth.spring) { expandedID = id }
     }
 
     private func collapse() {
         guard expandedID != nil else { return }
-        expandedID = nil
+        frames.expanded = .null
+        withAnimation(LayersDepth.spring) { expandedID = nil }
         interruptedID = nil
         inputFocused = true
     }
@@ -337,6 +373,11 @@ struct LauncherRootView: View {
     /// - ⌃C прерывает команду раскрытого блока (SIGINT), как в терминале.
     private func installKeyShortcuts() {
         guard keyMonitor == nil else { return }
+        // клик в панели вне раскрытого блока сворачивает его; нажатие идёт дальше как обычно
+        mouseMonitor = NSEvent.addLocalMonitorForEvents(matching: .leftMouseDown) { event in
+            if expandedID != nil, !showSettings, shouldCollapse(on: event) { collapse() }
+            return event
+        }
         keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
             let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
             if Self.arrowKeyCodes.contains(event.keyCode),
@@ -344,6 +385,9 @@ struct LauncherRootView: View {
                 return routeArrowToHistory(event) ? nil : event
             }
             switch (event.keyCode, modifiers) {
+            case (53, []) where showSettings && !HotKeyCapsField.isRecording:
+                closeSettings()
+                return nil
             case (13, .command) where expandedID != nil:
                 collapse()
                 return nil
@@ -353,6 +397,15 @@ struct LauncherRootView: View {
                 return event
             }
         }
+    }
+
+    /// Клик в самой панели, но не по раскрытому блоку, полосе прокрутки или краю для изменения размера.
+    private func shouldCollapse(on event: NSEvent) -> Bool {
+        guard let window = event.window, window is LauncherPanel,
+              let content = window.contentView, let frame = content.superview else { return false }
+        if frame.hitTest(frame.convert(event.locationInWindow, from: nil)) is PanelResizeHandle.HandleView { return false }
+        return PanelFrames.collapses(at: content.convert(event.locationInWindow, from: nil),
+                                     expanded: frames.expanded, scrollbar: frames.scrollbar)
     }
 
     /// ↓ и ↑ (keyCode 125, 126).
@@ -367,6 +420,7 @@ struct LauncherRootView: View {
     private func routeArrowToHistory(_ event: NSEvent) -> Bool {
         // стрелки нужны живому терминалу раскрытой работающей команды
         if expandedSession?.state.isActive ?? false { return false }
+        if showSettings { return false }
         // только в самой панели: в списке папок, диалогах и настройках стрелки свои
         guard let window = event.window, window is LauncherPanel else { return false }
         // фокус в тексте (поле ввода, вывод с выделением) — стрелки его
@@ -435,6 +489,15 @@ struct LauncherRootView: View {
         NSPasteboard.general.setString(text, forType: .string)
     }
 
+    /// Тёмная ли сейчас панель: выбрана тёмная тема или системная тёмная.
+    private var isDark: Bool {
+        switch settings.theme {
+        case .dark: return true
+        case .light: return false
+        case .system, nil: return systemScheme == .dark
+        }
+    }
+
     private var colorScheme: ColorScheme? {
         switch settings.theme {
         case .dark: return .dark
@@ -451,12 +514,16 @@ struct HistoryListView: View {
     @State private var contentHeight: CGFloat = 0
     /// Высоты блоков: свежему (верхнему) достаётся место, которое не заняли остальные.
     @State private var blockHeights: [UUID: CGFloat] = [:]
+    /// Положение прокрутки — для стеклянной полосы и затухания краёв.
+    @State private var metrics = ScrollMetrics()
 
     let lang: String
     var selectedID: UUID?
     var expandedID: UUID?
     /// Предел высоты истории: дальше прокрутка. Раскрытый терминал занимает его целиком.
     var maxHeight: CGFloat = PanelSize.defaultHistoryHeight
+    /// Куда записывать рамки раскрытого блока и полосы прокрутки (клик вне блока его сворачивает).
+    var frames: PanelFrames?
     var terminalFor: (UUID) -> InteractiveTerminal? = { _ in nil }
     var onToggle: (Session) -> Void = { _ in }
     var onKill: (Session) -> Void = { _ in }
@@ -475,16 +542,18 @@ struct HistoryListView: View {
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 20)
         } else {
+            let sessions = sessionStore.filteredSessions
             ScrollViewReader { proxy in
               ScrollView {
                 // не Lazy: ленивый список держал старую оценку высоты свёрнутого блока,
                 // и панель не уменьшалась обратно; блоков не больше лимита истории
                 VStack(spacing: LauncherMetrics.blockSpacing) {
-                    ForEach(sessionStore.filteredSessions) { session in
+                    ForEach(sessions) { session in
                         SessionBlockView(session: session,
                                          lang: lang,
                                          isSelected: session.id == selectedID,
                                          isExpanded: session.id == expandedID,
+                                         dimmed: expandedID != nil && session.id != expandedID,
                                          outputLines: session.id == sessionStore.filteredSessions.first?.id
                                             ? freshBlockLines : LauncherMetrics.compactOutputLines,
                                          terminal: session.id == expandedID ? terminalFor(session.id) : nil,
@@ -499,16 +568,39 @@ struct HistoryListView: View {
                                          onPipeChange: { onPipeChange(session, $0) },
                                          stageHistory: stageHistory)
                         .id(session.id)
+                        .zIndex(session.id == expandedID ? 1 : 0)
+                        .transition(.layersBlock)
                         .onGeometryChange(for: CGFloat.self) { Self.usableHeight($0.size.height, max: maxHeight) } action: {
                             blockHeights[session.id] = $0
                         }
+                        .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { frame in
+                            if session.id == expandedID { frames?.expanded = frame }
+                        }
                     }
                 }
+                .animation(LayersDepth.spring, value: sessions.map(\.id))
                 .onGeometryChange(for: CGFloat.self) { Self.usableHeight($0.size.height, max: maxHeight) } action: {
                     contentHeight = $0
                 }
               }
+              .scrollIndicators(.hidden)
+              .scrollPosition(Bindable(metrics).position)
+              .onScrollGeometryChange(for: [CGFloat].self) {
+                  [$0.contentOffset.y, $0.contentSize.height, $0.containerSize.height]
+              } action: { _, value in
+                  if abs(value[0] - metrics.offset) > 0.5 { metrics.lastScroll = Date() }
+                  metrics.offset = value[0]; metrics.content = value[1]; metrics.visible = value[2]
+              }
               .frame(height: min(contentHeight, maxHeight))
+              // скруглён как панель: обрезанный снизу блок не даёт прямых углов
+              .clipShape(RoundedRectangle(cornerRadius: LauncherMetrics.innerRadius))
+              .mask { EdgeFadeMask(metrics: metrics) }
+              .overlay(alignment: .trailing) {
+                  GlassScrollbar(metrics: metrics) { metrics.position.scrollTo(y: $0) }
+                      .padding(.vertical, 8)
+                      .offset(x: 11) // в просвете между списком и краем панели
+                      .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { frames?.scrollbar = $0 }
+              }
               .onChange(of: selectedID) { _, id in
                   guard let id else { return }
                   withAnimation(.easeOut(duration: 0.15)) { proxy.scrollTo(id, anchor: .center) }
@@ -559,6 +651,8 @@ struct SessionBlockView: View {
     let lang: String
     var isSelected = false
     var isExpanded = false
+    /// Раскрыт другой блок — этот уходит в тень.
+    var dimmed = false
     /// Сколько строк вывода показать в свёрнутом виде (включая строку «скрыто N»).
     var outputLines = LauncherMetrics.compactOutputLines
     /// Живой терминал интерактивной сессии — показывается в раскрытом блоке.
@@ -584,6 +678,9 @@ struct SessionBlockView: View {
     @State private var stageSelected = 0
     /// Текст подставлен из варианта (TAB, клик) — варианты не пересчитываем.
     @State private var stageApplying = false
+    @State private var hovered = false
+    /// Команда только что завершилась — по стеклу один раз проходит блик.
+    @State private var finishFlash = false
 
     var body: some View {
         let _ = RenderProbe.hit("SessionBlockView")
@@ -606,61 +703,134 @@ struct SessionBlockView: View {
             }
         }
         .padding(LauncherMetrics.blockPadding)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: LauncherMetrics.innerRadius))
+        .background(blockShape.fill(LinearGradient(colors: [.white.opacity(0.10), .white.opacity(0.035)],
+                                                   startPoint: .top, endPoint: .bottom)))
+        .overlay {
+            if session.state.isActive {
+                GlassSheen().clipShape(blockShape)
+            } else if finishFlash {
+                GlassSheen(repeating: false).clipShape(blockShape)
+            }
+        }
         .overlay(
-            RoundedRectangle(cornerRadius: LauncherMetrics.innerRadius)
-                .strokeBorder(isSelected ? Color.accentColor : Color.white.opacity(0.18),
-                              lineWidth: isSelected ? 2 : 1)
+            blockShape.strokeBorder(isSelected ? Color.accentColor : .white.opacity(isExpanded ? 0.2 : 0.1),
+                                    lineWidth: isSelected ? 2 : 1)
         )
-        .contentShape(RoundedRectangle(cornerRadius: LauncherMetrics.innerRadius))
+        .shadow(color: .black.opacity(isExpanded ? 0.6 : 0.35), radius: isExpanded ? 26 : 9, y: isExpanded ? 16 : 5)
+        // глубина: все блоки чуть в глубине, наведённый и раскрытый выходят вперёд, при раскрытом остальные в тени
+        .scaleEffect(depthScale)
+        .opacity(depthOpacity)
+        .animation(LayersDepth.hoverSpring, value: DepthKey(hovered: hovered || isSelected, dimmed: dimmed, expanded: isExpanded))
+        .contentShape(blockShape)
+        .onHover { hovered = $0 }
         .onTapGesture { if !isExpanded { onToggle() } }
+        // пока раскрыт другой блок, этот не нажимается: клик по нему лишь сворачивает раскрытый
+        .allowsHitTesting(!dimmed)
+        .onChange(of: session.state) { old, new in
+            guard old.isActive, new.isTerminal else { return }
+            finishFlash = true
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1) { finishFlash = false }
+        }
     }
 
-    private var header: some View {
-            HStack(spacing: 8) {
-                if isExpanded {
-                    Image(systemName: "chevron.down")
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(.secondary)
-                }
+    private var blockShape: RoundedRectangle { RoundedRectangle(cornerRadius: LauncherMetrics.innerRadius) }
 
+    private struct DepthKey: Equatable { let hovered: Bool, dimmed: Bool, expanded: Bool }
+
+    private var depthScale: CGFloat {
+        if dimmed { return LayersDepth.dimmedScale }
+        return hovered || isExpanded || isSelected ? 1 : LayersDepth.restingScale
+    }
+
+    private var depthOpacity: Double {
+        if dimmed { return LayersDepth.dimmedOpacity }
+        return hovered || isExpanded || isSelected ? 1 : LayersDepth.restingOpacity
+    }
+
+    /// Команда и под ней папка·время; справа шаги конвейера и общее место статуса и кнопок.
+    private var header: some View {
+        HStack(spacing: 8) {
+            if isExpanded {
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(.secondary)
+            }
+
+            VStack(alignment: .leading, spacing: 2) {
                 Text(session.command)
-                    .font(.headline)
+                    .font(.system(size: 14, weight: .semibold))
                     .lineLimit(1)
                     .truncationMode(.tail)
-
-                pipelineChips
-
-                if let directory = session.directory {
-                    directoryLabel(directory)
-                }
-
-                Spacer(minLength: 4)
-
-                statusBadge
-
-                if session.state.isTerminal {
-                    let exit = session.exitCode.map { "exit \($0)" } ?? "exit —"
-                    Text("\(exit) • \(session.output.count) симв.")
-                        .font(.caption2)
+                HStack(spacing: 8) {
+                    if let directory = session.directory {
+                        directoryLabel(directory)
+                    }
+                    Text(session.createdAt.formatted(date: .omitted, time: .shortened))
+                        .monospacedDigit()
                         .foregroundStyle(.tertiary)
                 }
-
-                iconButton("arrow.clockwise.circle", help: L.t("rerun", lang), action: onRerun)
-                iconButton("doc.on.doc", help: L.t("copy", lang), action: onCopy)
-                iconButton(session.isPinned ? "pin.fill" : "pin", help: L.t("pin", lang), action: onPin)
-
-                if session.state.isActive {
-                    iconButton("xmark.circle.fill", color: .red, help: L.t("stop", lang), action: onKill)
-                }
-
-                iconButton("trash", help: L.t("delete", lang), action: onDelete)
+                .font(.system(size: 11.5))
             }
-            .contentShape(Rectangle())
-            // заголовок перехватывает клик у блока, поэтому сам переключает в обе стороны:
-            // у свёрнутого блока без вывода, кроме заголовка, кликать не по чему
-            .onTapGesture { onToggle() }
-            .help(isExpanded ? L.t("collapse", lang) : "")
+
+            Spacer(minLength: 4)
+
+            pipelineChips
+
+            statusSlot
+        }
+        .contentShape(Rectangle())
+        // заголовок перехватывает клик у блока, поэтому сам переключает в обе стороны:
+        // у свёрнутого блока без вывода, кроме заголовка, кликать не по чему
+        .onTapGesture { onToggle() }
+        .help(isExpanded ? L.t("collapse", lang) : "")
+    }
+
+    /// Статус и кнопки делят одно место у правого края: при наведении статус перелистывается
+    /// вверх, а кнопки поднимаются снизу по одной — шаги конвейера и «+» остаются на месте.
+    private var statusSlot: some View {
+        let showActions = hovered || isExpanded || isSelected
+        let actions = blockActions
+        return ZStack(alignment: .trailing) {
+            StatusCapsule(status: BlockStatus(session), lang: lang)
+                .rotation3DEffect(.degrees(showActions ? 75 : 0), axis: (1, 0, 0), anchor: .top, perspective: 0.5)
+                .offset(y: showActions ? -8 : 0)
+                .opacity(showActions ? 0 : 1)
+                .animation(.spring(response: 0.38, dampingFraction: 0.8), value: showActions)
+            HStack(spacing: 0) {
+                ForEach(Array(actions.enumerated()), id: \.offset) { index, action in
+                    GlassIconButton(systemName: action.symbol, color: action.color, size: 24,
+                                    help: action.help, action: action.run)
+                        .rotation3DEffect(.degrees(showActions ? 0 : -75), axis: (1, 0, 0), anchor: .bottom, perspective: 0.5)
+                        .offset(y: showActions ? 0 : 8)
+                        .opacity(showActions ? 1 : 0)
+                        .animation(.spring(response: 0.38, dampingFraction: 0.72)
+                                    .delay(showActions ? Double(actions.count - 1 - index) * 0.035 : 0),
+                                   value: showActions)
+                }
+            }
+            .allowsHitTesting(showActions)
+        }
+    }
+
+    private struct BlockAction {
+        let symbol: String
+        var color: Color = .secondary
+        let help: String
+        let run: () -> Void
+    }
+
+    private var blockActions: [BlockAction] {
+        var list = [
+            BlockAction(symbol: "arrow.clockwise", help: L.t("rerun", lang), run: onRerun),
+            BlockAction(symbol: "doc.on.doc", help: L.t("copy", lang), run: onCopy),
+            BlockAction(symbol: session.isPinned ? "pin.fill" : "pin", color: session.isPinned ? LayersPalette.accent : .secondary,
+                        help: L.t("pin", lang), run: onPin),
+        ]
+        if session.state.isActive {
+            list.append(BlockAction(symbol: "stop.fill", color: LayersPalette.error, help: L.t("stop", lang), run: onKill))
+        }
+        list.append(BlockAction(symbol: "trash", help: L.t("delete", lang), run: onDelete))
+        return list
     }
 
     /// Папка, где выполнялась команда: только имя, полный путь — в подсказке; клик — перейти в неё.
@@ -853,6 +1023,9 @@ struct SessionBlockView: View {
         OutputTextView(text: ANSIText.nsAttributed(
             session.outputANSI ?? session.output,
             font: NSFont.monospacedSystemFont(ofSize: LauncherMetrics.outputFontSize, weight: .regular)))
+            .padding(.horizontal, 10)
+            .padding(.vertical, 8)
+            .background(.black.opacity(0.28), in: RoundedRectangle(cornerRadius: 10))
     }
 
     /// Свёрнутый вывод: начало, «скрыто N строк» с кнопкой раскрыть, конец.
@@ -890,38 +1063,6 @@ struct SessionBlockView: View {
                maxHeight: LauncherMetrics.outputLineHeight, alignment: .leading)
     }
 
-    private func iconButton(_ systemName: String,
-                            color: Color = .primary,
-                            help: String,
-                            action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Image(systemName: systemName)
-                .font(.system(size: 13))
-                .foregroundStyle(color)
-        }
-        .buttonStyle(.plain)
-        .help(help)
-    }
-
-    private var statusBadge: some View {
-        let label: String
-        let color: Color
-        switch session.state {
-        case .running:
-            label = L.t("active", lang); color = .green
-        case .interactive:
-            label = L.t("interactive", lang); color = .orange
-        case .completed:
-            label = L.t("completed", lang); color = .secondary
-        case .stopped:
-            label = L.t("stopped", lang); color = .red
-        case .interrupted:
-            label = L.t("interrupted", lang); color = .orange
-        }
-        return Text(label)
-            .font(.caption2)
-            .foregroundStyle(color)
-    }
 }
 
 /// Поле ввода команды: стекло, призрак-превью, мульти-кандидаты с TAB-циклированием.
@@ -942,6 +1083,10 @@ struct CommandInputView: View {
     var onEdit: () -> Void = {}
     /// Команды из истории, от новых к старым: источник серой подсказки.
     var history: [String] = []
+    /// Поле в фокусе — светится рамка.
+    var isFocused = false
+    /// Кнопки справа в поле (настройки, очистка).
+    var trailing: AnyView?
     @State private var engine = ShellCompletionEngine()
     /// Серая подсказка из истории (как zsh-autosuggestions): принимается стрелкой →.
     @State private var historyCompletion: String?
@@ -967,6 +1112,10 @@ struct CommandInputView: View {
     }
 
     private var inputField: some View {
+        HStack(spacing: 10) {
+        Text("›")
+            .font(.system(size: 22, weight: .medium, design: .monospaced))
+            .foregroundStyle(LayersPalette.accent)
         ZStack(alignment: .leading) {
             if !text.isEmpty {
                 Text(text)
@@ -992,13 +1141,18 @@ struct CommandInputView: View {
                 .textFieldStyle(.plain)
                 .font(font)
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 12)
-        .background(.white.opacity(0.16), in: RoundedRectangle(cornerRadius: LauncherMetrics.innerRadius))
+        if let trailing { trailing }
+        }
+        .padding(.leading, 14)
+        .padding(.trailing, trailing == nil ? 14 : 8)
+        .padding(.vertical, 10)
+        .background(.white.opacity(0.08), in: RoundedRectangle(cornerRadius: LauncherMetrics.innerRadius))
         .overlay(
             RoundedRectangle(cornerRadius: LauncherMetrics.innerRadius)
-                .strokeBorder(.white.opacity(0.28))
+                .strokeBorder(isFocused ? LayersPalette.accent.opacity(0.55) : .white.opacity(0.14))
         )
+        .shadow(color: isFocused ? LayersPalette.accent.opacity(0.35) : .clear, radius: 14)
+        .animation(.easeOut(duration: 0.3), value: isFocused)
         // Shift+TAB приходит как «backtab» (U+0019)
         .onKeyPress(keys: [.tab, KeyEquivalent("\u{19}")]) { press in
             let backward = press.modifiers.contains(.shift) || press.key == KeyEquivalent("\u{19}")
