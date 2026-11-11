@@ -91,4 +91,23 @@ final class SettingsStoreTests: XCTestCase {
         let store = SettingsStore(defaults: UserDefaults(suiteName: suiteName)!)
         XCTAssertEqual(store.timeoutSeconds, 0, "по умолчанию тайм-аута нет")
     }
+
+    /// Клик по папке в блоке — как cd: существующая папка становится текущей и попадает в недавние.
+    func testNavigateToExistingFolder() {
+        let store = SettingsStore(defaults: UserDefaults(suiteName: suiteName)!)
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("nav-\(UUID().uuidString)")
+        try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        XCTAssertTrue(store.navigate(to: folder.path))
+        XCTAssertEqual(store.currentDirectory, folder.path)
+        XCTAssertEqual(store.recentDirectories.first, folder.path)
+    }
+
+    /// Папку с тех пор удалили — остаёмся, где были.
+    func testNavigateToMissingFolderKeepsCurrent() {
+        let store = SettingsStore(defaults: UserDefaults(suiteName: suiteName)!)
+        let before = store.currentDirectory
+        XCTAssertFalse(store.navigate(to: "/nonexistent-\(UUID().uuidString)"))
+        XCTAssertEqual(store.currentDirectory, before)
+    }
 }

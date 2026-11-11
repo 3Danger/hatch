@@ -179,6 +179,11 @@ struct LauncherRootView: View {
             onCopy: copyOutput,
             onPin: { sessionStore.togglePin(id: $0.id) },
             onDelete: requestDelete,
+            onOpenDirectory: { directory in
+                // как cd: дальше команды идут в этой папке; удалённая папка — звук, путь не меняем
+                if !settings.navigate(to: directory) { NSSound.beep() }
+                inputFocused = true
+            },
             onPipeChange: { session, change in
                 switch change {
                 case .add(let command): runner.addPipeStage(sessionID: session.id, command: command)
@@ -408,6 +413,7 @@ struct HistoryListView: View {
     var onCopy: (Session) -> Void = { _ in }
     var onPin: (Session) -> Void = { _ in }
     var onDelete: (Session) -> Void = { _ in }
+    var onOpenDirectory: (String) -> Void = { _ in }
     var onPipeChange: (Session, PipeChange) -> Void = { _, _ in }
 
     var body: some View {
@@ -437,6 +443,7 @@ struct HistoryListView: View {
                                          onCopy: { onCopy(session) },
                                          onPin: { onPin(session) },
                                          onDelete: { onDelete(session) },
+                                         onOpenDirectory: onOpenDirectory,
                                          onPipeChange: { onPipeChange(session, $0) },
                                          stageHistory: stageHistory)
                         .id(session.id)
@@ -510,6 +517,8 @@ struct SessionBlockView: View {
     var onCopy: () -> Void = {}
     var onPin: () -> Void = {}
     var onDelete: () -> Void = {}
+    /// Клик по папке в заголовке: перейти в неё, как `cd`.
+    var onOpenDirectory: (String) -> Void = { _ in }
     var onPipeChange: (PipeChange) -> Void = { _ in }
     /// Применявшиеся шаги конвейера (по всем блокам) — первые в подсказках.
     var stageHistory: [String] = []
@@ -601,19 +610,23 @@ struct SessionBlockView: View {
             .help(isExpanded ? L.t("collapse", lang) : "")
     }
 
-    /// Папка, где выполнялась команда: только имя, полный путь — в подсказке.
+    /// Папка, где выполнялась команда: только имя, полный путь — в подсказке; клик — перейти в неё.
     /// Уступает место команде: не влезает имя — остаётся значок, не влезает и он — ничего.
     private func directoryLabel(_ directory: String) -> some View {
-        ViewThatFits(in: .horizontal) {
-            Label(PathBreadcrumbs.folderName(for: directory), systemImage: "folder")
-                .fixedSize()
-            Image(systemName: "folder")
-            Color.clear.frame(width: 0, height: 0)
+        Button { onOpenDirectory(directory) } label: {
+            ViewThatFits(in: .horizontal) {
+                Label(PathBreadcrumbs.folderName(for: directory), systemImage: "folder")
+                    .fixedSize()
+                Image(systemName: "folder")
+                Color.clear.frame(width: 0, height: 0)
+            }
+            .contentShape(Rectangle())
         }
+        .buttonStyle(.plain)
         .font(.caption)
         .foregroundStyle(.secondary)
         .layoutPriority(-1)
-        .help(PathBreadcrumbs.displayPath(for: directory))
+        .help(String(format: L.t("go_to_folder", lang), PathBreadcrumbs.displayPath(for: directory)))
     }
 
     // MARK: - Конвейер по сохранённому выводу

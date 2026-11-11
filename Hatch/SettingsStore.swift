@@ -60,6 +60,14 @@ final class SettingsStore {
         self.recentDirectories = defaults.stringArray(forKey: Keys.recentDirectories) ?? []
     }
 
+    /// Перейти в папку, как `cd`: только если она ещё существует. false — папки нет, ничего не меняем.
+    @discardableResult
+    func navigate(to path: String) -> Bool {
+        guard Self.isDirectory(path) else { return false }
+        if path != currentDirectory { currentDirectory = path }
+        return true
+    }
+
     private func rememberRecent(_ path: String) {
         var list = recentDirectories.filter { $0 != path }
         list.insert(path, at: 0)
