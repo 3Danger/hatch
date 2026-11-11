@@ -7,12 +7,19 @@ enum LauncherMetrics {
     /// Отступ контента от края панели.
     static let padding: CGFloat = 8
     /// Радиус поля ввода и блоков истории.
-    static let innerRadius: CGFloat = 16
+    static let innerRadius: CGFloat = 11
     static let panelRadius = innerRadius + padding
     /// Отступ содержимого внутри блока истории.
     static let blockPadding: CGFloat = 12
     /// Терминал внутри раскрытого блока.
     static let terminalRadius = innerRadius - blockPadding
+    /// Кнопки-колпачки одного размера с соседями: в заголовке блока («+» и действия) и в поле ввода.
+    static let blockButton: CGFloat = 24
+    /// «Развернуть» в строке «скрыто N»: колпачок как в макете, строка под него выше обычной.
+    static let markerButtonHeight: CGFloat = 18
+    static let markerRowHeight: CGFloat = 24
+    static let inputButton: CGFloat = 28
+    static func buttonRadius(_ size: CGFloat) -> CGFloat { (size * 0.29).rounded() }
     /// Запас окна вокруг панели под её тень.
     static let shadowMargin: CGFloat = 24
     /// Строк вывода в свёрнутом блоке (включая строку «скрыто N»). Свежий блок берёт больше.
@@ -26,8 +33,6 @@ enum LauncherMetrics {
     static let blockSpacing: CGFloat = 8
     /// Живой терминал в раскрытом блоке: блок занимает всю видимую область истории.
     static func terminalHeight(historyHeight: CGFloat) -> CGFloat { historyHeight - blockChrome }
-    /// Цвет умножения поверх стекла в тёмной теме: чем темнее, тем глубже фон; синеватый — как в макете.
-    static let glassMultiply = Color(red: 0.65, green: 0.66, blue: 0.74)
 }
 
 /// Корневое представление лаунчера: ввод, история, экшн-кнопки.
@@ -36,7 +41,6 @@ struct LauncherRootView: View {
     @Environment(ProcessRunner.self) private var runner
     @Environment(SettingsStore.self) private var settings
     @Environment(HotKeyController.self) private var hotKeys
-    @Environment(\.colorScheme) private var systemScheme
 
     @State private var text = ""
     @FocusState private var inputFocused: Bool
@@ -63,37 +67,29 @@ struct LauncherRootView: View {
 
     var body: some View {
         // Высота панели — по содержимому (до предела истории); окно следует за ней.
-        // Настройки — слой стекла поверх: панель за ним отходит назад и размывается.
-        attachLifecycle(ZStack(alignment: .topTrailing) {
+        // Настройки выезжают сверху, как лист окна macOS; панель за ними темнеет.
+        attachLifecycle(ZStack(alignment: .top) {
             panelContent
-                .scaleEffect(showSettings ? 0.95 : 1, anchor: .top)
-                .opacity(showSettings ? 0.28 : 1)
-                .blur(radius: showSettings ? 3 : 0)
+                .brightness(showSettings ? -0.35 : 0)
                 .allowsHitTesting(!showSettings)
             if showSettings {
                 SettingsView(onClose: closeSettings)
-                    .padding(.top, 44)
+                    .padding(.top, 2)
                     .transition(.settingsLayer)
                     .zIndex(1)
             }
         }
         .padding(LauncherMetrics.padding)
         .frame(width: settings.panelWidth)
+        // лист выезжает из-за верхнего края панели, а не поверх окна
+        .clipShape(RoundedRectangle(cornerRadius: LauncherMetrics.panelRadius))
         // правый и нижний края и угол между ними тянутся: ширина и предел высоты истории
         .overlay { resizeHandles }
         .background {
-            Color.clear
-                .glassEffect(in: RoundedRectangle(cornerRadius: LauncherMetrics.panelRadius))
-                // Стекло само подсвечивает размытый фон — он блёкнет. Умножение (как в Photoshop)
-                // затемняет его, сохраняя цвета: блоки и статусы на нём контрастнее.
-                .overlay {
-                    if isDark {
-                        RoundedRectangle(cornerRadius: LauncherMetrics.panelRadius)
-                            .fill(LauncherMetrics.glassMultiply)
-                            .blendMode(.multiply)
-                            .allowsHitTesting(false)
-                    }
-                }
+            // сплошное окно, без стекла и прозрачности
+            let shape = RoundedRectangle(cornerRadius: LauncherMetrics.panelRadius)
+            shape.fill(Tactile.window)
+                .overlay(shape.strokeBorder(Tactile.windowEdge))
                 // за пустые места панели (поля, промежутки) окно перетаскивается
                 .overlay { WindowDragArea() }
         }
@@ -204,9 +200,9 @@ struct LauncherRootView: View {
 
     /// Настройки и очистка истории — справа в поле ввода, а не отдельной колонкой.
     private var inputButtons: some View {
-        HStack(spacing: 2) {
-            GlassIconButton(systemName: "gearshape", size: 28, help: L.t("settings", lang)) { openSettings() }
-            GlassIconButton(systemName: "trash", size: 28, help: L.t("clear", lang)) {
+        HStack(spacing: 6) {
+            GlassIconButton(icon: .gear, size: LauncherMetrics.inputButton, help: L.t("settings", lang)) { openSettings() }
+            GlassIconButton(icon: .trash, size: LauncherMetrics.inputButton, help: L.t("clear", lang)) {
                 if sessionStore.clearScope != .nothing { confirmClear = true }
             }
             .disabled(sessionStore.clearScope == .nothing)
@@ -489,15 +485,6 @@ struct LauncherRootView: View {
         NSPasteboard.general.setString(text, forType: .string)
     }
 
-    /// Тёмная ли сейчас панель: выбрана тёмная тема или системная тёмная.
-    private var isDark: Bool {
-        switch settings.theme {
-        case .dark: return true
-        case .light: return false
-        case .system, nil: return systemScheme == .dark
-        }
-    }
-
     private var colorScheme: ColorScheme? {
         switch settings.theme {
         case .dark: return .dark
@@ -594,13 +581,7 @@ struct HistoryListView: View {
               .frame(height: min(contentHeight, maxHeight))
               // скруглён как панель: обрезанный снизу блок не даёт прямых углов
               .clipShape(RoundedRectangle(cornerRadius: LauncherMetrics.innerRadius))
-              .mask { EdgeFadeMask(metrics: metrics) }
-              .overlay(alignment: .trailing) {
-                  GlassScrollbar(metrics: metrics) { metrics.position.scrollTo(y: $0) }
-                      .padding(.vertical, 8)
-                      .offset(x: 11) // в просвете между списком и краем панели
-                      .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { frames?.scrollbar = $0 }
-              }
+              // полосы прокрутки нет: список листается колёсиком и трекпадом
               .onChange(of: selectedID) { _, id in
                   guard let id else { return }
                   withAnimation(.easeOut(duration: 0.15)) { proxy.scrollTo(id, anchor: .center) }
@@ -639,7 +620,9 @@ extension HistoryListView {
         let sessions = sessionStore.filteredSessions
         let others = sessions.dropFirst().reduce(CGFloat(0)) { $0 + (blockHeights[$1.id] ?? 0) }
             + CGFloat(max(sessions.count - 1, 0)) * LauncherMetrics.blockSpacing
+        // строка «скрыто N · Развернуть» выше обычной строки вывода
         let free = maxHeight - others - LauncherMetrics.blockChrome
+            - (LauncherMetrics.markerRowHeight - LauncherMetrics.outputLineHeight)
         return max(LauncherMetrics.compactOutputLines, Int(free / LauncherMetrics.outputLineHeight))
     }
 }
@@ -679,13 +662,17 @@ struct SessionBlockView: View {
     /// Текст подставлен из варианта (TAB, клик) — варианты не пересчитываем.
     @State private var stageApplying = false
     @State private var hovered = false
-    /// Команда только что завершилась — по стеклу один раз проходит блик.
-    @State private var finishFlash = false
 
     var body: some View {
         let _ = RenderProbe.hit("SessionBlockView")
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 8) {
             header
+
+            // тонкий разделитель между заголовком и выводом, как между строками системных настроек
+            if isExpanded || !session.output.isEmpty {
+                Rectangle().fill(.white.opacity(0.05)).frame(height: 1)
+                    .padding(.horizontal, -LauncherMetrics.blockPadding)
+            }
 
             if editingStage != nil, !stageCandidates.isEmpty {
                 stageSuggestionsRow
@@ -703,62 +690,37 @@ struct SessionBlockView: View {
             }
         }
         .padding(LauncherMetrics.blockPadding)
-        .background(blockShape.fill(LinearGradient(colors: [.white.opacity(0.10), .white.opacity(0.035)],
-                                                   startPoint: .top, endPoint: .bottom)))
-        .overlay {
-            if session.state.isActive {
-                GlassSheen().clipShape(blockShape)
-            } else if finishFlash {
-                GlassSheen(repeating: false).clipShape(blockShape)
-            }
-        }
-        .overlay(
-            blockShape.strokeBorder(isSelected ? Color.accentColor : .white.opacity(isExpanded ? 0.2 : 0.1),
-                                    lineWidth: isSelected ? 2 : 1)
-        )
-        .shadow(color: .black.opacity(isExpanded ? 0.6 : 0.35), radius: isExpanded ? 26 : 9, y: isExpanded ? 16 : 5)
-        // глубина: все блоки чуть в глубине, наведённый и раскрытый выходят вперёд, при раскрытом остальные в тени
-        .scaleEffect(depthScale)
-        .opacity(depthOpacity)
+        // утоплен в окно: тень по верхней стенке, мягкий блик снизу; под курсором чуть светлее
+        .sunken(blockShape, fill: hovered && !dimmed ? Tactile.sunkenHover : Tactile.sunken)
+        .selectionRing(cornerRadius: LauncherMetrics.innerRadius, visible: isExpanded || isSelected)
+        // при раскрытом блоке остальные приглушены
+        .opacity(dimmed ? LayersDepth.dimmedOpacity : 1)
         .animation(LayersDepth.hoverSpring, value: DepthKey(hovered: hovered || isSelected, dimmed: dimmed, expanded: isExpanded))
         .contentShape(blockShape)
         .onHover { hovered = $0 }
         .onTapGesture { if !isExpanded { onToggle() } }
         // пока раскрыт другой блок, этот не нажимается: клик по нему лишь сворачивает раскрытый
         .allowsHitTesting(!dimmed)
-        .onChange(of: session.state) { old, new in
-            guard old.isActive, new.isTerminal else { return }
-            finishFlash = true
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1) { finishFlash = false }
-        }
     }
 
     private var blockShape: RoundedRectangle { RoundedRectangle(cornerRadius: LauncherMetrics.innerRadius) }
 
     private struct DepthKey: Equatable { let hovered: Bool, dimmed: Bool, expanded: Bool }
 
-    private var depthScale: CGFloat {
-        if dimmed { return LayersDepth.dimmedScale }
-        return hovered || isExpanded || isSelected ? 1 : LayersDepth.restingScale
-    }
-
-    private var depthOpacity: Double {
-        if dimmed { return LayersDepth.dimmedOpacity }
-        return hovered || isExpanded || isSelected ? 1 : LayersDepth.restingOpacity
-    }
 
     /// Команда и под ней папка·время; справа шаги конвейера и общее место статуса и кнопок.
     private var header: some View {
         HStack(spacing: 8) {
-            if isExpanded {
-                Image(systemName: "chevron.down")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(.secondary)
-            }
+            // треугольник раскрытия, как в списках Finder: поворачивается, когда блок раскрыт
+            Image(systemName: "arrowtriangle.right.fill")
+                .font(.system(size: 7))
+                .foregroundStyle(.secondary)
+                .rotationEffect(.degrees(isExpanded ? 90 : 0))
+                .animation(LayersDepth.spring, value: isExpanded)
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(session.command)
-                    .font(.system(size: 14, weight: .semibold))
+                    .font(.system(size: 13, weight: .semibold))
                     .lineLimit(1)
                     .truncationMode(.tail)
                 HStack(spacing: 8) {
@@ -796,9 +758,9 @@ struct SessionBlockView: View {
                 .offset(y: showActions ? -8 : 0)
                 .opacity(showActions ? 0 : 1)
                 .animation(.spring(response: 0.38, dampingFraction: 0.8), value: showActions)
-            HStack(spacing: 0) {
+            HStack(spacing: 4) {
                 ForEach(Array(actions.enumerated()), id: \.offset) { index, action in
-                    GlassIconButton(systemName: action.symbol, color: action.color, size: 24,
+                    GlassIconButton(icon: action.icon, color: action.color, size: LauncherMetrics.blockButton,
                                     help: action.help, action: action.run)
                         .rotation3DEffect(.degrees(showActions ? 0 : -75), axis: (1, 0, 0), anchor: .bottom, perspective: 0.5)
                         .offset(y: showActions ? 0 : 8)
@@ -813,23 +775,23 @@ struct SessionBlockView: View {
     }
 
     private struct BlockAction {
-        let symbol: String
-        var color: Color = .secondary
+        let icon: KeyIcon
+        var color: Color? = nil
         let help: String
         let run: () -> Void
     }
 
     private var blockActions: [BlockAction] {
         var list = [
-            BlockAction(symbol: "arrow.clockwise", help: L.t("rerun", lang), run: onRerun),
-            BlockAction(symbol: "doc.on.doc", help: L.t("copy", lang), run: onCopy),
-            BlockAction(symbol: session.isPinned ? "pin.fill" : "pin", color: session.isPinned ? LayersPalette.accent : .secondary,
+            BlockAction(icon: .rerun, help: L.t("rerun", lang), run: onRerun),
+            BlockAction(icon: .copy, help: L.t("copy", lang), run: onCopy),
+            BlockAction(icon: session.isPinned ? .pinOn : .pin, color: session.isPinned ? LayersPalette.accent : nil,
                         help: L.t("pin", lang), run: onPin),
         ]
         if session.state.isActive {
-            list.append(BlockAction(symbol: "stop.fill", color: LayersPalette.error, help: L.t("stop", lang), run: onKill))
+            list.append(BlockAction(icon: .stop, color: LayersPalette.error, help: L.t("stop", lang), run: onKill))
         }
-        list.append(BlockAction(symbol: "trash", help: L.t("delete", lang), run: onDelete))
+        list.append(BlockAction(icon: .trash, help: L.t("delete", lang), run: onDelete))
         return list
     }
 
@@ -870,23 +832,25 @@ struct SessionBlockView: View {
             Button {
                 startEditing(at: session.pipeline.count, text: "")
             } label: {
-                Image(systemName: "plus")
-                    .font(.system(size: 10, weight: .bold))
-                    .frame(width: 18, height: 18)
-                    .background(.white.opacity(0.12), in: Circle())
+                // в макете — знак «+» шрифтом 15, а не жирный символ
+                Text("+")
+                    .font(.system(size: 15))
+                    .foregroundStyle(Tactile.keyText)
+                    .frame(width: LauncherMetrics.blockButton, height: LauncherMetrics.blockButton)
+                    .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(KeyCapButtonStyle(cornerRadius: LauncherMetrics.buttonRadius(LauncherMetrics.blockButton)))
             .help(L.t("add_pipe_stage", lang))
         }
     }
 
     private func stageChip(_ stage: String, index: Int) -> some View {
         HStack(spacing: 4) {
-            Text("| " + stage)
+            // токен по размеру текста; длинный шаг сокращается (целиком — при правке)
+            Text("| " + (stage.count > 28 ? String(stage.prefix(27)) + "…" : stage))
                 .font(.system(size: 12, design: .monospaced))
                 .lineLimit(1)
-                .truncationMode(.tail)
-                .frame(maxWidth: 180, alignment: .leading)
+                .fixedSize()
                 .onTapGesture { startEditing(at: index, text: stage) }
                 .help(L.t("edit_pipe_stage", lang))
             Button { onPipeChange(.remove(index)) } label: {
@@ -897,9 +861,11 @@ struct SessionBlockView: View {
             .buttonStyle(.plain)
             .help(L.t("remove_pipe_stage", lang))
         }
-        .padding(.horizontal, 7)
+        .padding(.horizontal, 8)
         .padding(.vertical, 2)
-        .background(.white.opacity(0.12), in: Capsule())
+        .foregroundStyle(.white)
+        .background(Tactile.accent.opacity(0.32), in: RoundedRectangle(cornerRadius: 5))
+        .overlay(RoundedRectangle(cornerRadius: 5).strokeBorder(Tactile.accent.opacity(0.8), lineWidth: 0.5))
     }
 
     /// Поле шага: Enter — применить, Esc или пусто — отменить.
@@ -924,9 +890,10 @@ struct SessionBlockView: View {
                     refreshStageCandidates()
                 }
         }
-        .padding(.horizontal, 7)
-        .padding(.vertical, 2)
-        .background(.white.opacity(0.18), in: Capsule())
+        .padding(.horizontal, 8)
+        .padding(.vertical, 3)
+        .sunken(RoundedRectangle(cornerRadius: 6), fill: Tactile.field)
+        .selectionRing(cornerRadius: 6, visible: true)
     }
 
     private func startEditing(at index: Int, text: String) {
@@ -968,9 +935,9 @@ struct SessionBlockView: View {
                     Text(candidate)
                         .font(.system(size: 11, design: .monospaced))
                         .foregroundStyle(next ? Color.accentColor : Color.secondary)
-                        .padding(.horizontal, 7)
+                        .padding(.horizontal, 8)
                         .padding(.vertical, 2)
-                        .background(.white.opacity(next ? 0.16 : 0.08), in: Capsule())
+                        .tactileRaised(Capsule(), fill: next ? Tactile.raiseHover : Tactile.raise)
                         .onTapGesture { applyStageCandidate(candidate) }
                 }
             }
@@ -1025,7 +992,7 @@ struct SessionBlockView: View {
             font: NSFont.monospacedSystemFont(ofSize: LauncherMetrics.outputFontSize, weight: .regular)))
             .padding(.horizontal, 10)
             .padding(.vertical, 8)
-            .background(.black.opacity(0.28), in: RoundedRectangle(cornerRadius: 10))
+            .sunken(RoundedRectangle(cornerRadius: 8), fill: Tactile.field)
     }
 
     /// Свёрнутый вывод: начало, «скрыто N строк» с кнопкой раскрыть, конец.
@@ -1054,13 +1021,19 @@ struct SessionBlockView: View {
         HStack(spacing: 8) {
             Text("⋯  " + String(format: L.t("hidden_lines", lang), count))
                 .foregroundStyle(.secondary)
-            Button(L.t("expand", lang), action: onToggle)
-                .buttonStyle(.plain)
-                .foregroundStyle(Color.accentColor)
+            Button(action: onToggle) {
+                Text(L.t("expand", lang))
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(Tactile.keyText)
+                    .padding(.horizontal, 10)
+                    .frame(height: LauncherMetrics.markerButtonHeight)
+            }
+            .buttonStyle(KeyCapButtonStyle(cornerRadius: 7))
         }
         .font(.system(size: LauncherMetrics.outputFontSize, weight: .medium))
-        .frame(maxWidth: .infinity, minHeight: LauncherMetrics.outputLineHeight,
-               maxHeight: LauncherMetrics.outputLineHeight, alignment: .leading)
+        // строка выше обычной: колпачку «Развернуть» нужно место под кромку и тень
+        .frame(maxWidth: .infinity, minHeight: LauncherMetrics.markerRowHeight,
+               maxHeight: LauncherMetrics.markerRowHeight, alignment: .leading)
     }
 
 }
@@ -1099,7 +1072,7 @@ struct CommandInputView: View {
     /// Текст ставим сами (перебор, история) — не считать это вводом пользователя.
     @State private var settingText = false
 
-    private var font: Font { .system(size: 20, weight: .medium) }
+    private var font: Font { .system(size: 17) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -1114,8 +1087,8 @@ struct CommandInputView: View {
     private var inputField: some View {
         HStack(spacing: 10) {
         Text("›")
-            .font(.system(size: 22, weight: .medium, design: .monospaced))
-            .foregroundStyle(LayersPalette.accent)
+            .font(.system(size: 19, weight: .medium))
+            .foregroundStyle(.tertiary)
         ZStack(alignment: .leading) {
             if !text.isEmpty {
                 Text(text)
@@ -1146,12 +1119,8 @@ struct CommandInputView: View {
         .padding(.leading, 14)
         .padding(.trailing, trailing == nil ? 14 : 8)
         .padding(.vertical, 10)
-        .background(.white.opacity(0.08), in: RoundedRectangle(cornerRadius: LauncherMetrics.innerRadius))
-        .overlay(
-            RoundedRectangle(cornerRadius: LauncherMetrics.innerRadius)
-                .strokeBorder(isFocused ? LayersPalette.accent.opacity(0.55) : .white.opacity(0.14))
-        )
-        .shadow(color: isFocused ? LayersPalette.accent.opacity(0.35) : .clear, radius: 14)
+        .sunken(RoundedRectangle(cornerRadius: LauncherMetrics.innerRadius), fill: Tactile.field)
+        .selectionRing(cornerRadius: LauncherMetrics.innerRadius, visible: isFocused)
         .animation(.easeOut(duration: 0.3), value: isFocused)
         // Shift+TAB приходит как «backtab» (U+0019)
         .onKeyPress(keys: [.tab, KeyEquivalent("\u{19}")]) { press in
@@ -1209,11 +1178,12 @@ struct CommandInputView: View {
             }
         }
         .frame(maxHeight: 140)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
+        .background(Tactile.group, in: RoundedRectangle(cornerRadius: 12))
         .overlay(
             RoundedRectangle(cornerRadius: 12)
-                .strokeBorder(.white.opacity(0.15))
+                .strokeBorder(Tactile.groupEdge)
         )
+        .shadow(color: .black.opacity(0.45), radius: 10, y: 6)
     }
 
     // MARK: - TAB

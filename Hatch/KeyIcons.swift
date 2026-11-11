@@ -1,0 +1,94 @@
+import SwiftUI
+
+/// Иконки кнопок-колпачков, нарисованные линией 1.5 на сетке 16×16 — как в макете «Системный».
+/// Символы SF толще и другой формы, поэтому кнопки с ними выглядели иначе, чем в макете.
+enum KeyIcon: Hashable {
+    case rerun, copy, pin, pinOn, trash, stop, gear
+
+    /// Ширина линии в единицах сетки 16×16.
+    var lineWidth: CGFloat {
+        switch self {
+        case .rerun: return 1.6
+        case .gear: return 1.4
+        default: return 1.5
+        }
+    }
+
+    var filled: Bool { self == .stop || self == .pinOn }
+
+    var lineCap: CGLineCap { self == .rerun || self == .trash ? .round : .butt }
+    var lineJoin: CGLineJoin { self == .pin || self == .pinOn ? .round : .miter }
+
+    /// Контур в координатах сетки 16×16.
+    var path: Path {
+        var p = Path()
+        switch self {
+        case .rerun:
+            // дуга радиусом 5 вокруг центра почти по кругу и уголок-стрелка
+            let start = 0.0, end = atan2(-3.6, 3.5) + 2 * .pi
+            for i in 0...48 {
+                let a = start + (end - start) * Double(i) / 48
+                let pt = CGPoint(x: 8 + 5 * cos(a), y: 8 + 5 * sin(a))
+                i == 0 ? p.move(to: pt) : p.addLine(to: pt)
+            }
+            p.move(to: CGPoint(x: 13, y: 2.5))
+            p.addLine(to: CGPoint(x: 13, y: 5.5))
+            p.addLine(to: CGPoint(x: 10, y: 5.5))
+        case .copy:
+            p.addRoundedRect(in: CGRect(x: 5, y: 5, width: 8.5, height: 8.5), cornerSize: CGSize(width: 2, height: 2),
+                             style: .circular)
+            p.move(to: CGPoint(x: 11, y: 5))
+            p.addArc(tangent1End: CGPoint(x: 11, y: 2), tangent2End: CGPoint(x: 9.5, y: 2), radius: 1.5)
+            p.addArc(tangent1End: CGPoint(x: 2, y: 2), tangent2End: CGPoint(x: 2, y: 3.5), radius: 1.5)
+            p.addArc(tangent1End: CGPoint(x: 2, y: 11), tangent2End: CGPoint(x: 3.5, y: 11), radius: 1.5)
+            p.addLine(to: CGPoint(x: 5, y: 11))
+        case .pin, .pinOn:
+            p.addLines([CGPoint(x: 6, y: 2), CGPoint(x: 10, y: 2), CGPoint(x: 9.5, y: 6), CGPoint(x: 12, y: 8.5),
+                        CGPoint(x: 4, y: 8.5), CGPoint(x: 6.5, y: 6)])
+            p.closeSubpath()
+        case .trash:
+            p.addLines([CGPoint(x: 2.5, y: 4), CGPoint(x: 13.5, y: 4)])
+            p.addLines([CGPoint(x: 6, y: 4), CGPoint(x: 6, y: 2.5), CGPoint(x: 10, y: 2.5), CGPoint(x: 10, y: 4)])
+            p.addLines([CGPoint(x: 4, y: 4), CGPoint(x: 4.7, y: 13.5), CGPoint(x: 11.3, y: 13.5), CGPoint(x: 12, y: 4)])
+        case .stop:
+            p.addRoundedRect(in: CGRect(x: 4, y: 4, width: 8, height: 8), cornerSize: CGSize(width: 1.5, height: 1.5),
+                             style: .circular)
+        case .gear:
+            p.addEllipse(in: CGRect(x: 8 - 2.2, y: 8 - 2.2, width: 4.4, height: 4.4))
+            let spokes: [(CGFloat, CGFloat, CGFloat, CGFloat)] = [
+                (8, 1.5, 8, 3.5), (8, 12.5, 8, 14.5), (1.5, 8, 3.5, 8), (12.5, 8, 14.5, 8),
+                (3.4, 3.4, 4.8, 4.8), (11.2, 11.2, 12.6, 12.6), (3.4, 12.6, 4.8, 11.2), (11.2, 4.8, 12.6, 3.4),
+            ]
+            for s in spokes { p.addLines([CGPoint(x: s.0, y: s.1), CGPoint(x: s.2, y: s.3)]) }
+        }
+        return p
+    }
+
+    /// Хвостик булавки остаётся линией и у закрашенной булавки.
+    var stem: Path? {
+        guard self == .pin || self == .pinOn else { return nil }
+        var p = Path()
+        p.addLines([CGPoint(x: 8, y: 8.5), CGPoint(x: 8, y: 14)])
+        return p
+    }
+}
+
+/// Иконка на сетке 16×16, растянутая до `size` точек; линия масштабируется вместе с ней.
+struct KeyIconView: View {
+    let icon: KeyIcon
+    var size: CGFloat = 13
+
+    var body: some View {
+        Canvas { context, canvas in
+            let scale = canvas.width / 16
+            let transform = CGAffineTransform(scaleX: scale, y: scale)
+            let style = StrokeStyle(lineWidth: icon.lineWidth * scale, lineCap: icon.lineCap, lineJoin: icon.lineJoin)
+            let shading = GraphicsContext.Shading.foreground
+            let shape = icon.path.applying(transform)
+            if icon.filled { context.fill(shape, with: shading) }
+            if icon != .stop { context.stroke(shape, with: shading, style: style) }
+            if let stem = icon.stem { context.stroke(stem.applying(transform), with: shading, style: style) }
+        }
+        .frame(width: size, height: size)
+    }
+}

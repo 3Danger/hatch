@@ -1,7 +1,8 @@
 import SwiftUI
 import AppKit
 
-/// Настройки — ещё один слой стекла поверх панели (панель за ним отходит назад).
+/// Настройки — слой поверх панели (панель за ним отходит назад и темнеет). Без прозрачности:
+/// сплошные группы, лунки для полей, колпачки для кнопок.
 /// Горячая клавиша колпачками с записью, тема и язык сегментами, глубина истории счётчиком.
 struct SettingsView: View {
     @Environment(SettingsStore.self) private var settings
@@ -12,16 +13,17 @@ struct SettingsView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
-                Text(L.t("settings", lang)).font(.system(size: 16, weight: .semibold))
+                Text(L.t("settings", lang)).font(.system(size: 17, weight: .semibold))
                 Spacer()
                 Button(action: onClose) {
-                    Image(systemName: "xmark")
-                        .font(.system(size: 10, weight: .bold))
+                    // как в макете: круглый колпачок 28 со знаком «✕» и тенью в 1 точку
+                    Text("✕")
+                        .font(.system(size: 16))
                         .foregroundStyle(.secondary)
-                        .frame(width: 26, height: 26)
-                        .background(.white.opacity(0.08), in: Circle())
+                        .frame(width: 28, height: 28)
+                        .contentShape(Circle())
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(KeyCapButtonStyle(cornerRadius: 14, under: 1))
                 .help(L.t("close", lang))
                 .accessibilityLabel(L.t("close", lang))
             }
@@ -67,16 +69,9 @@ struct SettingsView: View {
                         .font(.system(size: 13, weight: .semibold))
                         .foregroundStyle(.white)
                         .padding(.horizontal, 18)
-                        .frame(height: 32)
-                        .background(
-                            LinearGradient(colors: [Color(red: 0.47, green: 0.75, blue: 1).opacity(0.6),
-                                                    Color(red: 0.24, green: 0.51, blue: 0.94).opacity(0.5)],
-                                           startPoint: .top, endPoint: .bottom),
-                            in: RoundedRectangle(cornerRadius: 10))
-                        .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(.white.opacity(0.25), lineWidth: 0.5))
-                        .shadow(color: Color(red: 0.24, green: 0.55, blue: 1).opacity(0.5), radius: 8, y: 4)
+                        .frame(height: 34)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(KeyCapButtonStyle(cornerRadius: 10, primary: true))
                 .keyboardShortcut(.defaultAction)
             }
             .padding(.horizontal, 16)
@@ -84,31 +79,34 @@ struct SettingsView: View {
             .padding(.bottom, 14)
         }
         .frame(width: 440)
-        .background(
-            LinearGradient(colors: [.white.opacity(0.14), .white.opacity(0.05)], startPoint: .top, endPoint: .bottom),
-            in: RoundedRectangle(cornerRadius: 22))
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 22))
-        .overlay(RoundedRectangle(cornerRadius: 22).strokeBorder(.white.opacity(0.16)))
-        .shadow(color: .black.opacity(0.55), radius: 30, y: 18)
+        // тени — только у подложки карточки, не у текста внутри
+        .background {
+            RoundedRectangle(cornerRadius: 22).fill(Tactile.surface)
+                .shadow(color: .black.opacity(0.4), radius: 0, y: 2)
+                .shadow(color: .black.opacity(0.6), radius: 30, y: 18)
+        }
+        .overlay(RoundedRectangle(cornerRadius: 22).strokeBorder(Tactile.surfaceEdge))
+        .overlay(RoundedRectangle(cornerRadius: 22).inset(by: 1)
+            .stroke(LinearGradient(colors: [.white.opacity(0.08), .clear], startPoint: .top, endPoint: .center), lineWidth: 1))
     }
 
     private func group<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
         VStack(spacing: 0) { content() }
-            .background(.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 14))
-            .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(.white.opacity(0.07)))
+            .background(Tactile.group, in: RoundedRectangle(cornerRadius: 14))
+            .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(Tactile.groupEdge))
             .padding(.horizontal, 12)
             .padding(.vertical, 5)
     }
 
     private func row<Control: View>(_ title: String, first: Bool = false, @ViewBuilder control: () -> Control) -> some View {
         HStack(spacing: 12) {
-            Text(title).font(.system(size: 13.5))
+            Text(title).font(.system(size: 14))
             Spacer(minLength: 8)
             control()
         }
         .padding(.horizontal, 14)
         .frame(minHeight: 46)
-        .overlay(alignment: .top) { if !first { Rectangle().fill(.white.opacity(0.07)).frame(height: 1) } }
+        .overlay(alignment: .top) { if !first { Rectangle().fill(Tactile.groupEdge).frame(height: 1) } }
     }
 
     private func binding<T>(_ keyPath: ReferenceWritableKeyPath<SettingsStore, T>) -> Binding<T> {
@@ -135,18 +133,16 @@ struct GlassSegmented: View {
             ForEach(options, id: \.id) { option in
                 let selected = option.id == selection
                 Button { withAnimation(.spring(response: 0.35, dampingFraction: 0.7)) { selection = option.id } } label: {
+                    // как в макете: шрифт 13 без жирности, выбранный — белый, бегунок — колпачок
                     Text(option.title)
-                        .font(.system(size: 12.5, weight: selected ? .semibold : .regular))
-                        .foregroundStyle(selected ? .primary : .secondary)
-                        .padding(.horizontal, 10)
+                        .font(.system(size: 13))
+                        .foregroundStyle(selected ? Tactile.keyTextHover : .secondary)
+                        .padding(.horizontal, 11)
                         .frame(height: 26)
                         .background {
                             if selected {
-                                RoundedRectangle(cornerRadius: 7)
-                                    .fill(LinearGradient(colors: [.white.opacity(0.24), .white.opacity(0.1)],
-                                                         startPoint: .top, endPoint: .bottom))
-                                    .overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(.white.opacity(0.22), lineWidth: 0.5))
-                                    .shadow(color: .black.opacity(0.35), radius: 3, y: 2)
+                                Color.clear
+                                    .tactileRaised(RoundedRectangle(cornerRadius: 7, style: .circular))
                                     .matchedGeometryEffect(id: "segment", in: namespace)
                             }
                         }
@@ -157,7 +153,7 @@ struct GlassSegmented: View {
             }
         }
         .padding(3)
-        .background(.black.opacity(0.28), in: RoundedRectangle(cornerRadius: 10))
+        .tactileWell(RoundedRectangle(cornerRadius: 10))
     }
 }
 
@@ -171,28 +167,47 @@ struct GlassStepper: View {
         HStack(spacing: 2) {
             stepButton("minus", delta: -step)
             Text("\(value)")
-                .font(.system(size: 13.5, weight: .semibold))
+                .font(.system(size: 14, weight: .semibold))
                 .monospacedDigit()
                 .contentTransition(.numericText(value: Double(value)))
-                .frame(width: 44)
+                .frame(width: 52)
             stepButton("plus", delta: step)
         }
         .padding(3)
-        .background(.black.opacity(0.28), in: RoundedRectangle(cornerRadius: 10))
+        .tactileWell(RoundedRectangle(cornerRadius: 10))
     }
 
     private func stepButton(_ symbol: String, delta: Int) -> some View {
-        Button {
+        StepButton(symbol: symbol) {
             let next = min(max(value + delta, range.lowerBound), range.upperBound)
             withAnimation(.snappy) { value = next }
-        } label: {
-            Image(systemName: symbol)
-                .font(.system(size: 11, weight: .bold))
-                .foregroundStyle(.secondary)
-                .frame(width: 26, height: 24)
+        }
+    }
+}
+
+/// Кнопка счётчика как в макете: тонкий знак «−»/«+» в лунке, подсветка при наведении, проседает при нажатии.
+private struct StepButton: View {
+    let symbol: String
+    let action: () -> Void
+    @State private var hovered = false
+
+    var body: some View {
+        Button(action: action) {
+            Text(symbol == "minus" ? "−" : "+")
+                .font(.system(size: 16))
+                .foregroundStyle(hovered ? Tactile.keyTextHover : .secondary)
+                .frame(width: 28, height: 26)
+                .background(Color.white.opacity(hovered ? 0.12 : 0), in: RoundedRectangle(cornerRadius: 7, style: .circular))
                 .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(StepPressStyle())
+        .onHover { hovered = $0 }
+    }
+}
+
+private struct StepPressStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label.offset(y: configuration.isPressed ? 2 : 0)
     }
 }
 
@@ -210,11 +225,11 @@ struct GlassField: View {
             .padding(.horizontal, 10)
             .padding(.vertical, 6)
             .frame(width: width)
-            .background(.black.opacity(0.28), in: RoundedRectangle(cornerRadius: 8))
+            .tactileWell(RoundedRectangle(cornerRadius: 8))
     }
 }
 
-/// Стеклянный переключатель: синий со свечением во включённом виде.
+/// Переключатель: синий во включённом виде, в лунке — в выключенном.
 struct GlassSwitchStyle: ToggleStyle {
     func makeBody(configuration: Configuration) -> some View {
         Button { withAnimation(.spring(response: 0.3, dampingFraction: 0.65)) { configuration.isOn.toggle() } } label: {
@@ -222,7 +237,7 @@ struct GlassSwitchStyle: ToggleStyle {
                 .fill(configuration.isOn
                       ? AnyShapeStyle(LinearGradient(colors: [Color(red: 0.35, green: 0.66, blue: 1), Color(red: 0.18, green: 0.49, blue: 0.94)],
                                                      startPoint: .top, endPoint: .bottom))
-                      : AnyShapeStyle(Color.black.opacity(0.35)))
+                      : AnyShapeStyle(Tactile.well.shadow(.inner(color: .black.opacity(0.6), radius: 2, y: 1))))
                 .frame(width: 44, height: 26)
                 .overlay(alignment: configuration.isOn ? .trailing : .leading) {
                     Circle()
@@ -230,7 +245,6 @@ struct GlassSwitchStyle: ToggleStyle {
                         .shadow(color: .black.opacity(0.35), radius: 2, y: 1)
                         .padding(3)
                 }
-                .shadow(color: configuration.isOn ? Color(red: 0.3, green: 0.6, blue: 1).opacity(0.55) : .clear, radius: 7)
         }
         .buttonStyle(.plain)
         .accessibilityValue(configuration.isOn ? "on" : "off")
@@ -270,13 +284,14 @@ struct HotKeyCapsField: View {
                     }
                 }
             }
-            Button(recording ? L.t("cancel", lang) : L.t("record", lang)) { recording ? stop() : start() }
-                .buttonStyle(.plain)
-                .font(.system(size: 12.5, weight: .semibold))
-                .foregroundStyle(Color(red: 0.84, green: 0.92, blue: 1))
-                .padding(.horizontal, 12)
-                .frame(height: 28)
-                .background(LayersPalette.accent.opacity(0.18), in: Capsule())
+            Button { recording ? stop() : start() } label: {
+                Text(recording ? L.t("cancel", lang) : L.t("record", lang))
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(Tactile.keyText)
+                    .padding(.horizontal, 12)
+                    .frame(height: 28)
+            }
+            .buttonStyle(KeyCapButtonStyle(cornerRadius: 14))
         }
         .onDisappear { stop() }
     }
@@ -308,15 +323,11 @@ private struct KeyCap: View {
 
     var body: some View {
         Text(label)
-            .font(.system(size: 12.5, weight: .semibold))
-            .foregroundStyle(.white)
+            .font(.system(size: 13, weight: .semibold))
+            .foregroundStyle(.primary)
             .padding(.horizontal, 8)
             .frame(minWidth: 28, minHeight: 28)
-            .background {
-                RoundedRectangle(cornerRadius: 7)
-                    .fill(LinearGradient(colors: [.white.opacity(0.2), .white.opacity(0.07)], startPoint: .top, endPoint: .bottom))
-                    .overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(.white.opacity(0.18)))
-                    .shadow(color: .black.opacity(0.35), radius: 0, y: 2) // тень только у колпачка, не у текста
-            }
+            // в макете у клавиши и рамка, и внутренняя кромка — край в 2 точки
+            .tactileRaised(RoundedRectangle(cornerRadius: 7, style: .circular), edgeWidth: 2)
     }
 }

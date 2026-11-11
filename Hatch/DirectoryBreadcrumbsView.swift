@@ -15,7 +15,7 @@ struct DirectoryBreadcrumbsView: View {
     /// Часть пути, для которой открыт список папок.
     @State private var openCrumb: Int?
 
-    private var font: Font { .system(size: 11, weight: .medium, design: .monospaced) }
+    private var font: Font { .system(size: 12) }
 
     var body: some View {
         Group {
@@ -32,15 +32,22 @@ struct DirectoryBreadcrumbsView: View {
     }
 
     private var crumbs: some View {
-        HStack(spacing: 3) {
+        // строка пути, как в Finder: папки с синими значками через «›»
+        HStack(spacing: 4) {
             let segments = PathBreadcrumbs.segments(for: path)
             ForEach(Array(segments.enumerated()), id: \.offset) { index, crumb in
-                if index > 0 && segments[index - 1].title != "/" {
-                    Text("/").foregroundStyle(.quaternary)
+                if index > 0 {
+                    Image(systemName: "chevron.compact.right")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(.quaternary)
                 }
-                Text(crumb.title)
-                    .foregroundStyle(hovered == crumb.path ? .secondary : .tertiary)
-                    .underline(hovered == crumb.path)
+                HStack(spacing: 4) {
+                    Image(systemName: "folder.fill")
+                        .font(.system(size: 10))
+                        .foregroundStyle(Tactile.accent.opacity(0.85))
+                    Text(crumb.title)
+                }
+                    .foregroundStyle(hovered == crumb.path ? .primary : .secondary)
                     .onHover { inside in
                         hovered = inside ? crumb.path : (hovered == crumb.path ? nil : hovered)
                         if inside { NSCursor.pointingHand.push() } else { NSCursor.pop() }

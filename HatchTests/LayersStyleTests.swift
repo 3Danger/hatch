@@ -1,15 +1,21 @@
 import XCTest
 @testable import Hatch
 
-/// Стиль «Слои»: глубина блоков, статус, колпачки горячей клавиши, бегунок полосы прокрутки.
+/// Стиль «Системный»: приглушение блоков, размеры кнопок, статус, колпачки хоткея, бегунок полосы прокрутки.
 final class LayersStyleTests: XCTestCase {
 
-    /// Все блоки на одной глубине: в покое чуть отодвинуты, наведённый выходит к 1, при раскрытом — в тени.
-    func testBlocksRestAtOneDepth() {
-        XCTAssertLessThan(LayersDepth.restingScale, 1)
-        XCTAssertLessThan(LayersDepth.dimmedScale, LayersDepth.restingScale)
-        XCTAssertLessThan(LayersDepth.restingOpacity, 1)
-        XCTAssertLessThan(LayersDepth.dimmedOpacity, LayersDepth.restingOpacity)
+    /// При раскрытом блоке остальные приглушены, но видны.
+    func testDimmedBlocksStayVisible() {
+        XCTAssertGreaterThan(LayersDepth.dimmedOpacity, 0.3)
+        XCTAssertLessThan(LayersDepth.dimmedOpacity, 1)
+    }
+
+    /// Соседние кнопки одного размера; скругление растёт вместе с размером.
+    func testButtonSizesAreConsistent() {
+        XCTAssertEqual(LauncherMetrics.blockButton, 24)
+        XCTAssertEqual(LauncherMetrics.inputButton, 28)
+        XCTAssertEqual(LauncherMetrics.buttonRadius(24), 7)
+        XCTAssertEqual(LauncherMetrics.buttonRadius(28), 8)
     }
 
     /// Клик вне раскрытого блока сворачивает его; по самому блоку и по полосе прокрутки — нет.
