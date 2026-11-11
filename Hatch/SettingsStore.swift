@@ -33,6 +33,9 @@ final class SettingsStore {
     /// Ширина панели и предел высоты истории: тянутся за край панели, переживают перезапуск.
     var panelWidth: CGFloat { didSet { defaults.set(Double(panelWidth), forKey: Keys.panelWidth) } }
     var historyMaxHeight: CGFloat { didSet { defaults.set(Double(historyMaxHeight), forKey: Keys.historyMaxHeight) } }
+    /// Сочетание для дерева папок (пока открыта панель), формат как у горячей клавиши: "cmd-p".
+    var folderTreeShortcut: String { didSet { defaults.set(folderTreeShortcut, forKey: Keys.folderTreeShortcut) } }
+    static let defaultFolderTreeShortcut = "cmd-p"
     /// Значок в строке меню. Без него Hatch открывается хоткеем или повторным запуском приложения.
     var showStatusIcon: Bool { didSet { defaults.set(showStatusIcon, forKey: Keys.showStatusIcon) } }
     /// Избранные папки и команды (кнопка ★ в поле ввода), в порядке добавления.
@@ -58,6 +61,7 @@ final class SettingsStore {
         static let panelWidth = "settings.panelWidth"
         static let historyMaxHeight = "settings.historyMaxHeight"
         static let showStatusIcon = "settings.showStatusIcon"
+        static let folderTreeShortcut = "settings.folderTreeShortcut"
         static let favoriteDirectories = "settings.favoriteDirectories"
         static let favoriteCommands = "settings.favoriteCommands"
     }
@@ -81,6 +85,7 @@ final class SettingsStore {
         self.currentDirectory = savedDirectory.flatMap { Self.isDirectory($0) ? $0 : nil } ?? Self.homeDirectory
         self.recentDirectories = defaults.stringArray(forKey: Keys.recentDirectories) ?? []
         self.showStatusIcon = defaults.object(forKey: Keys.showStatusIcon) as? Bool ?? true
+        self.folderTreeShortcut = defaults.string(forKey: Keys.folderTreeShortcut) ?? Self.defaultFolderTreeShortcut
         self.favoriteDirectories = defaults.stringArray(forKey: Keys.favoriteDirectories) ?? []
         self.favoriteCommands = defaults.stringArray(forKey: Keys.favoriteCommands) ?? []
         let width = defaults.object(forKey: Keys.panelWidth) as? Double
@@ -152,6 +157,7 @@ final class SettingsStore {
         timeoutSeconds = 0
         latinLayoutInInput = true
         showStatusIcon = true
+        folderTreeShortcut = Self.defaultFolderTreeShortcut
         panelWidth = PanelSize.defaultWidth
         historyMaxHeight = PanelSize.defaultHistoryHeight
     }

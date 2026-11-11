@@ -47,6 +47,8 @@ struct LauncherRootView: View {
     /// Режим поиска (⌘F): то же поле ввода ищет по истории; набранная команда ждёт в `text`.
     @State private var searchMode = false
     @State private var searchQuery = ""
+    /// ⌘P (или сочетание из настроек): дерево папок у текущей папки; счётчик — каждое нажатие.
+    @State private var folderTreeRequest = 0
     /// Список «Избранное» (кнопка ★, ⌘E).
     @State private var favoritesOpen = false
     /// Сообщение внизу панели («Удалено…», «В избранном…»), с «Отменить», если можно.
@@ -115,7 +117,8 @@ struct LauncherRootView: View {
                                      favorites: settings.favoriteDirectories,
                                      lang: lang,
                                      onNavigate: { settings.currentDirectory = $0 },
-                                     onToggleFavorite: toggleFavoriteDirectory)
+                                     onToggleFavorite: toggleFavoriteDirectory,
+                                     treeRequest: folderTreeRequest)
                 .padding(.horizontal, 14) // по левому краю текста в поле ввода
                 .padding(.bottom, -4)     // ближе к полю, чем к краю панели
 
@@ -515,11 +518,19 @@ struct LauncherRootView: View {
                modifiers.subtracting([.function, .numericPad]).isEmpty {
                 return routeArrowToHistory(event) ? nil : event
             }
+            // дерево папок — сочетание из настроек (по умолчанию ⌘P), пока открыта панель
+            if !showSettings,
+               KeyChordFormatter.matches(settings.folderTreeShortcut, modifiers: modifiers, keyCode: event.keyCode,
+                                         characters: event.charactersIgnoringModifiers) {
+                favoritesOpen = false
+                folderTreeRequest += 1
+                return nil
+            }
             switch (event.keyCode, modifiers) {
             case (53, []) where showSettings && !HotKeyCapsField.isRecording:
                 closeSettings()
                 return nil
-            case (53, []) where searchMode && !showSettings:
+            case (53, []) where searchMode && !showSettings && event.window is LauncherPanel:
                 exitSearch()
                 return nil
             case (14, .command) where !showSettings:

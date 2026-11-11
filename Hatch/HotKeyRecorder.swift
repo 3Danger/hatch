@@ -41,6 +41,21 @@ enum KeyChordFormatter {
         parts.append(key)
         return parts.joined(separator: "-")
     }
+
+    /// Нажатие совпадает с сочетанием из настроек в любой раскладке: ⌘P с русской раскладкой
+    /// даёт «з», поэтому буква сверяется и по физической клавише (как на американской раскладке).
+    static func matches(_ spec: String, modifiers: NSEvent.ModifierFlags, keyCode: UInt16, characters: String?) -> Bool {
+        if self.spec(modifiers: modifiers, keyCode: keyCode, characters: characters) == spec { return true }
+        guard let letter = ansiLetters[keyCode] else { return false }
+        return self.spec(modifiers: modifiers, keyCode: keyCode, characters: letter) == spec
+    }
+
+    /// Буквы клавиш по их кодам на американской раскладке.
+    private static let ansiLetters: [UInt16: String] = [
+        0: "a", 1: "s", 2: "d", 3: "f", 4: "h", 5: "g", 6: "z", 7: "x", 8: "c", 9: "v", 11: "b",
+        12: "q", 13: "w", 14: "e", 15: "r", 16: "y", 17: "t", 31: "o", 32: "u", 34: "i", 35: "p",
+        37: "l", 38: "j", 40: "k", 45: "n", 46: "m",
+    ]
 }
 
 /// Поле записи горячей клавиши: клик «Записать» → нажатие → «Готово».

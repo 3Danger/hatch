@@ -2,7 +2,7 @@ import SwiftUI
 import AppKit
 
 /// Текущая директория над полем ввода «хлебными крошками»: `~ / tmp / Hatch`.
-/// Клик по части — папки того же уровня для перехода (как в VS Code), ⌘-клик — скопировать путь,
+/// Клик по части или ⌘P — дерево папок (как хлебные крошки VS Code), ⌘-клик — скопировать путь,
 /// правый клик — меню папки (избранное, Finder, редактор, «Поделиться», избранные и недавние папки).
 struct DirectoryBreadcrumbsView: View {
     let path: String
@@ -12,6 +12,8 @@ struct DirectoryBreadcrumbsView: View {
     var onNavigate: (String) -> Void = { _ in }
     /// «Добавить в избранное» / «Убрать из избранного» для папки из меню.
     var onToggleFavorite: (String) -> Void = { _ in }
+    /// Каждое увеличение — ⌘P: дерево у текущей (последней) папки, повторно — закрыть.
+    var treeRequest = 0
 
     @State private var copied = false
     @State private var hovered: String?
@@ -19,6 +21,8 @@ struct DirectoryBreadcrumbsView: View {
     @State private var openCrumb: Int?
     /// Часть пути, для которой открыто меню папки (правый клик).
     @State private var menuCrumb: Int?
+    /// Папка, к которой сейчас относится открытое дерево (после ← на верху — уровнем выше).
+    @State private var treeCrumb: String?
 
     private var font: Font { .system(size: 12) }
 
@@ -34,6 +38,37 @@ struct DirectoryBreadcrumbsView: View {
         }
         .lineLimit(1)
         .frame(maxWidth: .infinity, alignment: .leading)
+        .onChange(of: treeRequest) { _, _ in
+            let last = PathBreadcrumbs.segments(for: path).count - 1
+            openTree(openCrumb == last ? nil : last)
+        }
+        // перешли в другую папку — дерево закрывается
+        .onChange(of: path) { _, _ in openTree(nil) }
+    }
+
+    /// ⌥←/⌥→: дерево соседней папки пути. Соседи считаются от папки, к которой дерево относится
+    /// сейчас: после ← на верхнем уровне это уже папка выше, а не та, у которой дерево открыли.
+    private func switchTree(by delta: Int, from opened: Int) {
+        let segments = PathBreadcrumbs.segments(for: path)
+        let current = Self.treeIndex(of: treeCrumb, in: segments.map(\.path)) ?? opened
+        let target = min(max(current + delta, 0), segments.count - 1)
+        if target != current || treeCrumb != segments[target].path { openTree(target) }
+    }
+
+    /// Место папки дерева в пути. Дерево могло подняться выше начала пути (выше `~`) —
+    /// тогда это «левее первой», и ⌥→ ведёт к первой папке пути.
+    static func treeIndex(of crumb: String?, in paths: [String]) -> Int? {
+        guard let crumb else { return nil }
+        if let index = paths.firstIndex(of: crumb) { return index }
+        if let first = paths.first, first.hasPrefix(crumb == "/" ? "/" : crumb + "/") { return -1 }
+        return nil
+    }
+
+    private func openTree(_ index: Int?) {
+        let segments = PathBreadcrumbs.segments(for: path)
+        menuCrumb = nil
+        openCrumb = index
+        treeCrumb = index.flatMap { segments.indices.contains($0) ? segments[$0].path : nil }
     }
 
     private var crumbs: some View {
@@ -46,13 +81,22 @@ struct DirectoryBreadcrumbsView: View {
                         .font(.system(size: 10, weight: .semibold))
                         .foregroundStyle(.quaternary)
                 }
+                let lit = openCrumb != nil && treeCrumb == crumb.path
                 HStack(spacing: 4) {
                     Image(systemName: "folder.fill")
                         .font(.system(size: 10))
                         .foregroundStyle(Tactile.accent.opacity(0.85))
                     Text(crumb.title)
                 }
-                    .foregroundStyle(hovered == crumb.path ? .primary : .secondary)
+                    .foregroundStyle(lit || hovered == crumb.path ? .primary : .secondary)
+                    // папка, к которой относится открытое дерево, подсвечена
+                    .padding(.horizontal, 4)
+                    .padding(.vertical, 1)
+                    .background(lit ? Tactile.accent.opacity(0.25) : .clear,
+                                in: RoundedRectangle(cornerRadius: 5, style: .circular))
+                    .overlay(RoundedRectangle(cornerRadius: 5, style: .circular)
+                        .strokeBorder(lit ? Tactile.accent.opacity(0.6) : .clear))
+                    .padding(.horizontal, -4)
                     .onHover { inside in
                         hovered = inside ? crumb.path : (hovered == crumb.path ? nil : hovered)
                         if inside { NSCursor.pointingHand.push() } else { NSCursor.pop() }
@@ -61,24 +105,26 @@ struct DirectoryBreadcrumbsView: View {
                         if NSEvent.modifierFlags.contains(.command) {
                             copy(crumb.path)
                         } else {
-                            openCrumb = index
+                            openTree(openCrumb == index ? nil : index)
                         }
                     }
                     // меню и список папок — свои всплывающие окна, сплошные: системные в macOS 26 стеклянные
                     .hatchPopup(isPresented: Binding(get: { openCrumb == index },
-                                                     set: { if !$0, openCrumb == index { openCrumb = nil } })) { _ in
+                                                     set: { if !$0, openCrumb == index { openTree(nil) } })) { _ in
                         PopupCard {
-                            FolderPickerView(target: FolderListing.target(for: crumb),
-                                             onPick: { folder in
-                                                 openCrumb = nil
-                                                 onNavigate(folder)
-                                             })
+                            FolderTreeView(crumb: crumb.path, currentDirectory: path, lang: lang,
+                                           onNavigate: { folder in
+                                               openTree(nil)
+                                               onNavigate(folder)
+                                           },
+                                           onSwitchCrumb: { delta in switchTree(by: delta, from: index) },
+                                           onCrumbChange: { treeCrumb = $0 })
                         }
                     }
                     .hatchPopup(isPresented: Binding(get: { menuCrumb == index },
                                                      set: { if !$0, menuCrumb == index { menuCrumb = nil } }),
                                 placement: .atMouse,
-                                onSecondaryClick: { openCrumb = nil; menuCrumb = index }) { context in
+                                onSecondaryClick: { openTree(nil); menuCrumb = index }) { context in
                         MenuCard { menu(for: crumb.path, context: context) }
                     }
                     .help(crumb.path + "\n" + L.t("crumb_hint", lang))

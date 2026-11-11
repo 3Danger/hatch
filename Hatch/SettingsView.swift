@@ -33,6 +33,9 @@ struct SettingsView: View {
 
             group {
                 row(L.t("hotkey", lang), first: true) { HotKeyCapsField(spec: binding(\.hotkeyString), lang: lang) }
+                row(L.t("folder_tree", lang), hint: L.t("folder_tree_hint", lang)) {
+                    HotKeyCapsField(spec: binding(\.folderTreeShortcut), lang: lang)
+                }
                 row(L.t("status_icon", lang), hint: L.t("status_icon_hint", lang)) {
                     Toggle("", isOn: binding(\.showStatusIcon))
                         .toggleStyle(GlassSwitchStyle())

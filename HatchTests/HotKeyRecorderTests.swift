@@ -39,4 +39,13 @@ final class HotKeyRecorderTests: XCTestCase {
     func testEscapeKey() {
         XCTAssertEqual(KeyChordFormatter.spec(modifiers: .shift, keyCode: 53, characters: "\u{1b}"), "shift-escape")
     }
+
+    /// Сочетание дерева папок (⌘P) срабатывает и в русской раскладке, где P — это «з».
+    func testShortcutMatchesInAnyLayout() {
+        XCTAssertTrue(KeyChordFormatter.matches("cmd-p", modifiers: .command, keyCode: 35, characters: "p"))
+        XCTAssertTrue(KeyChordFormatter.matches("cmd-p", modifiers: .command, keyCode: 35, characters: "з"))
+        XCTAssertFalse(KeyChordFormatter.matches("cmd-p", modifiers: [.command, .shift], keyCode: 35, characters: "p"))
+        XCTAssertFalse(KeyChordFormatter.matches("cmd-p", modifiers: .command, keyCode: 31, characters: "o"))
+        XCTAssertTrue(KeyChordFormatter.matches("ctrl-alt-t", modifiers: [.control, .option], keyCode: 17, characters: "е"))
+    }
 }

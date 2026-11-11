@@ -24,19 +24,4 @@ final class FolderListingTests: XCTestCase {
         let root = try makeTree()
         XCTAssertTrue(FolderListing.subdirectories(of: root.path, includeHidden: true).contains(".hidden"))
     }
-
-    /// Как в VS Code: любая часть пути — папки того же уровня, кликнутая выделена.
-    /// У корня соседей нет — его вложенные папки.
-    func testListingTargetIsAlwaysSiblings() {
-        let crumbs = PathBreadcrumbs.segments(for: "/Users/me/tmp/Hatch", home: "/Users/me")
-        XCTAssertEqual(FolderListing.target(for: crumbs[1]),
-                       FolderListing.Target(directory: "/Users/me", highlighted: "tmp"))
-        XCTAssertEqual(FolderListing.target(for: crumbs[2]),
-                       FolderListing.Target(directory: "/Users/me/tmp", highlighted: "Hatch"))
-        XCTAssertEqual(FolderListing.target(for: crumbs[0]),
-                       FolderListing.Target(directory: "/Users", highlighted: "me"))
-
-        let root = PathBreadcrumbs.segments(for: "/usr", home: "/Users/me")[0]
-        XCTAssertEqual(FolderListing.target(for: root), FolderListing.Target(directory: "/", highlighted: nil))
-    }
 }

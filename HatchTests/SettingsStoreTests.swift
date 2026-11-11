@@ -16,6 +16,7 @@ final class SettingsStoreTests: XCTestCase {
         XCTAssertEqual(store.timeoutSeconds, 0)
         XCTAssertEqual(store.previewLines, 10)
         XCTAssertTrue(store.showStatusIcon)
+        XCTAssertEqual(store.folderTreeShortcut, "cmd-p")
         XCTAssertEqual(store.favoriteDirectories, [])
         XCTAssertEqual(store.favoriteCommands, [])
     }

@@ -436,6 +436,7 @@ struct KeyHint: View {
             .foregroundStyle(.secondary)
             .padding(.horizontal, 5)
             .frame(minWidth: 18, minHeight: 16)
+            .fixedSize()
             .tactileWell(RoundedRectangle(cornerRadius: 4, style: .circular))
     }
 }
