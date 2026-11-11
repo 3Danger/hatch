@@ -11,6 +11,7 @@ struct OutputTextView: NSViewRepresentable {
     final class Coordinator {
         /// Последний показанный текст: тот же объект (из кеша) — ничего не делаем.
         var shown: NSAttributedString?
+        let measurer = TextHeightMeasurer()
     }
 
     func makeCoordinator() -> Coordinator { Coordinator() }
@@ -51,16 +52,45 @@ struct OutputTextView: NSViewRepresentable {
         textView.textStorage?.setAttributedString(text)
     }
 
+    /// Высота считается отдельно от показанного поля и ничего в нём не меняет: правка живого
+    /// поля посреди раскладки SwiftUI заново запрашивала раскладку окна, а до первой подстановки
+    /// текста давала высоту 0 — высота списка прыгала, и AppKit обрывал приложение.
     func sizeThatFits(_ proposal: ProposedViewSize, nsView scrollView: NSScrollView, context: Context) -> CGSize? {
-        guard let textView = scrollView.documentView as? NSTextView,
-              let container = textView.textContainer,
-              let layoutManager = textView.layoutManager else { return nil }
         let width = proposal.width ?? scrollView.frame.width
-        container.containerSize = NSSize(width: width, height: .greatestFiniteMagnitude)
-        layoutManager.ensureLayout(for: container)
-        let height = ceil(layoutManager.usedRect(for: container).height)
+        guard width > 0 else { return nil }
+        let height = context.coordinator.measurer.height(of: text, width: width)
         let findBar = scrollView.isFindBarVisible ? (scrollView.findBarView?.frame.height ?? 0) : 0
         return CGSize(width: width, height: height + findBar)
+    }
+}
+
+/// Высота текста при заданной ширине — на собственном наборе NSTextStorage/NSLayoutManager,
+/// с запоминанием последнего результата: SwiftUI спрашивает размер много раз подряд.
+final class TextHeightMeasurer {
+    private let storage = NSTextStorage()
+    private let layoutManager = NSLayoutManager()
+    private let container = NSTextContainer(size: NSSize(width: 0, height: CGFloat.greatestFiniteMagnitude))
+    private var measured: NSAttributedString?
+    private var cache: [CGFloat: CGFloat] = [:]
+
+    init() {
+        container.lineFragmentPadding = 0
+        layoutManager.addTextContainer(container)
+        storage.addLayoutManager(layoutManager)
+    }
+
+    func height(of text: NSAttributedString, width: CGFloat) -> CGFloat {
+        if measured !== text {
+            measured = text
+            cache = [:]
+            storage.setAttributedString(text)
+        }
+        if let cached = cache[width] { return cached }
+        container.size = NSSize(width: width, height: .greatestFiniteMagnitude)
+        layoutManager.ensureLayout(for: container)
+        let height = ceil(layoutManager.usedRect(for: container).height)
+        cache[width] = height
+        return height
     }
 }
 

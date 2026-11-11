@@ -420,7 +420,9 @@ struct HistoryListView: View {
         } else {
             ScrollViewReader { proxy in
               ScrollView {
-                LazyVStack(spacing: LauncherMetrics.blockSpacing) {
+                // не Lazy: ленивый список держал старую оценку высоты свёрнутого блока,
+                // и панель не уменьшалась обратно; блоков не больше лимита истории
+                VStack(spacing: LauncherMetrics.blockSpacing) {
                     ForEach(sessionStore.filteredSessions) { session in
                         SessionBlockView(session: session,
                                          lang: lang,
