@@ -54,6 +54,8 @@ struct Session: Identifiable, Codable, Equatable, Hashable {
     var outputANSI: String?
     /// Пропущенная середина в превью работающей команды (после выхода — nil, вывод полный).
     var outputGap: OutputGap?
+    /// Сколько строк начала вывода не сохранилось (вывод длиннее буфера терминала); nil — всё на месте.
+    var outputDropped: Int?
     /// Шаги конвейера по сохранённому выводу (`grep foo`, `sort`…); nil — нет.
     var pipeStages: [String]?
     /// Исходный вывод команды, пока к нему применён конвейер (`output` — результат конвейера).

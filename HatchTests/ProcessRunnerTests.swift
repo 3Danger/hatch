@@ -123,6 +123,20 @@ final class ProcessRunnerTests: XCTestCase {
         wait(for: [stopExp], timeout: 8)
     }
 
+    /// «Стоп» сразу после запуска: процесс мог ещё не создать свою группу — всё равно останавливаем.
+    func testStopRightAfterStart() {
+        let (store, _, runner) = makeEnvironment()
+        runner.run(command: "sleep 30")
+        guard let session = store.sessions.first else { return XCTFail("сессии нет") }
+
+        runner.stop(sessionID: session.id)
+
+        let stopped = expectation(description: "stopped")
+        waitUntil({ store.sessions.first?.state == .stopped }, onFulfill: { stopped.fulfill() })
+        wait(for: [stopped], timeout: 8)
+        XCTAssertEqual(store.sessions.first?.state, .stopped)
+    }
+
     func testPTYInteractiveOutputFlows() {
         let (store, _, runner) = makeEnvironment()
         runner.runInPTY("printf 'pty-line\\n'")
@@ -306,6 +320,8 @@ final class ProcessRunnerTests: XCTestCase {
         guard let session = waitStarted(store), let pgid = session.pgid else {
             return XCTFail("сессия не запустилась")
         }
+        // ^C до того, как шелл запустился, может потеряться — как и в обычном терминале
+        RunLoop.main.run(until: Date().addingTimeInterval(0.5))
 
         runner.interrupt(sessionID: session.id)
 
@@ -457,6 +473,41 @@ final class ProcessRunnerTests: XCTestCase {
 
         runner.rerun(sessionID: session.id)
         waitOutput(store, "keep-2")
+    }
+
+    // MARK: - Обрезка длинного вывода
+
+    /// Вывод длиннее буфера: начало теряется, но это видно — сколько строк не сохранилось.
+    func testDroppedLinesAreCounted() {
+        let store = SessionStore(history: HistoryStore(fileURL: tmpURL()))
+        let settings = SettingsStore(defaults: UserDefaults(suiteName: "ProcTests.\(UUID().uuidString)")!)
+        let runner = ProcessRunner(sessionStore: store, settings: settings, scrollback: 100)
+        runner.run(command: "seq 1 250")
+
+        guard let session = waitTerminal(store) else { return XCTFail("команда не завершилась") }
+        let dropped = session.outputDropped ?? 0
+        XCTAssertGreaterThan(dropped, 0, "часть вывода вытеснена")
+        let lines = session.output.split(separator: "\n")
+        XCTAssertEqual(lines.first.map(String.init), String(dropped + 1), "сохранилось всё после вытесненного")
+        XCTAssertEqual(lines.last, "250")
+    }
+
+    /// Быстрый большой вывод сохраняется до конца: снимок — только когда терминал дочитал весь вывод.
+    func testFastBigOutputKeepsEnd() {
+        let (store, _, runner) = makeEnvironment()
+        runner.run(command: "seq 1 40000")
+
+        let session = waitTerminal(store, timeout: 20)
+        let lines = session?.output.split(separator: "\n") ?? []
+        XCTAssertEqual(lines.first, "1")
+        XCTAssertEqual(lines.last, "40000", "конец вывода не потерян")
+        XCTAssertEqual(lines.count, 40000)
+    }
+
+    func testShortOutputHasNoDroppedLines() {
+        let (store, _, runner) = makeEnvironment()
+        runner.run(command: "seq 1 5")
+        XCTAssertNil(waitTerminal(store)?.outputDropped)
     }
 
     // MARK: - Перезапуск в том же блоке
@@ -662,7 +713,8 @@ final class ProcessRunnerTests: XCTestCase {
 }
 
 extension Session {
+    /// Группа процессов или её лидер (сразу после запуска группа может ещё не существовать).
     static func isAlive(pgid: Int32) -> Bool {
-        kill(-pgid, 0) == 0
+        kill(-pgid, 0) == 0 || kill(pgid, 0) == 0
     }
 }

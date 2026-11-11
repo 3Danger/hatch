@@ -8,6 +8,8 @@ struct TerminalSnapshot: Equatable {
     var ansi: String
     /// Пропущенная середина, если снят только край вывода (превью работающей команды).
     var gap: OutputGap?
+    /// Сколько строк начала вывода вытеснено из буфера терминала и потеряно (0 — ничего).
+    var dropped = 0
 
     static let empty = TerminalSnapshot(plain: "", ansi: "")
 
@@ -58,7 +60,7 @@ struct TerminalSnapshot: Equatable {
         let lines = indices.map(content)
         let plain = lines.map { String($0.map(\.character)) }.joined(separator: "\n")
         let ansi = lines.map(Self.encode).joined(separator: "\n")
-        return TerminalSnapshot(plain: plain, ansi: ansi, gap: gap)
+        return TerminalSnapshot(plain: plain, ansi: ansi, gap: gap, dropped: terminal.buffer.totalLinesTrimmed)
     }
 
     // MARK: - Private

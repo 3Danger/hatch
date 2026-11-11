@@ -9,7 +9,8 @@ final class InteractiveTerminal: NSObject, LocalProcessTerminalViewDelegate {
     /// Размер области раскрытого блока: с ним процесс стартует, дальше вью подстраивается сама.
     static let initialFrame = NSRect(x: 0, y: 0, width: 640, height: 410)
     /// Сколько строк хранит эмулятор: из них собирается итоговый вывод в истории.
-    static let scrollback = 10_000
+    /// Что не поместилось, вытесняется из начала — сколько, видно в блоке.
+    static let defaultScrollback = 50_000
     /// Превью работающей команды: столько строк с начала и с конца (середина — числом).
     /// С запасом на самый высокий блок — свежий, растянутый на свободное место.
     static let previewEdgeLines = 20
@@ -26,14 +27,23 @@ final class InteractiveTerminal: NSObject, LocalProcessTerminalViewDelegate {
 
     private var finished = false
     private var previewScheduled = false
+    /// Когда терминал последний раз получил порцию вывода.
+    private var lastDataAt = Date()
+    /// Тишина после конца вывода, после которой экран считается дочитанным.
+    private static let drainQuiet: TimeInterval = 0.1
+    /// Дольше ждать дочитывания не будем (вывод от фоновых потомков и т.п.).
+    private static let drainTimeout: TimeInterval = 15
 
-    override init() {
+    init(scrollback: Int = InteractiveTerminal.defaultScrollback) {
         view = SessionTerminalView(frame: Self.initialFrame)
         view.font = NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
-        view.changeScrollback(Self.scrollback)
+        view.changeScrollback(scrollback)
         super.init()
         view.processDelegate = self
-        view.onData = { [weak self] in self?.schedulePreview() }
+        view.onData = { [weak self] in
+            self?.lastDataAt = Date()
+            self?.schedulePreview()
+        }
     }
 
     /// Запускает `shell -lc script`; false — процесс не стартовал.
@@ -84,10 +94,21 @@ final class InteractiveTerminal: NSObject, LocalProcessTerminalViewDelegate {
         guard !finished else { return }
         finished = true
         let code = status.map(Self.exitStatus) ?? -1
-        // Последние байты вывода доставляются на main чуть позже события выхода.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
-            guard let self else { return }
-            self.onExit?(code, self.snapshot())
+        deliverWhenDrained(code: code, since: Date())
+    }
+
+    /// Процесс завершился раньше, чем терминал разобрал его вывод: большой быстрый вывод
+    /// доходит порциями ещё какое-то время. Снимок — когда вывод дочитан до конца (EOF)
+    /// и новых порций нет; иначе терялся бы конец вывода — итог команды.
+    private func deliverWhenDrained(code: Int32, since start: Date) {
+        let reachedEnd = view.process.childfd == -1
+        let quiet = Date().timeIntervalSince(lastDataAt) >= Self.drainQuiet
+        if (reachedEnd && quiet) || Date().timeIntervalSince(start) > Self.drainTimeout {
+            onExit?(code, snapshot())
+            return
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
+            self?.deliverWhenDrained(code: code, since: start)
         }
     }
 

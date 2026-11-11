@@ -530,6 +530,11 @@ struct SessionBlockView: View {
                 stageSuggestionsRow
             }
 
+            // вывод длиннее буфера: начало потеряно — говорим об этом, а не молчим
+            if let dropped = session.outputDropped, !showsLiveTerminal {
+                droppedNote(dropped)
+            }
+
             if isExpanded {
                 expandedBody
             } else if !session.output.isEmpty {
@@ -742,6 +747,18 @@ struct SessionBlockView: View {
             // по высоте текста: список прокручивается дальше, к остальным блокам
             fullOutput
         }
+    }
+
+    /// В раскрытом блоке работающей команды — живой терминал (со своей прокруткой).
+    private var showsLiveTerminal: Bool {
+        isExpanded && terminal != nil && session.state.isActive
+    }
+
+    private func droppedNote(_ count: Int) -> some View {
+        Label(String(format: L.t("dropped_lines", lang), count), systemImage: "scissors")
+            .font(.system(size: LauncherMetrics.outputFontSize, weight: .medium))
+            .foregroundStyle(.orange)
+            .help(L.t("dropped_lines_hint", lang))
     }
 
     /// Весь вывод — в нативном текстовом поле: любой объём, выделение, поиск ⌘F.

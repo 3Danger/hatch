@@ -20,12 +20,16 @@ final class ProcessRunner {
 
     /// Окружение для команд (в тестах подменяется, например ZDOTDIR).
     private let environment: [String: String]
+    /// Сколько строк вывода хранит терминал сессии (в тестах — меньше).
+    private let scrollback: Int
 
     init(sessionStore: SessionStore, settings: SettingsStore,
-         environment: [String: String] = ProcessInfo.processInfo.environment) {
+         environment: [String: String] = ProcessInfo.processInfo.environment,
+         scrollback: Int = InteractiveTerminal.defaultScrollback) {
         self.sessionStore = sessionStore
         self.settings = settings
         self.environment = environment
+        self.scrollback = scrollback
     }
 
     /// Запускает команду в новой сессии. vim, top, ssh и т.п. — интерактивные: блок сразу
@@ -87,16 +91,16 @@ final class ProcessRunner {
             return
         }
         guard let pgid = sessionStore.sessions.first(where: { $0.id == sessionID })?.pgid else { return }
-        kill(-pgid, SIGINT)
+        Self.signal(pgid, SIGINT)
     }
 
     /// Останавливает сессию, убивая всю группу процессов.
     func stop(sessionID: UUID) {
         guard let pgid = sessionStore.sessions.first(where: { $0.id == sessionID })?.pgid else { return }
-        kill(-pgid, SIGTERM)
+        Self.signal(pgid, SIGTERM)
         DispatchQueue.global().asyncAfter(deadline: .now() + 1.0) {
             if Session.isAlive(pgid: pgid) {
-                kill(-pgid, SIGKILL)
+                Self.signal(pgid, SIGKILL)
             }
         }
     }
@@ -172,6 +176,13 @@ final class ProcessRunner {
         }
     }
 
+    /// Сигнал группе процессов команды и её лидеру. Сразу после запуска процесс мог ещё
+    /// не создать свою группу (`setsid` в `forkpty`) — сигнал одной группе ушёл бы в пустоту.
+    private static func signal(_ pgid: pid_t, _ signal: Int32) {
+        kill(-pgid, signal)
+        kill(pgid, signal)
+    }
+
     // MARK: - Запуск
 
     private func restart(_ session: Session) {
@@ -184,6 +195,7 @@ final class ProcessRunner {
             s.output = ""
             s.outputANSI = nil
             s.outputGap = nil
+            s.outputDropped = nil
             s.rawOutput = nil
             s.rawOutputANSI = nil
             s.exitCode = nil
@@ -206,7 +218,7 @@ final class ProcessRunner {
             ? FileManager.default.temporaryDirectory.appendingPathComponent("hatch-pwd-\(sessionID.uuidString)")
             : nil
 
-        let terminal = InteractiveTerminal()
+        let terminal = InteractiveTerminal(scrollback: scrollback)
         terminal.onOutput = { [weak self] preview in
             guard let self, self.runTokens[sessionID] == token else { return }
             // превью меняется каждые 150 мс — на диск не пишем, итог запишется при завершении
@@ -214,6 +226,7 @@ final class ProcessRunner {
                 s.output = preview.plain
                 s.outputANSI = preview.ansi
                 s.outputGap = preview.gap
+                s.outputDropped = preview.dropped > 0 ? preview.dropped : nil
             }
         }
         terminal.onExit = { [weak self] code, screen in
@@ -230,6 +243,7 @@ final class ProcessRunner {
                 s.output = screen.plain
                 s.outputANSI = screen.ansi
                 s.outputGap = screen.gap
+                s.outputDropped = screen.dropped > 0 ? screen.dropped : nil
                 if !s.pipeline.isEmpty { // повтор команды с конвейером: новый вывод — через те же шаги
                     s.rawOutput = screen.plain
                     s.rawOutputANSI = screen.ansi
@@ -281,10 +295,10 @@ final class ProcessRunner {
         guard timeout > 0 else { return }
         DispatchQueue.global().asyncAfter(deadline: .now() + timeout) {
             guard Session.isAlive(pgid: pgid) else { return }
-            kill(-pgid, SIGTERM)
+            Self.signal(pgid, SIGTERM)
             DispatchQueue.global().asyncAfter(deadline: .now() + 1.0) {
                 if Session.isAlive(pgid: pgid) {
-                    kill(-pgid, SIGKILL)
+                    Self.signal(pgid, SIGKILL)
                 }
             }
         }
@@ -369,7 +383,9 @@ final class ProcessRunner {
 }
 
 private extension Session {
+    /// Группа процессов или её лидер: сразу после запуска (до `setsid` в `forkpty`)
+    /// группы ещё нет, а процесс уже есть.
     static func isAlive(pgid: Int32) -> Bool {
-        kill(-pgid, 0) == 0
+        kill(-pgid, 0) == 0 || kill(pgid, 0) == 0
     }
 }

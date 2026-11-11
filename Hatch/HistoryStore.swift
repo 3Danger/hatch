@@ -34,7 +34,10 @@ final class HistoryStore {
 
     func save(_ sessions: [Session], limit: Int? = nil) {
         let capped = applyCap(to: sessions, limit: limit ?? defaultLimit)
-        guard let data = try? JSONEncoder().encode(capped), data != lastWritten else { return }
+        // ключи по порядку: одинаковая история — одинаковые байты, иначе «не изменилось» не узнать
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        guard let data = try? encoder.encode(capped), data != lastWritten else { return }
         try? data.write(to: fileURL, options: .atomic)
         lastWritten = data
         writeCount += 1
