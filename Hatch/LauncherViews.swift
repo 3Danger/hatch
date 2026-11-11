@@ -13,11 +13,8 @@ enum LauncherMetrics {
     static let blockPadding: CGFloat = 12
     /// Терминал внутри раскрытого блока.
     static let terminalRadius = innerRadius - blockPadding
-    static let panelWidth: CGFloat = 720
     /// Запас окна вокруг панели под её тень.
     static let shadowMargin: CGFloat = 24
-    /// Предел высоты истории: дальше прокрутка. Раскрытый блок занимает её целиком.
-    static let historyMaxHeight: CGFloat = 470
     /// Строк вывода в свёрнутом блоке (включая строку «скрыто N»). Свежий блок берёт больше.
     static let compactOutputLines = 7
     static let outputFontSize: CGFloat = 10
@@ -28,7 +25,7 @@ enum LauncherMetrics {
     static let blockChrome: CGFloat = blockPadding * 2 + 22 + 6
     static let blockSpacing: CGFloat = 8
     /// Живой терминал в раскрытом блоке: блок занимает всю видимую область истории.
-    static let terminalHeight: CGFloat = historyMaxHeight - blockChrome
+    static func terminalHeight(historyHeight: CGFloat) -> CGFloat { historyHeight - blockChrome }
 }
 
 /// Корневое представление лаунчера: ввод, история, экшн-кнопки.
@@ -40,6 +37,10 @@ struct LauncherRootView: View {
 
     @State private var text = ""
     @FocusState private var inputFocused: Bool
+    /// Видимая высота истории — от неё тянется нижний край (предел мог быть больше содержимого).
+    @State private var historyVisibleHeight: CGFloat = 0
+    /// Размер и запас до края экрана в начале перетаскивания края панели.
+    @State private var resizeStart: (size: CGSize, room: CGSize)?
     @State private var pendingDelete: Session?
     /// Перезапуск работающей команды ждёт подтверждения.
     @State private var pendingRerun: Session?
@@ -85,11 +86,16 @@ struct LauncherRootView: View {
             HStack(alignment: .top, spacing: LauncherMetrics.padding) {
                 historyArea
                     .frame(maxWidth: .infinity, alignment: .top)
+                    .onGeometryChange(for: CGFloat.self) { $0.size.height.rounded() } action: {
+                        historyVisibleHeight = $0
+                    }
                 actionsColumn
             }
         }
         .padding(LauncherMetrics.padding)
-        .frame(width: LauncherMetrics.panelWidth)
+        .frame(width: settings.panelWidth)
+        // правый и нижний края и угол между ними тянутся: ширина и предел высоты истории
+        .overlay { resizeHandles }
         .background {
             Color.clear
                 .glassEffect(in: RoundedRectangle(cornerRadius: LauncherMetrics.panelRadius))
@@ -160,6 +166,49 @@ struct LauncherRootView: View {
         }
     }
 
+    // MARK: - Размер панели
+
+    private var resizeHandles: some View {
+        let thickness: CGFloat = 6
+        // угол скруглён: у самого края стекла нет, там клик уходит сквозь окно — зона глубже внутрь
+        let corner: CGFloat = 24
+        return ZStack {
+            handle(.right).frame(width: thickness).padding(.bottom, corner)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .trailing)
+            handle(.bottom).frame(height: thickness).padding(.trailing, corner)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+            handle([.right, .bottom]).frame(width: corner, height: corner)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
+        }
+    }
+
+    private func handle(_ edges: ResizeEdges) -> some View {
+        PanelResizeHandle(edges: edges,
+                          onBegin: beginResize,
+                          onDrag: { delta in
+                              guard let start = resizeStart else { return }
+                              let size = PanelSize.resized(start: start.size, by: delta, room: start.room, edges: edges)
+                              if size.width != settings.panelWidth { settings.panelWidth = size.width }
+                              if edges.contains(.bottom), size.height != settings.historyMaxHeight {
+                                  settings.historyMaxHeight = size.height
+                              }
+                          },
+                          onEnd: { resizeStart = nil })
+    }
+
+    /// Запоминаем размер и сколько места до края экрана: панель не вылезает за него.
+    private func beginResize(_ window: NSWindow?) {
+        // нижний край тянется от видимой высоты: предел мог быть больше, чем занято сейчас
+        let height = min(settings.historyMaxHeight, max(historyVisibleHeight, PanelSize.historyHeightRange.lowerBound))
+        var room = CGSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
+        if let window, let visible = window.screen?.visibleFrame {
+            let margin = LauncherMetrics.shadowMargin
+            room = CGSize(width: visible.maxX - (window.frame.maxX - margin),
+                          height: (window.frame.minY + margin) - visible.minY)
+        }
+        resizeStart = (CGSize(width: settings.panelWidth, height: height), room)
+    }
+
     // MARK: - History area
 
     /// Раскрытый блок на всю область или список мини-блоков.
@@ -170,6 +219,7 @@ struct LauncherRootView: View {
             lang: lang,
             selectedID: navigator.selectedID,
             expandedID: expandedID,
+            maxHeight: settings.historyMaxHeight,
             terminalFor: { runner.terminal(for: $0) },
             onToggle: { session in
                 if expandedID == session.id { collapse() } else { expand(session.id) }
@@ -406,6 +456,8 @@ struct HistoryListView: View {
     let lang: String
     var selectedID: UUID?
     var expandedID: UUID?
+    /// Предел высоты истории: дальше прокрутка. Раскрытый терминал занимает его целиком.
+    var maxHeight: CGFloat = PanelSize.defaultHistoryHeight
     var terminalFor: (UUID) -> InteractiveTerminal? = { _ in nil }
     var onToggle: (Session) -> Void = { _ in }
     var onKill: (Session) -> Void = { _ in }
@@ -437,6 +489,7 @@ struct HistoryListView: View {
                                          outputLines: session.id == sessionStore.filteredSessions.first?.id
                                             ? freshBlockLines : LauncherMetrics.compactOutputLines,
                                          terminal: session.id == expandedID ? terminalFor(session.id) : nil,
+                                         terminalHeight: LauncherMetrics.terminalHeight(historyHeight: maxHeight),
                                          onToggle: { onToggle(session) },
                                          onKill: { onKill(session) },
                                          onRerun: { onRerun(session) },
@@ -447,16 +500,16 @@ struct HistoryListView: View {
                                          onPipeChange: { onPipeChange(session, $0) },
                                          stageHistory: stageHistory)
                         .id(session.id)
-                        .onGeometryChange(for: CGFloat.self) { Self.usableHeight($0.size.height) } action: {
+                        .onGeometryChange(for: CGFloat.self) { Self.usableHeight($0.size.height, max: maxHeight) } action: {
                             blockHeights[session.id] = $0
                         }
                     }
                 }
-                .onGeometryChange(for: CGFloat.self) { Self.usableHeight($0.size.height) } action: {
+                .onGeometryChange(for: CGFloat.self) { Self.usableHeight($0.size.height, max: maxHeight) } action: {
                     contentHeight = $0
                 }
               }
-              .frame(height: min(contentHeight, LauncherMetrics.historyMaxHeight))
+              .frame(height: min(contentHeight, maxHeight))
               .onChange(of: selectedID) { _, id in
                   guard let id else { return }
                   withAnimation(.easeOut(duration: 0.15)) { proxy.scrollTo(id, anchor: .center) }
@@ -476,8 +529,8 @@ extension HistoryListView {
     /// Ленивый список уточняет оценку высоты большого текста с каждым проходом; если
     /// запоминать каждое уточнение, оно запускает новый проход — бесконечный цикл
     /// перерисовок (зависание на большом выводе). Поэтому — с потолком и округлением.
-    static func usableHeight(_ height: CGFloat) -> CGFloat {
-        min(height, LauncherMetrics.historyMaxHeight).rounded()
+    static func usableHeight(_ height: CGFloat, max limit: CGFloat) -> CGFloat {
+        min(height, limit).rounded()
     }
 
     /// Уже применявшиеся шаги конвейера, свежие первыми, без повторов — для подсказок.
@@ -495,7 +548,7 @@ extension HistoryListView {
         let sessions = sessionStore.filteredSessions
         let others = sessions.dropFirst().reduce(CGFloat(0)) { $0 + (blockHeights[$1.id] ?? 0) }
             + CGFloat(max(sessions.count - 1, 0)) * LauncherMetrics.blockSpacing
-        let free = LauncherMetrics.historyMaxHeight - others - LauncherMetrics.blockChrome
+        let free = maxHeight - others - LauncherMetrics.blockChrome
         return max(LauncherMetrics.compactOutputLines, Int(free / LauncherMetrics.outputLineHeight))
     }
 }
@@ -511,6 +564,7 @@ struct SessionBlockView: View {
     var outputLines = LauncherMetrics.compactOutputLines
     /// Живой терминал интерактивной сессии — показывается в раскрытом блоке.
     var terminal: InteractiveTerminal?
+    var terminalHeight: CGFloat = LauncherMetrics.terminalHeight(historyHeight: PanelSize.defaultHistoryHeight)
     var onToggle: () -> Void = {}
     var onKill: () -> Void = {}
     var onRerun: () -> Void = {}
@@ -775,7 +829,7 @@ struct SessionBlockView: View {
             TerminalHostView(terminal: terminal)
                 .id(ObjectIdentifier(terminal)) // после перезапуска — новый терминал
                 .frame(maxWidth: .infinity)
-                .frame(height: LauncherMetrics.terminalHeight)
+                .frame(height: terminalHeight)
                 .clipShape(RoundedRectangle(cornerRadius: LauncherMetrics.terminalRadius))
         } else {
             // по высоте текста: список прокручивается дальше, к остальным блокам
