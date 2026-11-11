@@ -99,9 +99,8 @@ struct LauncherRootView: View {
         .background {
             Color.clear
                 .glassEffect(in: RoundedRectangle(cornerRadius: LauncherMetrics.panelRadius))
-                // за пустые места панели (поля, промежутки) окно можно перетаскивать
-                .contentShape(RoundedRectangle(cornerRadius: LauncherMetrics.panelRadius))
-                .gesture(WindowDragGesture())
+                // за пустые места панели (поля, промежутки) окно перетаскивается
+                .overlay { WindowDragArea() }
         }
         .background { PanelShadow() }
         // прозрачный запас окна под тень: иначе её обрезает край окна

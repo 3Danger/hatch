@@ -42,7 +42,9 @@ final class FloatingWindowController {
         panel.isFloatingPanel = true
         panel.becomesKeyOnlyIfNeeded = true
         panel.hidesOnDeactivate = false
-        panel.isMovableByWindowBackground = true
+        // Окно двигает WindowDragArea под стеклом (сам, по событиям мыши). Системное «за фон»
+        // с SwiftUI-содержимым не работает, а жест SwiftUI и performDrag срабатывали через раз.
+        panel.isMovableByWindowBackground = false
         panel.isOpaque = false
         panel.backgroundColor = .clear
         // Системная тень идёт по прямоугольнику окна и рисует светлую обводку по краям —
