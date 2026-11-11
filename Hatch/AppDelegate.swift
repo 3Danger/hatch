@@ -16,8 +16,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, HotKeyDelegate {
             exit(SelfTest().run())
         }
 
+        // Под тестами Hatch — только хост тестов: без панели, хоткея, значка и настоящей истории.
+        // Иначе тест, нажимая клавиши, попадал бы и в эту панель — с историей пользователя.
+        if Self.isRunningTests { return }
+
         // новая сборка закрывает старую: до чтения истории и до захвата горячей клавиши
-        if !Self.isRunningTests { SingleInstance.terminateOthers() }
+        SingleInstance.terminateOthers()
 
         // до первого обращения к настройкам и истории (они создаются лениво)
         LegacyMigration.run()
@@ -44,6 +48,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, HotKeyDelegate {
 
     /// История пишется отложенно — при выходе записываем то, что не успело.
     func applicationWillTerminate(_ notification: Notification) {
+        // под тестами историю не открывали — и записывать нечего (ленивое хранилище открыло бы настоящую)
+        guard !Self.isRunningTests else { return }
         sessionStore.flush()
     }
 

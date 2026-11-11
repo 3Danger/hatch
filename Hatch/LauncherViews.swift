@@ -349,7 +349,9 @@ struct LauncherRootView: View {
                     runner.updatePipeStage(sessionID: session.id, index: index, command: command)
                 case .remove(let index): runner.removePipeStage(sessionID: session.id, index: index)
                 }
-            }
+            },
+            // шаг применили Enter-ом или отменили Esc у свёрнутого блока — печатать дальше в поле ввода
+            onStageEditEnded: { if expandedID == nil { inputFocused = true } }
         )
     }
 
@@ -709,6 +711,7 @@ struct HistoryListView: View {
     var onDelete: (Session) -> Void = { _ in }
     var onOpenDirectory: (String) -> Void = { _ in }
     var onPipeChange: (Session, PipeChange) -> Void = { _, _ in }
+    var onStageEditEnded: () -> Void = {}
 
     var body: some View {
         if sessionStore.filteredSessions.isEmpty {
@@ -744,6 +747,7 @@ struct HistoryListView: View {
                                          onDelete: { onDelete(session) },
                                          onOpenDirectory: onOpenDirectory,
                                          onPipeChange: { onPipeChange(session, $0) },
+                                         onStageEditEnded: onStageEditEnded,
                                          stageHistory: stageHistory)
                         .id(session.id)
                         .zIndex(session.id == expandedID ? 1 : 0)
@@ -844,6 +848,8 @@ struct SessionBlockView: View {
     /// Клик по папке в заголовке: перейти в неё, как `cd`.
     var onOpenDirectory: (String) -> Void = { _ in }
     var onPipeChange: (PipeChange) -> Void = { _ in }
+    /// Правку шага закончили клавишей (Enter, Esc) — клавиатура возвращается в поле ввода.
+    var onStageEditEnded: () -> Void = {}
     /// Применявшиеся шаги конвейера (по всем блокам) — первые в подсказках.
     var stageHistory: [String] = []
     /// Какой шаг конвейера редактируется: индекс, `pipeline.count` — новый шаг, nil — никакой.
@@ -895,6 +901,14 @@ struct SessionBlockView: View {
         .contentShape(blockShape)
         .onHover { hovered = $0 }
         .onTapGesture { if !isExpanded { onToggle() } }
+        // поле шага не остаётся висеть: ушёл фокус или блок свернули — набранное применяется,
+        // пустое просто закрывается (иначе в свёрнутом блоке оставались поле с рамкой и подсказки)
+        .onChange(of: stageFieldFocused) { _, focused in
+            if !focused { commitStage() }
+        }
+        .onChange(of: isExpanded) { _, expanded in
+            if !expanded { commitStage() }
+        }
         // пока раскрыт другой блок, этот не нажимается: клик по нему лишь сворачивает раскрытый
         .allowsHitTesting(!dimmed)
     }
@@ -1075,8 +1089,8 @@ struct SessionBlockView: View {
                 .font(.system(size: 12, design: .monospaced))
                 .frame(width: 160)
                 .focused($stageFieldFocused)
-                .onSubmit(commitStage)
-                .onExitCommand { editingStage = nil }
+                .onSubmit { commitStage(); onStageEditEnded() }
+                .onExitCommand { editingStage = nil; stageCandidates = []; onStageEditEnded() }
                 .onKeyPress(.tab) {
                     guard !stageCandidates.isEmpty else { return .ignored }
                     applyStageCandidate(stageCandidates[stageSelected % stageCandidates.count])
@@ -1145,6 +1159,7 @@ struct SessionBlockView: View {
     private func commitStage() {
         guard let index = editingStage else { return }
         editingStage = nil
+        stageCandidates = []
         let command = stageDraft.trimmingCharacters(in: .whitespaces)
         if index == session.pipeline.count {
             if !command.isEmpty { onPipeChange(.add(command)) }
