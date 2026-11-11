@@ -33,6 +33,11 @@ struct SettingsView: View {
 
             group {
                 row(L.t("hotkey", lang), first: true) { HotKeyCapsField(spec: binding(\.hotkeyString), lang: lang) }
+                row(L.t("status_icon", lang), hint: L.t("status_icon_hint", lang)) {
+                    Toggle("", isOn: binding(\.showStatusIcon))
+                        .toggleStyle(GlassSwitchStyle())
+                        .labelsHidden()
+                }
                 row(L.t("theme", lang)) {
                     GlassSegmented(options: ThemePreference.allCases.map { ($0.rawValue, L.t("theme_\($0.rawValue)", lang)) },
                                    selection: binding(\.themeRaw))
@@ -64,9 +69,19 @@ struct SettingsView: View {
                 }
             }
 
-            HStack {
+            HStack(spacing: 8) {
                 Text("Hatch \(version)").font(.caption).foregroundStyle(.tertiary)
                 Spacer()
+                // выход без значка в строке меню (и ⌘Q в панели)
+                Button { NSApp.terminate(nil) } label: {
+                    Text(L.t("quit", lang))
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(Tactile.redText)
+                        .padding(.horizontal, 14)
+                        .frame(height: 34)
+                }
+                .buttonStyle(KeyCapButtonStyle(cornerRadius: 10))
+                .help("⌘Q")
                 Button(action: onClose) {
                     Text(L.t("done", lang))
                         .font(.system(size: 13, weight: .semibold))
@@ -101,13 +116,23 @@ struct SettingsView: View {
             .padding(.vertical, 5)
     }
 
-    private func row<Control: View>(_ title: String, first: Bool = false, @ViewBuilder control: () -> Control) -> some View {
+    private func row<Control: View>(_ title: String, hint: String? = nil, first: Bool = false,
+                                    @ViewBuilder control: () -> Control) -> some View {
         HStack(spacing: 12) {
-            Text(title).font(.system(size: 14))
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title).font(.system(size: 14))
+                if let hint {
+                    Text(hint)
+                        .font(.system(size: 11.5))
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
             Spacer(minLength: 8)
             control()
         }
         .padding(.horizontal, 14)
+        .padding(.vertical, hint == nil ? 0 : 9)
         .frame(minHeight: 46)
         .overlay(alignment: .top) { if !first { Rectangle().fill(Tactile.groupEdge).frame(height: 1) } }
     }

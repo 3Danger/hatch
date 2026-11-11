@@ -33,6 +33,11 @@ final class SettingsStore {
     /// Ширина панели и предел высоты истории: тянутся за край панели, переживают перезапуск.
     var panelWidth: CGFloat { didSet { defaults.set(Double(panelWidth), forKey: Keys.panelWidth) } }
     var historyMaxHeight: CGFloat { didSet { defaults.set(Double(historyMaxHeight), forKey: Keys.historyMaxHeight) } }
+    /// Значок в строке меню. Без него Hatch открывается хоткеем или повторным запуском приложения.
+    var showStatusIcon: Bool { didSet { defaults.set(showStatusIcon, forKey: Keys.showStatusIcon) } }
+    /// Избранные папки и команды (кнопка ★ в поле ввода), в порядке добавления.
+    private(set) var favoriteDirectories: [String] { didSet { defaults.set(favoriteDirectories, forKey: Keys.favoriteDirectories) } }
+    private(set) var favoriteCommands: [String] { didSet { defaults.set(favoriteCommands, forKey: Keys.favoriteCommands) } }
     /// Недавние директории, свежая первой (меню на пути над полем ввода).
     private(set) var recentDirectories: [String] { didSet { defaults.set(recentDirectories, forKey: Keys.recentDirectories) } }
     static let recentDirectoriesLimit = 10
@@ -52,6 +57,9 @@ final class SettingsStore {
         static let recentDirectories = "settings.recentDirectories"
         static let panelWidth = "settings.panelWidth"
         static let historyMaxHeight = "settings.historyMaxHeight"
+        static let showStatusIcon = "settings.showStatusIcon"
+        static let favoriteDirectories = "settings.favoriteDirectories"
+        static let favoriteCommands = "settings.favoriteCommands"
     }
 
     init(defaults: UserDefaults = .standard) {
@@ -72,6 +80,9 @@ final class SettingsStore {
         let savedDirectory = defaults.string(forKey: Keys.currentDirectory)
         self.currentDirectory = savedDirectory.flatMap { Self.isDirectory($0) ? $0 : nil } ?? Self.homeDirectory
         self.recentDirectories = defaults.stringArray(forKey: Keys.recentDirectories) ?? []
+        self.showStatusIcon = defaults.object(forKey: Keys.showStatusIcon) as? Bool ?? true
+        self.favoriteDirectories = defaults.stringArray(forKey: Keys.favoriteDirectories) ?? []
+        self.favoriteCommands = defaults.stringArray(forKey: Keys.favoriteCommands) ?? []
         let width = defaults.object(forKey: Keys.panelWidth) as? Double
         self.panelWidth = PanelSize.clampWidth(width.map { CGFloat($0) } ?? PanelSize.defaultWidth)
         let height = defaults.object(forKey: Keys.historyMaxHeight) as? Double
@@ -84,6 +95,36 @@ final class SettingsStore {
         guard Self.isDirectory(path) else { return false }
         if path != currentDirectory { currentDirectory = path }
         return true
+    }
+
+    // MARK: - Избранное
+
+    /// Добавить папку в избранное или убрать оттуда. true — теперь в избранном.
+    @discardableResult
+    func toggleFavoriteDirectory(_ path: String) -> Bool {
+        if let index = favoriteDirectories.firstIndex(of: path) {
+            favoriteDirectories.remove(at: index)
+            return false
+        }
+        favoriteDirectories.append(path)
+        return true
+    }
+
+    /// Добавить команду в избранное или убрать оттуда. true — теперь в избранном.
+    @discardableResult
+    func toggleFavoriteCommand(_ command: String) -> Bool {
+        let command = command.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !command.isEmpty else { return false }
+        if let index = favoriteCommands.firstIndex(of: command) {
+            favoriteCommands.remove(at: index)
+            return false
+        }
+        favoriteCommands.append(command)
+        return true
+    }
+
+    func isFavoriteCommand(_ command: String) -> Bool {
+        favoriteCommands.contains(command.trimmingCharacters(in: .whitespacesAndNewlines))
     }
 
     private func rememberRecent(_ path: String) {
@@ -110,6 +151,7 @@ final class SettingsStore {
         shellPath = "/bin/zsh"
         timeoutSeconds = 0
         latinLayoutInInput = true
+        showStatusIcon = true
         panelWidth = PanelSize.defaultWidth
         historyMaxHeight = PanelSize.defaultHistoryHeight
     }

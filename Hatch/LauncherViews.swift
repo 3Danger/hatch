@@ -47,6 +47,10 @@ struct LauncherRootView: View {
     /// Режим поиска (⌘F): то же поле ввода ищет по истории; набранная команда ждёт в `text`.
     @State private var searchMode = false
     @State private var searchQuery = ""
+    /// Список «Избранное» (кнопка ★, ⌘E).
+    @State private var favoritesOpen = false
+    /// Сообщение внизу панели («Удалено…», «В избранном…»), с «Отменить», если можно.
+    @State private var toast: PanelToast?
     @FocusState private var inputFocused: Bool
     /// Видимая высота истории — от неё тянется нижний край (предел мог быть больше содержимого).
     @State private var historyVisibleHeight: CGFloat = 0
@@ -108,8 +112,10 @@ struct LauncherRootView: View {
             // где мы сейчас: светлые «крошки» над полем, обновляются при cd
             DirectoryBreadcrumbsView(path: settings.currentDirectory,
                                      recent: settings.recentDirectories,
+                                     favorites: settings.favoriteDirectories,
                                      lang: lang,
-                                     onNavigate: { settings.currentDirectory = $0 })
+                                     onNavigate: { settings.currentDirectory = $0 },
+                                     onToggleFavorite: toggleFavoriteDirectory)
                 .padding(.horizontal, 14) // по левому краю текста в поле ввода
                 .padding(.bottom, -4)     // ближе к полю, чем к краю панели
 
@@ -141,6 +147,15 @@ struct LauncherRootView: View {
                     historyVisibleHeight = $0
                 }
         }
+        .overlay(alignment: .bottom) {
+            if let toast {
+                PanelToastView(toast: toast, lang: lang, onUndo: { undoToast(toast) })
+                    .id(toast.id)
+                    .padding(.bottom, 10)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+        }
+        .animation(.spring(response: 0.3, dampingFraction: 0.85), value: toast)
     }
 
     /// Жизненный цикл, горячие клавиши и диалоги панели — отдельно от раскладки.
@@ -211,6 +226,29 @@ struct LauncherRootView: View {
     /// Настройки и очистка истории — справа в поле ввода, а не отдельной колонкой.
     private var inputButtons: some View {
         HStack(spacing: 6) {
+            GlassIconButton(icon: favoritesOpen ? .starOn : .star, color: favoritesOpen ? Tactile.star : nil,
+                            size: LauncherMetrics.inputButton, help: L.t("favorites", lang)) { favoritesOpen.toggle() }
+                // своё всплывающее окно, сплошное: системное в macOS 26 стеклянное
+                .hatchPopup(isPresented: $favoritesOpen) { _ in
+                    PopupCard {
+                    FavoritesView(directories: settings.favoriteDirectories,
+                                  commands: settings.favoriteCommands,
+                                  currentDirectory: settings.currentDirectory,
+                                  lang: lang,
+                                  onGo: { path in
+                                      favoritesOpen = false
+                                      if !settings.navigate(to: path) { NSSound.beep() }
+                                      inputFocused = true
+                                  },
+                                  onRun: { command in
+                                      favoritesOpen = false
+                                      exitSearch()
+                                      run(command)
+                                  },
+                                  onRemoveDirectory: { settings.toggleFavoriteDirectory($0) },
+                                  onRemoveCommand: { settings.toggleFavoriteCommand($0) })
+                    }
+                }
             GlassIconButton(icon: .gear, size: LauncherMetrics.inputButton, help: L.t("settings", lang)) { openSettings() }
             GlassIconButton(icon: .trash, size: LauncherMetrics.inputButton, help: L.t("clear", lang)) {
                 if sessionStore.clearScope != .nothing { confirmClear = true }
@@ -293,6 +331,8 @@ struct LauncherRootView: View {
             onRerun: rerun,
             onCopy: copyOutput,
             onPin: { sessionStore.togglePin(id: $0.id) },
+            onFavorite: toggleFavoriteCommand,
+            favoriteCommands: Set(settings.favoriteCommands),
             onDelete: requestDelete,
             onOpenDirectory: { directory in
                 // как cd: дальше команды идут в этой папке; удалённая папка — звук, путь не меняем
@@ -326,6 +366,50 @@ struct LauncherRootView: View {
         }
         // в поиске стрелки переходят по найденным блокам, а запрос остаётся
         return searchMode ? step.map { _ in searchQuery } : step
+    }
+
+    // MARK: - Очистка, избранное, сообщения
+
+    /// `clear` и ⌃L: завершённые блоки убираются сразу, без вопроса; работающие и закреплённые
+    /// остаются. 5 секунд можно вернуть всё «Отменить».
+    private func quickClear() {
+        let removed = sessionStore.sessions.filter { $0.state.isTerminal && !$0.isPinned }
+        guard !removed.isEmpty else {
+            showToast(L.t("clear_nothing", lang))
+            return
+        }
+        if let expandedID, removed.contains(where: { $0.id == expandedID }) { collapse() }
+        navigator.reset()
+        withAnimation(LayersDepth.spring) { _ = sessionStore.clearFinished() }
+        showToast(String(format: L.t("cleared", lang), removed.count)) {
+            withAnimation(LayersDepth.spring) { sessionStore.restore(removed) }
+        }
+    }
+
+    /// ⌘D и меню пути: папка в избранное или обратно.
+    private func toggleFavoriteDirectory(_ path: String) {
+        let added = settings.toggleFavoriteDirectory(path)
+        showToast(added ? String(format: L.t("fav_dir_added", lang), PathBreadcrumbs.folderName(for: path))
+                        : L.t("fav_dir_removed", lang))
+    }
+
+    /// ★ в кнопках блока: команда в избранное или обратно.
+    private func toggleFavoriteCommand(_ session: Session) {
+        let added = settings.toggleFavoriteCommand(session.command)
+        showToast(added ? String(format: L.t("fav_cmd_added", lang), session.command) : L.t("fav_cmd_removed", lang))
+    }
+
+    private func showToast(_ text: String, undo: (() -> Void)? = nil) {
+        let next = PanelToast(text: text, undo: undo)
+        toast = next
+        DispatchQueue.main.asyncAfter(deadline: .now() + PanelToast.duration) {
+            if toast == next { toast = nil }
+        }
+    }
+
+    private func undoToast(_ shown: PanelToast) {
+        shown.undo?()
+        if toast == shown { toast = nil }
     }
 
     // MARK: - Поиск
@@ -368,6 +452,11 @@ struct LauncherRootView: View {
     }
 
     private func run(_ command: String, directory: String? = nil) {
+        // `clear` в Hatch — убрать завершённые блоки, а не очистить экран шелла
+        if command.trimmingCharacters(in: .whitespacesAndNewlines) == "clear" {
+            quickClear()
+            return
+        }
         runner.run(command: command, directory: directory)
         // интерактивная команда сразу открывается во встроенном терминале
         if let session = sessionStore.sessions.first, session.state == .interactive {
@@ -433,11 +522,29 @@ struct LauncherRootView: View {
             case (53, []) where searchMode && !showSettings:
                 exitSearch()
                 return nil
-            case (3, .command) where !showSettings:
-                // в раскрытом выводе и живом терминале ⌘F — их собственный поиск
-                if let responder = event.window?.firstResponder as? NSTextView, !responder.isFieldEditor {
+            case (14, .command) where !showSettings:
+                // ⌘E в раскрытом выводе — «искать выделенное», его не трогаем
+                if Self.textViewHasFocus(event) { return event }
+                favoritesOpen.toggle()
+                return nil
+            case (2, .command) where !showSettings:
+                toggleFavoriteDirectory(settings.currentDirectory)
+                return nil
+            case (37, .control) where !showSettings:
+                // в живом терминале ⌃L — очистка его экрана
+                if let session = expandedSession, let terminal = runner.terminal(for: session.id),
+                   event.window?.firstResponder === terminal.view {
                     return event
                 }
+                quickClear()
+                return nil
+            case (12, .command):
+                // без значка в строке меню ⌘Q в панели — способ выйти
+                NSApp.terminate(nil)
+                return nil
+            case (3, .command) where !showSettings:
+                // в раскрытом выводе и живом терминале ⌘F — их собственный поиск
+                if Self.textViewHasFocus(event) { return event }
                 if let session = expandedSession, let terminal = runner.terminal(for: session.id),
                    event.window?.firstResponder === terminal.view {
                     return event
@@ -462,6 +569,12 @@ struct LauncherRootView: View {
         if frame.hitTest(frame.convert(event.locationInWindow, from: nil)) is PanelResizeHandle.HandleView { return false }
         return PanelFrames.collapses(at: content.convert(event.locationInWindow, from: nil),
                                      expanded: frames.expanded, scrollbar: frames.scrollbar)
+    }
+
+    /// Фокус в тексте вывода раскрытого блока (не в поле ввода): там свои ⌘F и ⌘E.
+    private static func textViewHasFocus(_ event: NSEvent) -> Bool {
+        guard let responder = event.window?.firstResponder as? NSTextView else { return false }
+        return !responder.isFieldEditor
     }
 
     /// ↓ и ↑ (keyCode 125, 126).
@@ -579,6 +692,9 @@ struct HistoryListView: View {
     var onRerun: (Session) -> Void = { _ in }
     var onCopy: (Session) -> Void = { _ in }
     var onPin: (Session) -> Void = { _ in }
+    /// ★ в кнопках блока: команда в избранное; какие уже там — звезда закрашена.
+    var onFavorite: (Session) -> Void = { _ in }
+    var favoriteCommands: Set<String> = []
     var onDelete: (Session) -> Void = { _ in }
     var onOpenDirectory: (String) -> Void = { _ in }
     var onPipeChange: (Session, PipeChange) -> Void = { _, _ in }
@@ -612,6 +728,8 @@ struct HistoryListView: View {
                                          onRerun: { onRerun(session) },
                                          onCopy: { onCopy(session) },
                                          onPin: { onPin(session) },
+                                         isFavorite: favoriteCommands.contains(session.command.trimmingCharacters(in: .whitespacesAndNewlines)),
+                                         onFavorite: { onFavorite(session) },
                                          onDelete: { onDelete(session) },
                                          onOpenDirectory: onOpenDirectory,
                                          onPipeChange: { onPipeChange(session, $0) },
@@ -708,6 +826,8 @@ struct SessionBlockView: View {
     var onRerun: () -> Void = {}
     var onCopy: () -> Void = {}
     var onPin: () -> Void = {}
+    var isFavorite = false
+    var onFavorite: () -> Void = {}
     var onDelete: () -> Void = {}
     /// Клик по папке в заголовке: перейти в неё, как `cd`.
     var onOpenDirectory: (String) -> Void = { _ in }
@@ -849,6 +969,8 @@ struct SessionBlockView: View {
         var list = [
             BlockAction(icon: .rerun, help: L.t("rerun", lang), run: onRerun),
             BlockAction(icon: .copy, help: L.t("copy", lang), run: onCopy),
+            BlockAction(icon: isFavorite ? .starOn : .star, color: isFavorite ? Tactile.star : nil,
+                        help: L.t(isFavorite ? "fav_remove" : "fav_cmd_toggle", lang), run: onFavorite),
             BlockAction(icon: session.isPinned ? .pinOn : .pin, color: session.isPinned ? LayersPalette.accent : nil,
                         help: L.t("pin", lang), run: onPin),
         ]

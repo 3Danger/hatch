@@ -84,6 +84,8 @@ final class FloatingWindowController {
 
     func hide() {
         removeOutsideClickMonitor()
+        // всплывающие окна (меню папки, избранное) закрываются вместе с панелью
+        NotificationCenter.default.post(name: .hatchDidHide, object: nil)
         panel.orderOut(nil)
         // раскладка общая для всех приложений — возвращаем ту, что была до панели
         KeyboardLayoutSwitcher.shared.restore()

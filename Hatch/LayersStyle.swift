@@ -105,6 +105,16 @@ enum Tactile {
     static let accent = color(dark: 0x0a84ff, light: 0x007aff)
     /// Режим поиска в поле ввода: рамка и метка другого цвета, чтобы было видно, в каком ты режиме.
     static let search = color(dark: 0xff9f0a, light: 0xc93400)
+    /// Избранное: закрашенная звезда.
+    static let star = color(dark: 0xffd60a, light: 0xc79500)
+    /// Контекстное меню (своё, сплошное — системное в macOS 26 стеклянное).
+    static let menu = color(dark: 0x2c2c2e, light: 0xf6f6f8)
+    static let menuEdge = color(dark: 0x4a4a4e, light: 0xc8c8ce)
+    /// Синий «папочный» градиент значка папки, как в строке пути Finder.
+    static let folderTop = color(dark: 0x6fb3ff, light: 0x6fb3ff)
+    static let folderBottom = color(dark: 0x3d8ef0, light: 0x3d8ef0)
+    /// Всплывающее сообщение внизу панели.
+    static let toast = color(dark: 0x3a3a3d, light: 0xffffff)
     static let green = color(dark: 0x30d158, light: 0x28a745)
     static let red = color(dark: 0xff453a, light: 0xff3b30)
     static let redText = color(dark: 0xff6961, light: 0xd70015)
@@ -395,5 +405,37 @@ struct EdgeFadeMask: View {
             LinearGradient(colors: [.black, bottom ? .clear : .black], startPoint: .top, endPoint: .bottom)
                 .frame(height: fade)
         }
+    }
+}
+
+/// Значок папки, как в макете: синий прямоугольник с градиентом и светлой кромкой сверху.
+struct FolderGlyph: View {
+    var width: CGFloat = 18
+    var height: CGFloat = 14
+
+    var body: some View {
+        let radius = (height * 0.2).rounded()
+        RoundedRectangle(cornerRadius: radius, style: .circular)
+            .fill(LinearGradient(colors: [Tactile.folderTop, Tactile.folderBottom], startPoint: .top, endPoint: .bottom))
+            // светлая кромка сверху, как inset-тень в макете
+            .overlay(alignment: .top) {
+                Rectangle().fill(.white.opacity(0.35)).frame(height: 2)
+            }
+            .clipShape(RoundedRectangle(cornerRadius: radius, style: .circular))
+            .frame(width: width, height: height)
+    }
+}
+
+/// Клавиша-подсказка в подвале всплывающего окна (↑, ↩, esc): маленькая лунка с символом.
+struct KeyHint: View {
+    let key: String
+
+    var body: some View {
+        Text(key)
+            .font(.system(size: 10, weight: .semibold))
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 5)
+            .frame(minWidth: 18, minHeight: 16)
+            .tactileWell(RoundedRectangle(cornerRadius: 4, style: .circular))
     }
 }

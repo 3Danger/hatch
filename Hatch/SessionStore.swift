@@ -105,6 +105,27 @@ final class SessionStore {
         }
     }
 
+    /// `clear` и ⌃L: убрать завершённые незакреплённые, работающие и закреплённые остаются.
+    /// Возвращает удалённые — их можно вернуть (`restore`).
+    @discardableResult
+    func clearFinished() -> [Session] {
+        let removed = sessions.filter { $0.state.isTerminal && !$0.isPinned }
+        guard !removed.isEmpty else { return [] }
+        let ids = Set(removed.map(\.id))
+        sessions.removeAll { ids.contains($0.id) }
+        persist()
+        return removed
+    }
+
+    /// «Отменить» после очистки: удалённые возвращаются на свои места (по времени запуска).
+    func restore(_ removed: [Session]) {
+        let present = Set(sessions.map(\.id))
+        let back = removed.filter { !present.contains($0.id) }
+        guard !back.isEmpty else { return }
+        sessions = (sessions + back).sorted { $0.createdAt > $1.createdAt }
+        persist()
+    }
+
     func clearCompleted() {
         sessions.removeAll { !$0.state.isActive }
         persist()

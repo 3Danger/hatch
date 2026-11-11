@@ -92,6 +92,28 @@ final class SessionStoreTests: XCTestCase {
         XCTAssertEqual(store.filteredSessions.map(\.command), ["git status"])
     }
 
+    /// clear и ⌃L: уходят завершённые незакреплённые; «Отменить» возвращает их на места.
+    func testClearFinishedKeepsRunningAndPinnedAndRestores() {
+        let store = makeStore()
+        store.add(Session(command: "old", state: .completed, createdAt: Date(timeIntervalSinceNow: -30)))
+        var pinned = Session(command: "pinned", state: .completed, createdAt: Date(timeIntervalSinceNow: -20))
+        pinned.isPinned = true
+        store.add(pinned)
+        store.add(Session(command: "failed", state: .stopped, createdAt: Date(timeIntervalSinceNow: -10)))
+        store.add(Session(command: "worker", state: .running, createdAt: Date()))
+
+        let removed = store.clearFinished()
+        XCTAssertEqual(Set(removed.map(\.command)), ["old", "failed"])
+        XCTAssertEqual(store.sessions.map(\.command), ["worker", "pinned"])
+
+        store.restore(removed)
+        XCTAssertEqual(store.sessions.map(\.command), ["worker", "failed", "pinned", "old"])
+        store.restore(removed) // повторно — без дублей
+        XCTAssertEqual(store.sessions.count, 4)
+        XCTAssertEqual(store.clearFinished().count, 2)
+        XCTAssertEqual(store.clearFinished().count, 0)
+    }
+
     /// Поиск (⌘F) находит и по выводу, без учёта регистра.
     func testSearchMatchesOutput() {
         let store = makeStore()

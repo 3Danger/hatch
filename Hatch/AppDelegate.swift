@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import Observation
 
 final class AppDelegate: NSObject, NSApplicationDelegate, HotKeyDelegate {
     private lazy var settings = SettingsStore()
@@ -11,12 +12,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, HotKeyDelegate {
     private var panelController: FloatingWindowController?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        // до первого обращения к настройкам и истории (они создаются лениво)
-        LegacyMigration.run()
-
         if CommandLine.arguments.contains("--selftest") {
             exit(SelfTest().run())
         }
+
+        // новая сборка закрывает старую: до чтения истории и до захвата горячей клавиши
+        if !Self.isRunningTests { SingleInstance.terminateOthers() }
+
+        // до первого обращения к настройкам и истории (они создаются лениво)
+        LegacyMigration.run()
 
         // список команд для автодополнения — заранее, чтобы первый TAB был мгновенным
         CommandIndex.shared(for: settings.shellPath).prewarm()
@@ -26,6 +30,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, HotKeyDelegate {
         controller.rebind(settings.hotkeyString)
 
         setupStatusItem()
+        observeStatusIcon()
 
         let root = LauncherRootView()
             .environment(sessionStore)
@@ -42,6 +47,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, HotKeyDelegate {
         sessionStore.flush()
     }
 
+    /// Повторный запуск Hatch.app (Spotlight, Finder, Dock) открывает панель —
+    /// выход, если значок скрыт, а горячая клавиша не срабатывает.
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        panelController?.show()
+        return false
+    }
+
+    private static var isRunningTests: Bool {
+        ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
+    }
+
     func hotKeyPressed() {
         panelController?.toggle()
     }
@@ -50,6 +66,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, HotKeyDelegate {
 
     private func setupStatusItem() {
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+        // macOS запоминает место значка, если его перетащили с ⌘
+        item.autosaveName = "HatchStatusItem"
+        item.isVisible = settings.showStatusIcon
         if let button = item.button {
             button.image = NSImage(systemSymbolName: "terminal", accessibilityDescription: "Hatch")
             button.action = #selector(statusItemClicked)
@@ -61,6 +80,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, HotKeyDelegate {
         menu.addItem(withTitle: "Выход", action: #selector(quitApp), keyEquivalent: "q")
         item.menu = menu
         statusItem = item
+    }
+
+    /// Переключатель «Значок в строке меню» срабатывает сразу, без перезапуска.
+    private func observeStatusIcon() {
+        withObservationTracking {
+            _ = settings.showStatusIcon
+        } onChange: { [weak self] in
+            DispatchQueue.main.async {
+                guard let self else { return }
+                self.statusItem?.isVisible = self.settings.showStatusIcon
+                self.observeStatusIcon()
+            }
+        }
     }
 
     @objc private func statusItemClicked() {

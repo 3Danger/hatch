@@ -15,6 +15,31 @@ final class SettingsStoreTests: XCTestCase {
         XCTAssertEqual(store.shellPath, defaultShell)
         XCTAssertEqual(store.timeoutSeconds, 0)
         XCTAssertEqual(store.previewLines, 10)
+        XCTAssertTrue(store.showStatusIcon)
+        XCTAssertEqual(store.favoriteDirectories, [])
+        XCTAssertEqual(store.favoriteCommands, [])
+    }
+
+    /// Избранное: добавить и убрать тем же действием, порядок добавления, переживает перезапуск.
+    func testFavoritesToggleAndPersist() {
+        let defaults = UserDefaults(suiteName: suiteName)!
+        let store = SettingsStore(defaults: defaults)
+        XCTAssertTrue(store.toggleFavoriteDirectory("/tmp/a"))
+        XCTAssertTrue(store.toggleFavoriteDirectory("/tmp/b"))
+        XCTAssertTrue(store.toggleFavoriteCommand("  docker compose up -d "))
+        XCTAssertTrue(store.isFavoriteCommand("docker compose up -d"))
+        XCTAssertFalse(store.toggleFavoriteCommand(""))
+        store.showStatusIcon = false
+
+        let reloaded = SettingsStore(defaults: defaults)
+        XCTAssertEqual(reloaded.favoriteDirectories, ["/tmp/a", "/tmp/b"])
+        XCTAssertEqual(reloaded.favoriteCommands, ["docker compose up -d"])
+        XCTAssertFalse(reloaded.showStatusIcon)
+
+        XCTAssertFalse(reloaded.toggleFavoriteDirectory("/tmp/a"))
+        XCTAssertFalse(reloaded.toggleFavoriteCommand("docker compose up -d"))
+        XCTAssertEqual(reloaded.favoriteDirectories, ["/tmp/b"])
+        XCTAssertEqual(reloaded.favoriteCommands, [])
     }
 
     /// «Строк в превью» сохраняется; сохранённое вне границ поправляется при чтении.
