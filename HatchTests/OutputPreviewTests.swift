@@ -38,4 +38,51 @@ final class OutputPreviewTests: XCTestCase {
         XCTAssertEqual(layout.tail, ["t1", "t2"])
         XCTAssertEqual(layout.hidden, 50)
     }
+
+    // MARK: - Перенос длинных строк
+
+    /// Две длинные строки по 3 экранные: в 7 строк влезают целиком, без «скрыто».
+    func testWrappedLinesCountAsScreenRows() {
+        let layout = OutputPreview.layout(lines: ["a", "b"], gap: nil, maxLines: 7, rows: { _ in 3 })
+        XCTAssertEqual(layout.head, ["a", "b"])
+        XCTAssertEqual(layout.headRows, [3, 3])
+        XCTAssertEqual(layout.hidden, 0)
+    }
+
+    /// Строки длиннее места: показаны начало и конец, «скрыто» — в строках вывода, не экранных.
+    func testLongWrappedOutputHidesWholeLines() {
+        let layout = OutputPreview.layout(lines: lines(10), gap: nil, maxLines: 7, rows: { _ in 2 })
+        XCTAssertEqual(layout.head, ["l1", "l2"])
+        XCTAssertEqual(layout.headRows, [2, 1]) // вторая обрезана до одной экранной строки
+        XCTAssertEqual(layout.tail, ["l9", "l10"])
+        XCTAssertEqual(layout.tailRows, [1, 2])
+        XCTAssertEqual(layout.hidden, 6)
+    }
+
+    /// Скрывать нечего, но строки не влезают: без строки «скрыто», обе видны обрезанными.
+    func testClippedWithoutHiddenLinesGivesMarkerRowAway() {
+        let layout = OutputPreview.layout(lines: ["a", "b"], gap: nil, maxLines: 7, rows: { _ in 10 })
+        XCTAssertEqual(layout.hidden, 0)
+        XCTAssertEqual(layout.head, ["a"])
+        XCTAssertEqual(layout.headRows, [4])
+        XCTAssertEqual(layout.tail, ["b"])
+        XCTAssertEqual(layout.tailRows, [3])
+    }
+
+    func testWrapBreaksOnWords() {
+        let text = "unable to get image apache"
+        let rows = OutputWrap.rows(text, columns: 10).map { String(Array(text)[$0]) }
+        XCTAssertEqual(rows, ["unable to", "get image", "apache"])
+    }
+
+    func testWrapCutsWordLongerThanRow() {
+        let text = "/Users/someone/very/long/path"
+        let rows = OutputWrap.rows(text, columns: 10).map { String(Array(text)[$0]) }
+        XCTAssertEqual(rows, ["/Users/som", "eone/very/", "long/path"])
+    }
+
+    func testShortLineIsOneRowAndLimitStopsEarly() {
+        XCTAssertEqual(OutputWrap.rows("ls", columns: 80), [0..<2])
+        XCTAssertEqual(OutputWrap.rows(String(repeating: "x", count: 100_000), columns: 10, limit: 3).count, 3)
+    }
 }

@@ -92,6 +92,19 @@ final class SessionStoreTests: XCTestCase {
         XCTAssertEqual(store.filteredSessions.map(\.command), ["git status"])
     }
 
+    /// Поиск (⌘F) находит и по выводу, без учёта регистра.
+    func testSearchMatchesOutput() {
+        let store = makeStore()
+        var compose = Session(command: "docker compose up -d")
+        compose.output = "unable to get image 'apache/kafka:latest'"
+        store.add(compose)
+        store.add(Session(command: "ls -li"))
+        store.filterText = "KAFKA"
+        XCTAssertEqual(store.filteredSessions.map(\.command), ["docker compose up -d"])
+        store.filterText = ""
+        XCTAssertEqual(store.filteredSessions.count, 2)
+    }
+
     /// Закрепление защищает от очистки, но не поднимает блок наверх.
     func testPinnedDoesNotChangeOrder() {
         let store = makeStore()

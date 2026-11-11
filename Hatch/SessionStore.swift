@@ -5,6 +5,7 @@ import Observation
 @Observable
 final class SessionStore {
     private(set) var sessions: [Session] = []
+    /// Запрос поиска (⌘F): ищется в командах и в выводе. Пусто — показываются все.
     var filterText: String = ""
 
     private let history: HistoryStore
@@ -29,7 +30,11 @@ final class SessionStore {
     var filteredSessions: [Session] {
         var result = sessions
         if !filterText.isEmpty {
-            result = result.filter { $0.command.localizedCaseInsensitiveContains(filterText) }
+            let query = filterText
+            result = result.filter {
+                $0.command.range(of: query, options: [.caseInsensitive, .diacriticInsensitive]) != nil
+                    || $0.output.range(of: query, options: [.caseInsensitive, .diacriticInsensitive]) != nil
+            }
         }
         // закрепление защищает от очистки, но порядок не меняет
         return result.sorted { a, b in

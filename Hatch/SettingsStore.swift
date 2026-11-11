@@ -13,6 +13,10 @@ final class SettingsStore {
     var languageCode: String { didSet { defaults.set(languageCode, forKey: Keys.language) } }
     /// Глубина истории (последние N завершённых).
     var historyLimit: Int { didSet { defaults.set(historyLimit, forKey: Keys.historyLimit) } }
+    /// Сколько экранных строк вывода в свёрнутом блоке (включая строку «скрыто N»).
+    var previewLines: Int { didSet { defaults.set(previewLines, forKey: Keys.previewLines) } }
+    static let previewLinesRange = 3...30
+    static let defaultPreviewLines = 10
     /// Шелл для скрытого запуска.
     var shellPath: String { didSet { defaults.set(shellPath, forKey: Keys.shell) } }
     /// Тайм-аут фоновых команд в секундах; 0 = нет тайм-аута.
@@ -41,6 +45,7 @@ final class SettingsStore {
         static let language = "settings.language"
         static let historyLimit = "settings.historyLimit"
         static let shell = "settings.shell"
+        static let previewLines = "settings.previewLines"
         static let timeout = "settings.timeout"
         static let latinLayout = "settings.latinLayoutInInput"
         static let currentDirectory = "settings.currentDirectory"
@@ -56,6 +61,9 @@ final class SettingsStore {
         self.languageCode = defaults.string(forKey: Keys.language) ?? "en"
         let limit = defaults.object(forKey: Keys.historyLimit) as? Int
         self.historyLimit = limit ?? 50
+        let preview = defaults.object(forKey: Keys.previewLines) as? Int
+        self.previewLines = min(max(preview ?? Self.defaultPreviewLines, Self.previewLinesRange.lowerBound),
+                                Self.previewLinesRange.upperBound)
         let defaultShell = ProcessInfo.processInfo.environment["SHELL"] ?? "/bin/zsh"
         self.shellPath = defaults.string(forKey: Keys.shell) ?? defaultShell
         let timeout = defaults.object(forKey: Keys.timeout) as? TimeInterval
@@ -98,6 +106,7 @@ final class SettingsStore {
         themeRaw = "system"
         languageCode = "en"
         historyLimit = 50
+        previewLines = Self.defaultPreviewLines
         shellPath = "/bin/zsh"
         timeoutSeconds = 0
         latinLayoutInInput = true

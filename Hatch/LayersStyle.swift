@@ -103,6 +103,8 @@ enum Tactile {
     static let field = color(dark: 0x1d1d1f, light: 0xe6e6ea)
     // системные цвета
     static let accent = color(dark: 0x0a84ff, light: 0x007aff)
+    /// Режим поиска в поле ввода: рамка и метка другого цвета, чтобы было видно, в каком ты режиме.
+    static let search = color(dark: 0xff9f0a, light: 0xc93400)
     static let green = color(dark: 0x30d158, light: 0x28a745)
     static let red = color(dark: 0xff453a, light: 0xff3b30)
     static let redText = color(dark: 0xff6961, light: 0xd70015)
@@ -139,11 +141,11 @@ extension View {
     }
 
     /// Синее выделение: линия по краю и мягкое кольцо снаружи (раскрытый блок, поле в фокусе).
-    func selectionRing(cornerRadius: CGFloat, visible: Bool) -> some View {
+    func selectionRing(cornerRadius: CGFloat, visible: Bool, color: Color = Tactile.accent) -> some View {
         overlay {
             if visible {
-                RoundedRectangle(cornerRadius: cornerRadius).strokeBorder(Tactile.accent, lineWidth: 1)
-                RoundedRectangle(cornerRadius: cornerRadius + 3).strokeBorder(Tactile.accent.opacity(0.45), lineWidth: 3)
+                RoundedRectangle(cornerRadius: cornerRadius).strokeBorder(color, lineWidth: 1)
+                RoundedRectangle(cornerRadius: cornerRadius + 3).strokeBorder(color.opacity(0.45), lineWidth: 3)
                     .padding(-3)
             }
         }

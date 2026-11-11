@@ -22,9 +22,10 @@ enum LauncherMetrics {
     static func buttonRadius(_ size: CGFloat) -> CGFloat { (size * 0.29).rounded() }
     /// Запас окна вокруг панели под её тень.
     static let shadowMargin: CGFloat = 24
-    /// Строк вывода в свёрнутом блоке (включая строку «скрыто N»). Свежий блок берёт больше.
-    static let compactOutputLines = 7
     static let outputFontSize: CGFloat = 10
+    /// Ширина символа моноширинного шрифта вывода: сколько символов влезает в строку превью.
+    static let outputCharWidth: CGFloat = ("M" as NSString).size(withAttributes: [
+        .font: NSFont.monospacedSystemFont(ofSize: outputFontSize, weight: .regular)]).width
     /// Высота строки вывода: блок считает, сколько строк влезает в свободное место.
     static let outputLineHeight: CGFloat = ceil(NSLayoutManager().defaultLineHeight(
         for: NSFont.monospacedSystemFont(ofSize: outputFontSize, weight: .regular)))
@@ -43,6 +44,9 @@ struct LauncherRootView: View {
     @Environment(HotKeyController.self) private var hotKeys
 
     @State private var text = ""
+    /// Режим поиска (⌘F): то же поле ввода ищет по истории; набранная команда ждёт в `text`.
+    @State private var searchMode = false
+    @State private var searchQuery = ""
     @FocusState private var inputFocused: Bool
     /// Видимая высота истории — от неё тянется нижний край (предел мог быть больше содержимого).
     @State private var historyVisibleHeight: CGFloat = 0
@@ -109,9 +113,12 @@ struct LauncherRootView: View {
                 .padding(.horizontal, 14) // по левому краю текста в поле ввода
                 .padding(.bottom, -4)     // ближе к полю, чем к краю панели
 
-            CommandInputView(text: $text,
+            CommandInputView(text: searchMode ? $searchQuery : $text,
                              directory: settings.currentDirectory,
+                             mode: searchMode ? .search : .command,
+                             lang: lang,
                              onSubmit: { command in
+                                 if searchMode { openFound(); return }
                                  navigator.reset()
                                  run(command)
                                  text = ""
@@ -119,9 +126,10 @@ struct LauncherRootView: View {
                              onHistory: navigateHistory,
                              onEdit: {
                                  navigator.reset()
-                                 // набранный текст заодно фильтрует блоки истории
-                                 sessionStore.filterText = text.trimmingCharacters(in: .whitespaces)
+                                 // фильтрует историю только поиск; набор команды список не трогает
+                                 if searchMode { sessionStore.filterText = searchQuery.trimmingCharacters(in: .whitespaces) }
                              },
+                             onExitSearch: exitSearch,
                              history: historyCommands,
                              isFocused: inputFocused,
                              trailing: AnyView(inputButtons))
@@ -156,6 +164,8 @@ struct LauncherRootView: View {
             if old == .interactive || expandedID == interruptedID { collapse() }
         }
         .onReceive(NotificationCenter.default.publisher(for: .hatchDidShow)) { _ in
+            // панель открывается заново — в обычном режиме, с набранной командой
+            if searchMode { exitSearch() }
             inputFocused = true
             switchToLatinIfEnabled() // фокус мог уже стоять в поле — onChange не сработает
         }
@@ -272,6 +282,7 @@ struct LauncherRootView: View {
             lang: lang,
             selectedID: navigator.selectedID,
             expandedID: expandedID,
+            compactLines: settings.previewLines,
             maxHeight: settings.historyMaxHeight,
             frames: frames,
             terminalFor: { runner.terminal(for: $0) },
@@ -302,15 +313,50 @@ struct LauncherRootView: View {
     // MARK: - Actions
 
     private func navigateHistory(_ direction: HistoryDirection) -> String? {
+        let current = searchMode ? searchQuery : text
+        let step: String?
         switch direction {
         case .older:
             let entries = sessionStore.filteredSessions.map {
                 HistoryNavigator.Entry(id: $0.id, command: $0.command)
             }
-            return navigator.older(entries: entries, current: text)
+            step = navigator.older(entries: entries, current: current)
         case .newer:
-            return navigator.newer()
+            step = navigator.newer()
         }
+        // в поиске стрелки переходят по найденным блокам, а запрос остаётся
+        return searchMode ? step.map { _ in searchQuery } : step
+    }
+
+    // MARK: - Поиск
+
+    /// ⌘F: поле ввода становится поиском по командам и выводу; повторно — обратно к команде.
+    private func toggleSearch() {
+        if searchMode { exitSearch(); return }
+        navigator.reset()
+        searchQuery = ""
+        sessionStore.filterText = ""
+        withAnimation(.easeOut(duration: 0.2)) { searchMode = true }
+        inputFocused = true
+    }
+
+    /// Выход из поиска (Esc, ⌘F, «✕» на метке): история целиком, набранная команда на месте.
+    private func exitSearch() {
+        guard searchMode else { return }
+        navigator.reset()
+        searchQuery = ""
+        sessionStore.filterText = ""
+        withAnimation(.easeOut(duration: 0.2)) { searchMode = false }
+        inputFocused = true
+    }
+
+    /// Enter в поиске раскрывает выбранный стрелками блок, а без выбора — первый найденный.
+    private func openFound() {
+        guard let id = navigator.selectedID ?? sessionStore.filteredSessions.first?.id else {
+            NSSound.beep()
+            return
+        }
+        expand(id)
     }
 
     private var historyCommands: [String] {
@@ -383,6 +429,20 @@ struct LauncherRootView: View {
             switch (event.keyCode, modifiers) {
             case (53, []) where showSettings && !HotKeyCapsField.isRecording:
                 closeSettings()
+                return nil
+            case (53, []) where searchMode && !showSettings:
+                exitSearch()
+                return nil
+            case (3, .command) where !showSettings:
+                // в раскрытом выводе и живом терминале ⌘F — их собственный поиск
+                if let responder = event.window?.firstResponder as? NSTextView, !responder.isFieldEditor {
+                    return event
+                }
+                if let session = expandedSession, let terminal = runner.terminal(for: session.id),
+                   event.window?.firstResponder === terminal.view {
+                    return event
+                }
+                toggleSearch()
                 return nil
             case (13, .command) where expandedID != nil:
                 collapse()
@@ -507,6 +567,8 @@ struct HistoryListView: View {
     let lang: String
     var selectedID: UUID?
     var expandedID: UUID?
+    /// Экранных строк вывода в свёрнутом блоке (настройка «Строк в превью»); свежий берёт больше.
+    var compactLines = SettingsStore.defaultPreviewLines
     /// Предел высоты истории: дальше прокрутка. Раскрытый терминал занимает его целиком.
     var maxHeight: CGFloat = PanelSize.defaultHistoryHeight
     /// Куда записывать рамки раскрытого блока и полосы прокрутки (клик вне блока его сворачивает).
@@ -523,7 +585,7 @@ struct HistoryListView: View {
 
     var body: some View {
         if sessionStore.filteredSessions.isEmpty {
-            Text(L.t("history_empty", lang))
+            Text(L.t(sessionStore.filterText.isEmpty ? "history_empty" : "search_empty", lang))
                 .font(.callout)
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity)
@@ -541,8 +603,8 @@ struct HistoryListView: View {
                                          isSelected: session.id == selectedID,
                                          isExpanded: session.id == expandedID,
                                          dimmed: expandedID != nil && session.id != expandedID,
-                                         outputLines: session.id == sessionStore.filteredSessions.first?.id
-                                            ? freshBlockLines : LauncherMetrics.compactOutputLines,
+                                         outputLines: session.id == sessions.first?.id
+                                            ? freshBlockLines : compactLines,
                                          terminal: session.id == expandedID ? terminalFor(session.id) : nil,
                                          terminalHeight: LauncherMetrics.terminalHeight(historyHeight: maxHeight),
                                          onToggle: { onToggle(session) },
@@ -623,7 +685,7 @@ extension HistoryListView {
         // строка «скрыто N · Развернуть» выше обычной строки вывода
         let free = maxHeight - others - LauncherMetrics.blockChrome
             - (LauncherMetrics.markerRowHeight - LauncherMetrics.outputLineHeight)
-        return max(LauncherMetrics.compactOutputLines, Int(free / LauncherMetrics.outputLineHeight))
+        return max(compactLines, Int(free / LauncherMetrics.outputLineHeight))
     }
 }
 
@@ -637,7 +699,7 @@ struct SessionBlockView: View {
     /// Раскрыт другой блок — этот уходит в тень.
     var dimmed = false
     /// Сколько строк вывода показать в свёрнутом виде (включая строку «скрыто N»).
-    var outputLines = LauncherMetrics.compactOutputLines
+    var outputLines = SettingsStore.defaultPreviewLines
     /// Живой терминал интерактивной сессии — показывается в раскрытом блоке.
     var terminal: InteractiveTerminal?
     var terminalHeight: CGFloat = LauncherMetrics.terminalHeight(historyHeight: PanelSize.defaultHistoryHeight)
@@ -658,6 +720,8 @@ struct SessionBlockView: View {
     @FocusState private var stageFieldFocused: Bool
     @State private var stageEngine = ShellCompletionEngine()
     @State private var stageCandidates: [String] = []
+    /// Сколько символов вывода влезает в строку превью (0 — ещё не измерено).
+    @State private var previewColumns = 0
     @State private var stageSelected = 0
     /// Текст подставлен из варианта (TAB, клик) — варианты не пересчитываем.
     @State private var stageApplying = false
@@ -996,20 +1060,68 @@ struct SessionBlockView: View {
     }
 
     /// Свёрнутый вывод: начало, «скрыто N строк» с кнопкой раскрыть, конец.
+    /// Длинные строки переносятся по словам; лимит — в экранных строках.
     private var outputPreview: some View {
         let source = session.outputANSI ?? session.output
+        let columns = previewColumns
+        let limit = outputLines + 1
         let layout = OutputPreview.layout(lines: source.components(separatedBy: "\n"),
-                                          gap: session.outputGap, maxLines: outputLines)
+                                          gap: session.outputGap, maxLines: outputLines,
+                                          rows: { columns > 0 ? wrappedRows($0, columns: columns, limit: limit).count : 1 })
         return VStack(alignment: .leading, spacing: 0) {
-            ForEach(Array(layout.head.enumerated()), id: \.offset) { outputLine($0.element) }
+            ForEach(Array(layout.head.enumerated()), id: \.offset) { outputLine($0.element, rows: layout.headRows[$0.offset]) }
             if layout.hidden > 0 { hiddenLinesMarker(layout.hidden) }
-            ForEach(Array(layout.tail.enumerated()), id: \.offset) { outputLine($0.element) }
+            ForEach(Array(layout.tail.enumerated()), id: \.offset) { outputLine($0.element, rows: layout.tailRows[$0.offset]) }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        // сколько символов влезает в строку — от ширины блока
+        .onGeometryChange(for: Int.self) { Int($0.size.width / LauncherMetrics.outputCharWidth) } action: {
+            previewColumns = $0
         }
     }
 
-    /// Одна строка вывода фиксированной высоты: длинная обрезается (целиком — в раскрытом блоке).
-    private func outputLine(_ line: String) -> some View {
-        Text(session.outputANSI == nil ? AttributedString(line) : ANSIText.attributed(line))
+    /// Экранные строки строки вывода: перенос по словам по видимому тексту (без ANSI-кодов).
+    private func wrappedRows(_ line: String, columns: Int, limit: Int) -> [AttributedSubstring] {
+        let text = session.outputANSI == nil ? AttributedString(line) : ANSIText.attributed(line)
+        let chars = text.characters
+        return OutputWrap.rows(String(chars), columns: columns, limit: limit).map { range in
+            let from = chars.index(chars.startIndex, offsetBy: range.lowerBound)
+            let to = chars.index(chars.startIndex, offsetBy: range.upperBound)
+            return text[from..<to]
+        }
+    }
+
+    /// Строка вывода: по экранной строке фиксированной высоты, перенос по словам;
+    /// не влезла целиком — последняя показанная строка кончается «…» (целиком — в раскрытом блоке).
+    @ViewBuilder
+    private func outputLine(_ line: String, rows shown: Int) -> some View {
+        let columns = previewColumns
+        if columns > 0 {
+            let rows = wrappedRows(line, columns: columns, limit: shown + 1)
+            let clipped = rows.count > shown
+            ForEach(0..<min(shown, rows.count), id: \.self) { index in
+                let row = AttributedString(rows[index])
+                outputRow(clipped && index == shown - 1 ? Self.ellipsized(row, columns: columns) : row)
+            }
+        } else {
+            outputRow(session.outputANSI == nil ? AttributedString(line) : ANSIText.attributed(line))
+        }
+    }
+
+    /// Последняя видимая строка обрезанной строки вывода: «…» в конце, в пределах ширины.
+    private static func ellipsized(_ row: AttributedString, columns: Int) -> AttributedString {
+        var row = row
+        let chars = row.characters
+        if chars.count >= columns {
+            let cut = chars.index(chars.startIndex, offsetBy: max(columns - 1, 0))
+            row = AttributedString(row[row.startIndex..<cut])
+        }
+        row.append(AttributedString("…"))
+        return row
+    }
+
+    private func outputRow(_ text: AttributedString) -> some View {
+        Text(text)
             .font(.system(size: LauncherMetrics.outputFontSize, design: .monospaced))
             .lineLimit(1)
             .truncationMode(.tail)
@@ -1045,15 +1157,25 @@ enum HistoryDirection {
     case newer
 }
 
+/// Что делает поле ввода: запускает команду или ищет по истории (⌘F).
+enum InputMode {
+    case command
+    case search
+}
+
 struct CommandInputView: View {
     @Binding var text: String
     /// Текущая директория лаунчера: от неё дополняются относительные пути.
     var directory: String
+    var mode: InputMode = .command
+    var lang = "ru"
     var onSubmit: (String) -> Void
     /// Шаг по истории стрелкой: текст для поля или nil, если шагать некуда.
     var onHistory: (HistoryDirection) -> String? = { _ in nil }
     /// Пользователь сам поменял текст — навигация по истории сбрасывается.
     var onEdit: () -> Void = {}
+    /// Выйти из поиска (клик по метке «Поиск ✕»).
+    var onExitSearch: () -> Void = {}
     /// Команды из истории, от новых к старым: источник серой подсказки.
     var history: [String] = []
     /// Поле в фокусе — светится рамка.
@@ -1086,9 +1208,18 @@ struct CommandInputView: View {
 
     private var inputField: some View {
         HStack(spacing: 10) {
-        Text("›")
-            .font(.system(size: 19, weight: .medium))
-            .foregroundStyle(.tertiary)
+        Group {
+            if searching {
+                Image(systemName: "magnifyingglass")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(Tactile.search)
+            } else {
+                Text("›")
+                    .font(.system(size: 19, weight: .medium))
+                    .foregroundStyle(.tertiary)
+            }
+        }
+        .frame(width: 16)
         ZStack(alignment: .leading) {
             if !text.isEmpty {
                 Text(text)
@@ -1110,20 +1241,32 @@ struct CommandInputView: View {
                     .allowsHitTesting(false)
             }
 
-            TextField("Введите команду…", text: $text)
+            TextField(searching ? L.t("search_placeholder", lang) : "Введите команду…", text: $text)
                 .textFieldStyle(.plain)
                 .font(font)
         }
+        if searching { searchBadge }
         if let trailing { trailing }
         }
         .padding(.leading, 14)
         .padding(.trailing, trailing == nil ? 14 : 8)
         .padding(.vertical, 10)
         .sunken(RoundedRectangle(cornerRadius: LauncherMetrics.innerRadius), fill: Tactile.field)
-        .selectionRing(cornerRadius: LauncherMetrics.innerRadius, visible: isFocused)
+        // в поиске рамка другого цвета и видна всегда: сразу понятно, в каком режиме поле
+        .selectionRing(cornerRadius: LauncherMetrics.innerRadius, visible: isFocused || searching,
+                       color: searching ? Tactile.search : Tactile.accent)
         .animation(.easeOut(duration: 0.3), value: isFocused)
+        .animation(.easeOut(duration: 0.2), value: searching)
+        .onChange(of: mode) { _, _ in
+            completer.reset()
+            historyCompletion = nil
+            candidates = []
+            candidatesText = nil
+        }
         // Shift+TAB приходит как «backtab» (U+0019)
         .onKeyPress(keys: [.tab, KeyEquivalent("\u{19}")]) { press in
+            // в поиске дополнять нечего; TAB не уводит фокус из поля
+            if searching { return .handled }
             let backward = press.modifiers.contains(.shift) || press.key == KeyEquivalent("\u{19}")
             return tab(backward ? .backward : .forward)
         }
@@ -1137,13 +1280,36 @@ struct CommandInputView: View {
             // пользователь печатает: выбранный вариант принят, перебор окончен
             completer.reset()
             onEdit()
-            refresh(newValue)
+            // поиск не дополняет пути и не подсказывает команды из истории
+            if !searching { refresh(newValue) }
         }
+    }
+
+    private var searching: Bool { mode == .search }
+
+    /// Метка режима поиска: клик по ней — выход из поиска.
+    private var searchBadge: some View {
+        Button(action: onExitSearch) {
+            HStack(spacing: 5) {
+                Text(L.t("search", lang))
+                Text("✕").font(.system(size: 10))
+            }
+            .font(.system(size: 12, weight: .semibold))
+            .foregroundStyle(Tactile.search)
+            .padding(.horizontal, 9)
+            .frame(height: 22)
+            .background(Tactile.search.opacity(0.14), in: Capsule())
+            .overlay(Capsule().strokeBorder(Tactile.search.opacity(0.55), lineWidth: 1))
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .help(L.t("search_exit", lang))
+        .transition(.opacity.combined(with: .scale(scale: 0.85)))
     }
 
     /// Остаток подсказки из истории после набранного.
     private var historyGhost: String? {
-        guard completer.menu == nil, let completion = historyCompletion,
+        guard !searching, completer.menu == nil, let completion = historyCompletion,
               completion.hasPrefix(text), completion.count > text.count else { return nil }
         return String(completion.dropFirst(text.count))
     }

@@ -44,6 +44,9 @@ struct SettingsView: View {
 
             group {
                 row(L.t("history_limit", lang), first: true) { GlassStepper(value: binding(\.historyLimit), range: 10...500, step: 10) }
+                row(L.t("preview_lines", lang)) {
+                    GlassStepper(value: binding(\.previewLines), range: SettingsStore.previewLinesRange)
+                }
                 row(L.t("shell", lang)) {
                     GlassField(text: binding(\.shellPath), width: 160)
                 }

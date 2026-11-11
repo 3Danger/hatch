@@ -14,6 +14,17 @@ final class SettingsStoreTests: XCTestCase {
         let defaultShell = ProcessInfo.processInfo.environment["SHELL"] ?? "/bin/zsh"
         XCTAssertEqual(store.shellPath, defaultShell)
         XCTAssertEqual(store.timeoutSeconds, 0)
+        XCTAssertEqual(store.previewLines, 10)
+    }
+
+    /// «Строк в превью» сохраняется; сохранённое вне границ поправляется при чтении.
+    func testPreviewLinesPersistAndClamp() {
+        let defaults = UserDefaults(suiteName: suiteName)!
+        let store = SettingsStore(defaults: defaults)
+        store.previewLines = 15
+        XCTAssertEqual(SettingsStore(defaults: defaults).previewLines, 15)
+        defaults.set(500, forKey: "settings.previewLines")
+        XCTAssertEqual(SettingsStore(defaults: defaults).previewLines, 30)
     }
 
     func testPersistenceRoundTrip() {
