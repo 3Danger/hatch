@@ -45,10 +45,18 @@ final class SessionStore {
         persist()
     }
 
-    func update(id: UUID, transform: (inout Session) -> Void) {
+    /// Когда изменение попадает на диск.
+    enum Persistence {
+        /// Отложенно: частые изменения сливаются в одну запись не чаще раза в секунду.
+        case soon
+        /// Не писать (превью работающей команды — итог запишется при её завершении).
+        case never
+    }
+
+    func update(id: UUID, persist persistence: Persistence = .soon, transform: (inout Session) -> Void) {
         guard let idx = sessions.firstIndex(where: { $0.id == id }) else { return }
         transform(&sessions[idx])
-        persist()
+        if persistence == .soon { scheduleSave() }
     }
 
     func remove(id: UUID) {
@@ -119,7 +127,27 @@ final class SessionStore {
         persist()
     }
 
+    /// Записать отложенные изменения сейчас (при закрытии приложения).
+    func flush() {
+        persist()
+    }
+
+    private static let saveDelay: TimeInterval = 1
+    private var pendingSave: DispatchWorkItem?
+
+    private func scheduleSave() {
+        guard pendingSave == nil else { return } // запись уже запланирована — её хватит
+        let work = DispatchWorkItem { [weak self] in
+            self?.pendingSave = nil
+            self?.persist()
+        }
+        pendingSave = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.saveDelay, execute: work)
+    }
+
     private func persist() {
+        pendingSave?.cancel()
+        pendingSave = nil
         history.save(sessions)
     }
 }

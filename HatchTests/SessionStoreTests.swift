@@ -38,6 +38,45 @@ final class SessionStoreTests: XCTestCase {
         XCTAssertTrue(HistoryStore(fileURL: url).load().allSatisfy { $0.state.isTerminal }, "исправление сохраняется на диск")
     }
 
+    // MARK: - Запись на диск
+
+    /// Превью работающей команды (обновляется каждые 150 мс) на диск не пишется.
+    func testPreviewUpdatesAreNotWritten() {
+        let history = HistoryStore(fileURL: tmpURL())
+        let store = SessionStore(history: history)
+        let s = Session(command: "tail -f log")
+        store.add(s)
+        let writes = history.writeCount
+
+        for i in 0..<20 { store.update(id: s.id, persist: .never) { $0.output = "line \(i)" } }
+        RunLoop.main.run(until: Date().addingTimeInterval(1.3))
+
+        XCTAssertEqual(history.writeCount, writes)
+    }
+
+    /// Частые изменения сливаются: не чаще одной записи в секунду.
+    func testUpdatesAreCoalesced() {
+        let history = HistoryStore(fileURL: tmpURL())
+        let store = SessionStore(history: history)
+        let s = Session(command: "echo")
+        store.add(s)
+        let writes = history.writeCount
+
+        for i in 0..<20 { store.update(id: s.id) { $0.output = "v\(i)" } }
+        XCTAssertEqual(history.writeCount, writes, "сразу не пишем")
+        RunLoop.main.run(until: Date().addingTimeInterval(1.3))
+        XCTAssertEqual(history.writeCount, writes + 1)
+    }
+
+    /// Неизменённую историю не перезаписываем.
+    func testUnchangedHistoryIsNotRewritten() {
+        let history = HistoryStore(fileURL: tmpURL())
+        let sessions = [Session(command: "ls", state: .completed, finishedAt: Date())]
+        history.save(sessions)
+        history.save(sessions)
+        XCTAssertEqual(history.writeCount, 1)
+    }
+
     func testAddInsertsFirst() {
         let store = makeStore()
         store.add(Session(command: "first"))
@@ -82,6 +121,7 @@ final class SessionStoreTests: XCTestCase {
         store.update(id: s.id) { $0.state = .completed; $0.finishedAt = Date() }
         XCTAssertEqual(store.sessions.first?.state, .completed)
         XCTAssertNotNil(store.sessions.first?.finishedAt)
+        store.flush() // изменения пишутся отложенно — как при закрытии приложения
 
         let reloaded = SessionStore(history: HistoryStore(fileURL: url))
         XCTAssertEqual(reloaded.sessions.first?.state, .completed)

@@ -29,8 +29,6 @@ enum LauncherMetrics {
     static let blockSpacing: CGFloat = 8
     /// Живой терминал в раскрытом блоке: блок занимает всю видимую область истории.
     static let terminalHeight: CGFloat = historyMaxHeight - blockChrome
-    /// Раскрытый завершённый вывод длиннее этого — с кнопкой «показать всё».
-    static let fullOutputLimit = 1000
 }
 
 /// Корневое представление лаунчера: ввод, история, экшн-кнопки.
@@ -317,7 +315,8 @@ struct LauncherRootView: View {
         if expandedSession?.state.isActive ?? false { return false }
         // только в самой панели: в списке папок, диалогах и настройках стрелки свои
         guard let window = event.window, window is LauncherPanel else { return false }
-        if let editor = window.firstResponder as? NSTextView, editor.isFieldEditor { return false }
+        // фокус в тексте (поле ввода, вывод с выделением) — стрелки его
+        if window.firstResponder is NSTextView { return false }
         guard Date().timeIntervalSince(Self.lastArrowRepost) > 0.3 else { return false }
         Self.lastArrowRepost = Date()
         inputFocused = true
@@ -439,10 +438,14 @@ struct HistoryListView: View {
                                          onPipeChange: { onPipeChange(session, $0) },
                                          stageHistory: stageHistory)
                         .id(session.id)
-                        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { blockHeights[session.id] = $0 }
+                        .onGeometryChange(for: CGFloat.self) { Self.usableHeight($0.size.height) } action: {
+                            blockHeights[session.id] = $0
+                        }
                     }
                 }
-                .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { contentHeight = $0 }
+                .onGeometryChange(for: CGFloat.self) { Self.usableHeight($0.size.height) } action: {
+                    contentHeight = $0
+                }
               }
               .frame(height: min(contentHeight, LauncherMetrics.historyMaxHeight))
               .onChange(of: selectedID) { _, id in
@@ -460,6 +463,14 @@ struct HistoryListView: View {
 }
 
 extension HistoryListView {
+    /// Высота, которая влияет на раскладку: выше предела панели всё равно прокрутка.
+    /// Ленивый список уточняет оценку высоты большого текста с каждым проходом; если
+    /// запоминать каждое уточнение, оно запускает новый проход — бесконечный цикл
+    /// перерисовок (зависание на большом выводе). Поэтому — с потолком и округлением.
+    static func usableHeight(_ height: CGFloat) -> CGFloat {
+        min(height, LauncherMetrics.historyMaxHeight).rounded()
+    }
+
     /// Уже применявшиеся шаги конвейера, свежие первыми, без повторов — для подсказок.
     private var stageHistory: [String] {
         var seen = Set<String>()
@@ -489,7 +500,6 @@ struct SessionBlockView: View {
     var isExpanded = false
     /// Сколько строк вывода показать в свёрнутом виде (включая строку «скрыто N»).
     var outputLines = LauncherMetrics.compactOutputLines
-    @State private var showAllOutput = false
     /// Живой терминал интерактивной сессии — показывается в раскрытом блоке.
     var terminal: InteractiveTerminal?
     var onToggle: () -> Void = {}
@@ -512,6 +522,7 @@ struct SessionBlockView: View {
     @State private var stageApplying = false
 
     var body: some View {
+        let _ = RenderProbe.hit("SessionBlockView")
         VStack(alignment: .leading, spacing: 6) {
             header
 
@@ -730,29 +741,14 @@ struct SessionBlockView: View {
         } else {
             // по высоте текста: список прокручивается дальше, к остальным блокам
             fullOutput
-                .textSelection(.enabled)
         }
     }
 
-    /// Вывод с цветом, как в терминале; `lines` — сколько строк разбирать (превью).
-    /// Весь вывод; очень длинный — первые `fullOutputLimit` строк и кнопка «показать всё»
-    /// (тысячи строк в одном тексте тормозят прокрутку).
+    /// Весь вывод — в нативном текстовом поле: любой объём, выделение, поиск ⌘F.
     private var fullOutput: some View {
-        let source = session.outputANSI ?? session.output
-        let lines = source.components(separatedBy: "\n")
-        let limited = !showAllOutput && lines.count > LauncherMetrics.fullOutputLimit
-        let shown = limited ? lines.prefix(LauncherMetrics.fullOutputLimit).joined(separator: "\n") : source
-        return VStack(alignment: .leading, spacing: 6) {
-            Text(session.outputANSI == nil ? AttributedString(shown) : ANSIText.attributed(shown))
-                .font(.system(size: LauncherMetrics.outputFontSize, design: .monospaced))
-                .frame(maxWidth: .infinity, alignment: .leading)
-            if limited {
-                Button(String(format: L.t("show_all_lines", lang), lines.count)) { showAllOutput = true }
-                    .buttonStyle(.plain)
-                    .font(.system(size: LauncherMetrics.outputFontSize, weight: .medium))
-                    .foregroundStyle(Color.accentColor)
-            }
-        }
+        OutputTextView(text: ANSIText.nsAttributed(
+            session.outputANSI ?? session.output,
+            font: NSFont.monospacedSystemFont(ofSize: LauncherMetrics.outputFontSize, weight: .regular)))
     }
 
     /// Свёрнутый вывод: начало, «скрыто N строк» с кнопкой раскрыть, конец.
@@ -1069,4 +1065,15 @@ private struct PanelShadow: View {
             }
             .allowsHitTesting(false)
     }
+}
+
+/// Счётчик вычислений `body` — ловит циклы перерисовок в тестах. В релизной сборке пустой.
+enum RenderProbe {
+    #if DEBUG
+    private(set) static var counts: [String: Int] = [:]
+    static func hit(_ name: String) { counts[name, default: 0] += 1 }
+    static func reset() { counts = [:] }
+    #else
+    static func hit(_ name: String) {}
+    #endif
 }

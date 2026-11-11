@@ -37,6 +37,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, HotKeyDelegate {
         panelController?.show()
     }
 
+    /// История пишется отложенно — при выходе записываем то, что не успело.
+    func applicationWillTerminate(_ notification: Notification) {
+        sessionStore.flush()
+    }
+
     func hotKeyPressed() {
         panelController?.toggle()
     }

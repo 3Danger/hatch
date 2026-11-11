@@ -209,7 +209,8 @@ final class ProcessRunner {
         let terminal = InteractiveTerminal()
         terminal.onOutput = { [weak self] preview in
             guard let self, self.runTokens[sessionID] == token else { return }
-            self.sessionStore.update(id: sessionID) { s in
+            // превью меняется каждые 150 мс — на диск не пишем, итог запишется при завершении
+            self.sessionStore.update(id: sessionID, persist: .never) { s in
                 s.output = preview.plain
                 s.outputANSI = preview.ansi
                 s.outputGap = preview.gap

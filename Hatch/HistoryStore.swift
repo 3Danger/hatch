@@ -28,10 +28,16 @@ final class HistoryStore {
         return applyCap(to: decoded, limit: limit ?? defaultLimit)
     }
 
+    /// Сколько раз история реально записывалась на диск (для тестов).
+    private(set) var writeCount = 0
+    private var lastWritten: Data?
+
     func save(_ sessions: [Session], limit: Int? = nil) {
         let capped = applyCap(to: sessions, limit: limit ?? defaultLimit)
-        guard let data = try? JSONEncoder().encode(capped) else { return }
+        guard let data = try? JSONEncoder().encode(capped), data != lastWritten else { return }
         try? data.write(to: fileURL, options: .atomic)
+        lastWritten = data
+        writeCount += 1
     }
 
     /// Завершённые ограничиваются до `limit` (последние по времени); активные и закреплённые

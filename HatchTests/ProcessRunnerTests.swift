@@ -500,6 +500,10 @@ final class ProcessRunnerTests: XCTestCase {
         wait(for: [exp], timeout: 8)
         RunLoop.main.run(until: Date().addingTimeInterval(0.5)) // события старого процесса успевают прийти
 
+        // старый процесс убит; под нагрузкой система убирает его не мгновенно
+        let dead = expectation(description: "old process gone")
+        waitUntil(timeout: 3, { !Session.isAlive(pgid: oldPgid) }, onFulfill: { dead.fulfill() })
+        wait(for: [dead], timeout: 4)
         XCTAssertFalse(Session.isAlive(pgid: oldPgid))
         XCTAssertEqual(store.sessions.count, 1)
         let session = store.sessions.first
