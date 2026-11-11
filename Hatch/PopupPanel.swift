@@ -29,8 +29,8 @@ final class PopupPanel: NSPanel {
 final class PopupController {
     /// Запас окна под тень карточки.
     static let margin: CGFloat = 22
-    /// Зазор между элементом и стрелкой окна.
-    static let gap: CGFloat = 2
+    /// Зазор между элементом и карточкой. Стрелки нет: она наезжала на подпись элемента.
+    static let gap: CGFloat = 6
 
     private var window: PopupPanel?
     private var hosting: NSHostingView<AnyView>?
@@ -48,15 +48,14 @@ final class PopupController {
 
     /// - Parameters:
     ///   - anchor: рамка элемента в координатах экрана;
-    ///   - content: карточка с содержимым; `arrowX` — где стрелка (от левого края карточки), nil — без стрелки.
+    ///   - content: карточка с содержимым.
     func present(anchor: NSRect, placement: PopupPlacement, mouse: NSPoint?, parent: NSWindow?,
-                 content: @escaping (_ arrowX: CGFloat?) -> AnyView) {
+                 content: @escaping () -> AnyView) {
         let firstShow = window == nil
         if firstShow { create(parent: parent) }
         guard let window, let hosting else { return }
 
-        // размер не зависит от стрелки: сначала меряем, потом ставим стрелку на место
-        hosting.rootView = content(placement == .below ? 0 : nil)
+        hosting.rootView = content()
         let size = hosting.fittingSize
         let screen = (parent?.screen ?? NSScreen.main)?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1600, height: 1000)
         var origin: NSPoint
@@ -70,10 +69,6 @@ final class PopupController {
         // не за край экрана (тень может заходить за него)
         origin.x = min(max(origin.x, screen.minX - Self.margin), screen.maxX - size.width + Self.margin)
         origin.y = max(origin.y, screen.minY - Self.margin)
-        if placement == .below {
-            let arrowX = anchor.midX - origin.x - Self.margin
-            hosting.rootView = content(arrowX)
-        }
         window.setFrame(NSRect(origin: origin, size: size), display: true)
         if firstShow {
             parent?.addChildWindow(window, ordered: .above)
@@ -181,10 +176,8 @@ private struct PopupAnchor: NSViewRepresentable {
         DispatchQueue.main.async {
             guard coordinator.controller.wantsShown else { return }
             coordinator.controller.present(anchor: anchor, placement: placement, mouse: coordinator.mouse,
-                                           parent: window) { arrowX in
-                AnyView(build(popupContext)
-                    .environment(\.popupArrowX, arrowX)
-                    .environment(\.colorScheme, scheme))
+                                           parent: window) {
+                AnyView(build(popupContext).environment(\.colorScheme, scheme))
             }
         }
     }
@@ -240,18 +233,6 @@ struct PopupContext {
     let dismiss: () -> Void
 }
 
-private struct PopupArrowKey: EnvironmentKey {
-    static let defaultValue: CGFloat? = nil
-}
-
-extension EnvironmentValues {
-    /// Где у карточки стрелка (от левого края), nil — без стрелки.
-    var popupArrowX: CGFloat? {
-        get { self[PopupArrowKey.self] }
-        set { self[PopupArrowKey.self] = newValue }
-    }
-}
-
 extension View {
     /// Своё всплывающее окно у элемента — сплошное, без стекла. `onSecondaryClick` — открыть по правому клику.
     func hatchPopup<Content: View>(isPresented: Binding<Bool>, placement: PopupPlacement = .below,
@@ -264,12 +245,9 @@ extension View {
 
 // MARK: - Карточки
 
-/// Карточка всплывающего окна, как в макете: сплошная, кромка, тень, стрелка к элементу.
+/// Карточка всплывающего окна: сплошная, кромка, тень (без стрелки — она наезжала на подпись элемента).
 struct PopupCard<Content: View>: View {
-    @Environment(\.popupArrowX) private var arrowX
     @ViewBuilder var content: Content
-
-    private static var arrowSize: CGFloat { 12 }
 
     var body: some View {
         let shape = RoundedRectangle(cornerRadius: 14, style: .circular)
@@ -278,23 +256,6 @@ struct PopupCard<Content: View>: View {
             .overlay { shape.strokeBorder(Tactile.surfaceEdge) }
             .overlay { shape.inset(by: 1).stroke(LinearGradient(colors: [.white.opacity(0.08), .clear],
                                                                startPoint: .top, endPoint: .center), lineWidth: 1) }
-            .overlay(alignment: .topLeading) {
-                if let arrowX {
-                    // стрелка — повёрнутый квадрат с кромкой сверху-слева, нижняя половина под карточкой
-                    Rectangle()
-                        .fill(Tactile.surfaceTop)
-                        .overlay(alignment: .topLeading) {
-                            Rectangle().fill(Tactile.surfaceEdge).frame(height: 1)
-                        }
-                        .overlay(alignment: .topLeading) {
-                            Rectangle().fill(Tactile.surfaceEdge).frame(width: 1)
-                        }
-                        .frame(width: Self.arrowSize, height: Self.arrowSize)
-                        .rotationEffect(.degrees(45))
-                        .offset(x: arrowX - Self.arrowSize / 2, y: -Self.arrowSize / 2 + 0.5)
-                }
-            }
-            .padding(.top, arrowX == nil ? 0 : Self.arrowSize / 2)
             .compositingGroup()
             .shadow(color: .black.opacity(0.55), radius: 18, y: 12)
             .shadow(color: .black.opacity(0.35), radius: 0, y: 1)
