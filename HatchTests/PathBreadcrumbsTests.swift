@@ -26,4 +26,20 @@ final class PathBreadcrumbsTests: XCTestCase {
         let crumbs = PathBreadcrumbs.segments(for: "/Users/meow/x", home: "/Users/me")
         XCTAssertEqual(crumbs.first?.title, "/")
     }
+
+    // MARK: - Папка в заголовке блока
+
+    func testFolderName() {
+        XCTAssertEqual(PathBreadcrumbs.folderName(for: "/Users/me/Downloads", home: "/Users/me"), "Downloads")
+        XCTAssertEqual(PathBreadcrumbs.folderName(for: "/Users/me", home: "/Users/me"), "~")
+        XCTAssertEqual(PathBreadcrumbs.folderName(for: "/", home: "/Users/me"), "/")
+        XCTAssertEqual(PathBreadcrumbs.folderName(for: "/usr/local", home: "/Users/me"), "local")
+    }
+
+    func testDisplayPath() {
+        XCTAssertEqual(PathBreadcrumbs.displayPath(for: "/Users/me/tmp/Hatch", home: "/Users/me"), "~/tmp/Hatch")
+        XCTAssertEqual(PathBreadcrumbs.displayPath(for: "/Users/me", home: "/Users/me"), "~")
+        XCTAssertEqual(PathBreadcrumbs.displayPath(for: "/usr/local", home: "/Users/me"), "/usr/local")
+        XCTAssertEqual(PathBreadcrumbs.displayPath(for: "/", home: "/Users/me"), "/")
+    }
 }

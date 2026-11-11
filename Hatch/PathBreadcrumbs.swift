@@ -26,4 +26,18 @@ enum PathBreadcrumbs {
         }
         return crumbs
     }
+
+    /// Имя папки для заголовка блока: `Hatch`, `~` для домашней, `/` для корня.
+    static func folderName(for path: String, home: String = SettingsStore.homeDirectory) -> String {
+        segments(for: path, home: home).last?.title ?? path
+    }
+
+    /// Путь коротко, с `~` вместо домашней папки: `~/tmp/Hatch`, `/usr/local`.
+    static func displayPath(for path: String, home: String = SettingsStore.homeDirectory) -> String {
+        let titles = segments(for: path, home: home).map(\.title)
+        guard let first = titles.first else { return path }
+        let rest = titles.dropFirst().joined(separator: "/")
+        if rest.isEmpty { return first }
+        return first == "/" ? "/" + rest : first + "/" + rest
+    }
 }

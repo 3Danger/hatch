@@ -569,6 +569,10 @@ struct SessionBlockView: View {
 
                 pipelineChips
 
+                if let directory = session.directory {
+                    directoryLabel(directory)
+                }
+
                 Spacer(minLength: 4)
 
                 statusBadge
@@ -595,6 +599,21 @@ struct SessionBlockView: View {
             // у свёрнутого блока без вывода, кроме заголовка, кликать не по чему
             .onTapGesture { onToggle() }
             .help(isExpanded ? L.t("collapse", lang) : "")
+    }
+
+    /// Папка, где выполнялась команда: только имя, полный путь — в подсказке.
+    /// Уступает место команде: не влезает имя — остаётся значок, не влезает и он — ничего.
+    private func directoryLabel(_ directory: String) -> some View {
+        ViewThatFits(in: .horizontal) {
+            Label(PathBreadcrumbs.folderName(for: directory), systemImage: "folder")
+                .fixedSize()
+            Image(systemName: "folder")
+            Color.clear.frame(width: 0, height: 0)
+        }
+        .font(.caption)
+        .foregroundStyle(.secondary)
+        .layoutPriority(-1)
+        .help(PathBreadcrumbs.displayPath(for: directory))
     }
 
     // MARK: - Конвейер по сохранённому выводу
