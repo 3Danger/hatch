@@ -1,0 +1,118 @@
+import AppKit
+import SwiftTerm
+
+/// Терминал сессии: эмулятор SwiftTerm поверх настоящего PTY с управляющим терминалом.
+/// Через него идут все команды — утилиты видят tty и ведут себя как в zsh (цвет, прогресс-бары,
+/// Ctrl-C, изменение размера, `/dev/tty`). Вью живёт, пока жив процесс: в раскрытом блоке
+/// это живой терминал, при сворачивании экран сохраняется.
+final class InteractiveTerminal: NSObject, LocalProcessTerminalViewDelegate {
+    /// Размер области раскрытого блока: с ним процесс стартует, дальше вью подстраивается сама.
+    static let initialFrame = NSRect(x: 0, y: 0, width: 640, height: 410)
+    /// Сколько строк хранит эмулятор: из них собирается итоговый вывод в истории.
+    static let scrollback = 10_000
+    /// Превью работающей команды: столько строк с начала и с конца (середина — числом).
+    /// С запасом на самый высокий блок — свежий, растянутый на свободное место.
+    static let previewEdgeLines = 20
+    /// Не чаще одного снимка превью за этот интервал: поток вывода не грузит интерфейс.
+    private static let previewInterval: TimeInterval = 0.15
+
+    let view: SessionTerminalView
+    /// Превью вывода, пока процесс работает (на main, с ограничением частоты).
+    var onOutput: ((TerminalSnapshot) -> Void)?
+    /// Вызывается на main после выхода: код выхода и итоговый экран.
+    var onExit: ((Int32, TerminalSnapshot) -> Void)?
+
+    var pid: pid_t { view.process.shellPid }
+
+    private var finished = false
+    private var previewScheduled = false
+
+    override init() {
+        view = SessionTerminalView(frame: Self.initialFrame)
+        view.font = NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
+        view.changeScrollback(Self.scrollback)
+        super.init()
+        view.processDelegate = self
+        view.onData = { [weak self] in self?.schedulePreview() }
+    }
+
+    /// Запускает `shell -lc script`; false — процесс не стартовал.
+    func start(shell: String, script: String, directory: String, environment: [String: String]) -> Bool {
+        view.startProcess(executable: shell,
+                          args: ["-lc", script],
+                          environment: Self.terminalEnvironment(environment),
+                          execName: nil,
+                          currentDirectory: directory)
+        return pid > 0
+    }
+
+    /// Ввод в процесс, как с клавиатуры.
+    func send(_ text: String) {
+        view.process.send(data: ArraySlice(Array(text.utf8)))
+    }
+
+    /// Текущий экран целиком (например, для копирования вывода работающей команды).
+    func snapshot() -> TerminalSnapshot {
+        TerminalSnapshot.capture(view.getTerminal())
+    }
+
+    // MARK: - LocalProcessTerminalViewDelegate
+
+    func processTerminated(source: TerminalView, exitCode: Int32?) {
+        finish(status: exitCode)
+    }
+
+    func sizeChanged(source: LocalProcessTerminalView, newCols: Int, newRows: Int) {}
+    func setTerminalTitle(source: LocalProcessTerminalView, title: String) {}
+    func hostCurrentDirectoryUpdate(source: TerminalView, directory: String?) {}
+
+    // MARK: - Private
+
+    private func schedulePreview() {
+        guard !previewScheduled, !finished else { return }
+        previewScheduled = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.previewInterval) { [weak self] in
+            guard let self else { return }
+            self.previewScheduled = false
+            guard !self.finished else { return }
+            self.onOutput?(TerminalSnapshot.capture(self.view.getTerminal(),
+                                                    head: Self.previewEdgeLines, tail: Self.previewEdgeLines))
+        }
+    }
+
+    private func finish(status: Int32?) {
+        guard !finished else { return }
+        finished = true
+        let code = status.map(Self.exitStatus) ?? -1
+        // Последние байты вывода доставляются на main чуть позже события выхода.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
+            guard let self else { return }
+            self.onExit?(code, self.snapshot())
+        }
+    }
+
+    /// Сырой статус waitpid → код выхода; для убитых сигналом — номер сигнала, как у `Process`.
+    private static func exitStatus(_ status: Int32) -> Int32 {
+        let signal = status & 0x7f
+        return signal == 0 ? (status >> 8) & 0xff : signal
+    }
+
+    /// Окружение команды + то, что нужно TUI: TERM и UTF-8.
+    private static func terminalEnvironment(_ base: [String: String]) -> [String] {
+        var env = base
+        env["TERM"] = "xterm-256color"
+        env["COLORTERM"] = "truecolor"
+        if env["LANG"] == nil { env["LANG"] = "en_US.UTF-8" }
+        return env.map { "\($0.key)=\($0.value)" }
+    }
+}
+
+/// Терминальная вью, которая сообщает о каждой порции вывода (для превью в блоке).
+final class SessionTerminalView: LocalProcessTerminalView {
+    var onData: (() -> Void)?
+
+    override func dataReceived(slice: ArraySlice<UInt8>) {
+        super.dataReceived(slice: slice)
+        onData?()
+    }
+}

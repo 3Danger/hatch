@@ -1,0 +1,16 @@
+# macOS
+.DS_Store
+
+# Xcode — проект генерируется из project.yml (xcodegen generate)
+*.xcodeproj/
+xcuserdata/
+DerivedData/
+build/
+*.xcresult
+
+# Swift Package Manager
+.swiftpm/
+.build/
+
+# Локальные рабочие заметки (SDD)
+.ai/

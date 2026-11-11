@@ -1,0 +1,53 @@
+name: Hatch
+options:
+  bundleIdPrefix: io.github.3danger
+  deploymentTarget:
+    macOS: "26.0"
+  createIntermediateGroups: true
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    MACOSX_DEPLOYMENT_TARGET: "26.0"
+    SWIFT_STRICT_CONCURRENCY: minimal
+packages:
+  SwiftTerm:
+    url: https://github.com/migueldeicaza/SwiftTerm
+    exactVersion: 1.18.0
+targets:
+  Hatch:
+    type: application
+    platform: macOS
+    sources:
+      - Hatch
+    dependencies:
+      - package: SwiftTerm
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: io.github.3danger.Hatch
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_NSPrincipalClass: NSApplication
+        INFOPLIST_KEY_LSUIElement: YES
+        CODE_SIGN_STYLE: Automatic
+        ENABLE_HARDENED_RUNTIME: YES
+        MARKETING_VERSION: "0.1.0"
+        CURRENT_PROJECT_VERSION: "1"
+  HatchTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - HatchTests
+    dependencies:
+      - target: Hatch
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: io.github.3danger.HatchTests
+        GENERATE_INFOPLIST_FILE: YES
+schemes:
+  Hatch:
+    build:
+      targets:
+        Hatch: all
+        HatchTests: [test]
+    test:
+      targets:
+        - HatchTests
