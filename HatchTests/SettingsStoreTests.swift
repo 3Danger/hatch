@@ -211,4 +211,28 @@ final class SettingsStoreTests: XCTestCase {
         XCTAssertEqual(shrunk, CGSize(width: PanelSize.widthRange.lowerBound,
                                       height: PanelSize.historyHeightRange.lowerBound))
     }
+
+    /// Порядок избранного: перетаскивание и ⌘↑/⌘↓ переставляют, порядок сохраняется.
+    func testReorderFavorites() {
+        let defaults = UserDefaults(suiteName: suiteName)!
+        let store = SettingsStore(defaults: defaults)
+        ["/a", "/b", "/c"].forEach { store.toggleFavoriteDirectory($0) }
+        store.moveFavoriteDirectory(from: 0, to: 2)
+        XCTAssertEqual(store.favoriteDirectories, ["/b", "/c", "/a"])
+        store.moveFavoriteDirectory(from: 5, to: 0) // вне списка — без изменений
+        XCTAssertEqual(store.favoriteDirectories, ["/b", "/c", "/a"])
+        ["ls", "pwd"].forEach { store.toggleFavoriteCommand($0) }
+        store.moveFavoriteCommand(from: 1, to: 0)
+        XCTAssertEqual(SettingsStore(defaults: defaults).favoriteDirectories, ["/b", "/c", "/a"])
+        XCTAssertEqual(SettingsStore(defaults: defaults).favoriteCommands, ["pwd", "ls"])
+    }
+
+    /// Куда встанет перетаскиваемая строка: по целым строкам сдвига, в пределах раздела.
+    func testDragTargetRow() {
+        XCTAssertEqual(FavoritesView.target(from: 1, offset: 0, step: 46, count: 4), 1)
+        XCTAssertEqual(FavoritesView.target(from: 1, offset: 20, step: 46, count: 4), 1)
+        XCTAssertEqual(FavoritesView.target(from: 1, offset: 30, step: 46, count: 4), 2)
+        XCTAssertEqual(FavoritesView.target(from: 1, offset: -60, step: 46, count: 4), 0)
+        XCTAssertEqual(FavoritesView.target(from: 1, offset: 500, step: 46, count: 4), 3)
+    }
 }

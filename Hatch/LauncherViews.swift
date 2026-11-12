@@ -303,7 +303,9 @@ struct LauncherRootView: View {
                                       run(command)
                                   },
                                   onRemoveDirectory: { settings.toggleFavoriteDirectory($0) },
-                                  onRemoveCommand: { settings.toggleFavoriteCommand($0) })
+                                  onRemoveCommand: { settings.toggleFavoriteCommand($0) },
+                                  onMoveDirectory: { settings.moveFavoriteDirectory(from: $0, to: $1) },
+                                  onMoveCommand: { settings.moveFavoriteCommand(from: $0, to: $1) })
                     }
                 }
             GlassIconButton(icon: .gear, size: LauncherMetrics.inputButton, help: L.t("settings", lang)) { openSettings() }

@@ -11,6 +11,7 @@ final class FocusReturnTests: XCTestCase {
     private var controller: FloatingWindowController?
     private var store: SessionStore!
     private var clipboard: ClipboardHistory!
+    private var settings: SettingsStore!
 
     override func tearDown() {
         controller?.hide()
@@ -54,6 +55,8 @@ final class FocusReturnTests: XCTestCase {
         let defaults = UserDefaults(suiteName: "FocusReturnTests.\(UUID().uuidString)")!
         let settings = SettingsStore(defaults: defaults)
         settings.toggleFavoriteDirectory("/usr") // чтобы избранное было не пустым
+        settings.toggleFavoriteDirectory("/tmp")
+        self.settings = settings
         let store = SessionStore(history: HistoryStore(fileURL: FileManager.default.temporaryDirectory
             .appendingPathComponent("focus-\(UUID().uuidString).json")))
         let clipboard = ClipboardHistory(fileURL: nil)
@@ -240,5 +243,24 @@ final class FocusReturnTests: XCTestCase {
         XCTAssertEqual(recorded, [13, 53], "нажатия получила запись")
         XCTAssertEqual(panel.childWindows?.count, 1, "настройки открыты")
         XCTAssertTrue(panel.isVisible, "панель не скрылась")
+    }
+
+    // MARK: - Порядок избранного
+
+    /// ⌘↓ в «Избранном» сдвигает выбранную папку ниже; ⌘↑ на верху раздела ничего не делает.
+    func testCommandArrowsReorderFavorites() throws {
+        let panel = try showPanel()
+        key(14, "e", .command, to: panel) // ⌘E
+        wait { panel.childWindows?.count == 1 }
+        let favorites = try XCTUnwrap(panel.childWindows?.first)
+        let down = String(UnicodeScalar(NSDownArrowFunctionKey)!)
+        let up = String(UnicodeScalar(NSUpArrowFunctionKey)!)
+        key(126, up, [.command, .function, .numericPad], to: favorites) // ⌘↑ на верху — стоп
+        XCTAssertEqual(settings.favoriteDirectories, ["/usr", "/tmp"])
+        key(125, down, [.command, .function, .numericPad], to: favorites) // ⌘↓
+        wait { self.settings.favoriteDirectories.first == "/tmp" }
+        XCTAssertEqual(settings.favoriteDirectories, ["/tmp", "/usr"])
+        key(125, down, [.command, .function, .numericPad], to: favorites) // уже внизу — стоп
+        XCTAssertEqual(settings.favoriteDirectories, ["/tmp", "/usr"])
     }
 }

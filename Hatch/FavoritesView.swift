@@ -3,6 +3,7 @@ import SwiftUI
 /// Список «Избранное» по кнопке ★ в поле ввода (⌘E): избранные папки и команды.
 /// Клик по папке — перейти в неё, как `cd`; по команде — запустить в текущей папке.
 /// ↑/↓ — выбор, Enter — применить, Esc — закрыть, ★ в строке — убрать из избранного.
+/// Порядок меняется перетаскиванием мышью и ⌘↑/⌘↓ — внутри своего раздела (папки или команды).
 struct FavoritesView: View {
     let directories: [String]
     let commands: [String]
@@ -12,19 +13,36 @@ struct FavoritesView: View {
     var onRun: (String) -> Void = { _ in }
     var onRemoveDirectory: (String) -> Void = { _ in }
     var onRemoveCommand: (String) -> Void = { _ in }
+    /// Переставить: откуда, куда (индексы внутри раздела).
+    var onMoveDirectory: (Int, Int) -> Void = { _, _ in }
+    var onMoveCommand: (Int, Int) -> Void = { _, _ in }
 
     @State private var selection = 0
     @FocusState private var focused: Bool
+    /// Перетаскиваемая строка: раздел, её место до перетаскивания и сдвиг мыши.
+    @State private var drag: Drag?
+    /// Высота строки с промежутком: на столько соседи расступаются при перетаскивании.
+    @State private var rowStep: CGFloat = 46
 
     private enum Item: Hashable {
         case directory(String)
         case command(String)
     }
 
+    private enum Section { case directories, commands }
+
+    private struct Drag: Equatable {
+        let section: Section
+        let from: Int
+        var offset: CGFloat
+    }
+
+    private static let rowSpacing: CGFloat = 2
+
     private var items: [Item] { directories.map(Item.directory) + commands.map(Item.command) }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
+        VStack(alignment: .leading, spacing: Self.rowSpacing) {
             section(L.t("fav_dirs", lang), hint: L.t("fav_dirs_hint", lang))
             if directories.isEmpty { empty(L.t("fav_dirs_empty", lang)) }
             ForEach(Array(directories.enumerated()), id: \.element) { index, path in
@@ -33,6 +51,8 @@ struct FavoritesView: View {
                     labels(title: PathBreadcrumbs.folderName(for: path),
                            subtitle: ShellCompletionEngine.normalizeHomePath(path), mono: false)
                 }
+                .reorderable(drag: drag(for: .directories, at: index, count: directories.count),
+                             gesture: dragGesture(.directories, index: index, count: directories.count))
                 .onTapGesture { onGo(path) }
             }
 
@@ -50,15 +70,22 @@ struct FavoritesView: View {
                            subtitle: String(format: L.t("fav_run_in", lang), PathBreadcrumbs.folderName(for: currentDirectory)),
                            mono: true)
                 }
+                .reorderable(drag: drag(for: .commands, at: offset, count: commands.count),
+                             gesture: dragGesture(.commands, index: offset, count: commands.count))
                 .onTapGesture { onRun(command) }
             }
 
             divider
-            // подвал как в макете: клавиши в лунках и что они делают
-            HStack(spacing: 12) {
-                hint(["↑", "↓"], L.t("fav_select", lang))
-                hint(["↩"], L.t("fav_apply", lang))
-                hint(["esc"], L.t("fav_close", lang))
+            // подвал: клавиши в лунках и что они делают — в две строки, в одну не влезают
+            VStack(alignment: .leading, spacing: 5) {
+                HStack(spacing: 12) {
+                    hint(["↑", "↓"], L.t("fav_select", lang))
+                    hint(["⌘↑↓"], L.t("fav_reorder", lang))
+                }
+                HStack(spacing: 12) {
+                    hint(["↩"], L.t("fav_apply", lang))
+                    hint(["esc"], L.t("fav_close", lang))
+                }
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 4)
@@ -69,11 +96,79 @@ struct FavoritesView: View {
         .focusEffectDisabled()
         .focused($focused)
         .onAppear { focused = true }
-        .onKeyPress(.downArrow) { move(1) }
-        .onKeyPress(.upArrow) { move(-1) }
+        // удержание стрелки — повторы: выбор бежит по строкам, с ⌘ — строка едет по разделу
+        .onKeyPress(keys: [.upArrow, .downArrow], phases: [.down, .repeat]) { press in
+            let delta = press.key == .upArrow ? -1 : 1
+            return press.modifiers.contains(.command) ? reorder(delta) : move(delta)
+        }
         .onKeyPress(.return) { apply() }
         .onChange(of: items.count) { _, count in selection = min(selection, max(count - 1, 0)) }
     }
+
+    // MARK: - Перестановка
+
+    /// Сдвиг строки при перетаскивании: сама строка — за мышью, соседи между старым
+    /// и новым местом расступаются на одну строку.
+    private func drag(for section: Section, at index: Int, count: Int) -> (offset: CGFloat, lifted: Bool) {
+        guard let drag, drag.section == section else { return (0, false) }
+        if index == drag.from { return (drag.offset, true) }
+        let target = Self.target(from: drag.from, offset: drag.offset, step: rowStep, count: count)
+        if drag.from < index, index <= target { return (-rowStep, false) }
+        if target <= index, index < drag.from { return (rowStep, false) }
+        return (0, false)
+    }
+
+    /// Куда встанет строка: на сколько целых строк её сдвинули, в пределах раздела.
+    static func target(from: Int, offset: CGFloat, step: CGFloat, count: Int) -> Int {
+        guard step > 0, count > 0 else { return from }
+        return min(max(from + Int((offset / step).rounded()), 0), count - 1)
+    }
+
+    private func dragGesture(_ section: Section, index: Int, count: Int) -> some Gesture {
+        DragGesture(minimumDistance: 4, coordinateSpace: .global)
+            .onChanged { value in
+                if drag == nil {
+                    selection = (section == .directories ? 0 : directories.count) + index
+                }
+                drag = Drag(section: section, from: index, offset: value.translation.height)
+            }
+            .onEnded { value in
+                let to = Self.target(from: index, offset: value.translation.height, step: rowStep, count: count)
+                // без анимации: строки уже стоят на новых местах, иначе они дёрнулись бы обратно
+                var transaction = Transaction()
+                transaction.disablesAnimations = true
+                withTransaction(transaction) {
+                    drag = nil
+                    commitMove(section, from: index, to: to)
+                }
+            }
+    }
+
+    /// ⌘↑/⌘↓: выбранная строка на одно место выше или ниже, внутри своего раздела.
+    private func reorder(_ delta: Int) -> KeyPress.Result {
+        guard items.indices.contains(selection) else { return .handled }
+        let (section, index, count) = selection < directories.count
+            ? (Section.directories, selection, directories.count)
+            : (Section.commands, selection - directories.count, commands.count)
+        let to = index + delta
+        guard (0..<count).contains(to) else { return .handled } // на краю раздела — стоп
+        withAnimation(.easeOut(duration: 0.15)) { commitMove(section, from: index, to: to) }
+        return .handled
+    }
+
+    private func commitMove(_ section: Section, from: Int, to: Int) {
+        guard from != to else { return }
+        switch section {
+        case .directories:
+            onMoveDirectory(from, to)
+            selection = to
+        case .commands:
+            onMoveCommand(from, to)
+            selection = directories.count + to
+        }
+    }
+
+    // MARK: - Вид
 
     private func hint(_ keys: [String], _ text: String) -> some View {
         HStack(spacing: 4) {
@@ -150,6 +245,8 @@ struct FavoritesView: View {
         .background(selected ? Tactile.accent.opacity(0.22) : .clear, in: RoundedRectangle(cornerRadius: 8))
         .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(selected ? Tactile.accent.opacity(0.55) : .clear))
         .contentShape(Rectangle())
+        // все строки одной высоты: по ней считается, на сколько мест сдвинули перетаскиваемую
+        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { rowStep = $0 + Self.rowSpacing }
     }
 
     private func move(_ delta: Int) -> KeyPress.Result {
@@ -165,6 +262,21 @@ struct FavoritesView: View {
         case .command(let command): onRun(command)
         }
         return .handled
+    }
+}
+
+private extension View {
+    /// Строка, которую можно перетащить: за мышью она приподнята (тень, поверх соседей),
+    /// соседи плавно расступаются.
+    func reorderable<G: Gesture>(drag: (offset: CGFloat, lifted: Bool), gesture: G) -> some View {
+        self
+            .background(drag.lifted ? Tactile.menu : .clear, in: RoundedRectangle(cornerRadius: 8))
+            .shadow(color: .black.opacity(drag.lifted ? 0.45 : 0), radius: 10, y: 6)
+            .scaleEffect(drag.lifted ? 1.02 : 1)
+            .offset(y: drag.offset)
+            .zIndex(drag.lifted ? 1 : 0)
+            .animation(drag.lifted ? nil : .easeOut(duration: 0.15), value: drag.offset)
+            .gesture(gesture)
     }
 }
 

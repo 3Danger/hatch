@@ -182,6 +182,24 @@ final class SettingsStore {
         return true
     }
 
+    /// Порядок избранного меняется перетаскиванием и ⌘↑/⌘↓ в списке «Избранное».
+    func moveFavoriteDirectory(from source: Int, to destination: Int) {
+        favoriteDirectories = Self.moved(favoriteDirectories, from: source, to: destination)
+    }
+
+    func moveFavoriteCommand(from source: Int, to destination: Int) {
+        favoriteCommands = Self.moved(favoriteCommands, from: source, to: destination)
+    }
+
+    /// Элемент `source` встаёт на место `destination` (остальные сдвигаются); вне списка — без изменений.
+    static func moved<T>(_ list: [T], from source: Int, to destination: Int) -> [T] {
+        guard list.indices.contains(source), list.indices.contains(destination), source != destination else { return list }
+        var result = list
+        let item = result.remove(at: source)
+        result.insert(item, at: destination)
+        return result
+    }
+
     func isFavoriteCommand(_ command: String) -> Bool {
         favoriteCommands.contains(command.trimmingCharacters(in: .whitespacesAndNewlines))
     }
