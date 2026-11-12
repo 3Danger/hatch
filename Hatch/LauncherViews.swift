@@ -127,6 +127,7 @@ struct LauncherRootView: View {
                              onSubmit: { command in
                                  if searchMode { openFound(); return }
                                  navigator.reset()
+                                 if performQuickAction(command) { return }
                                  run(command)
                                  text = ""
                              },
@@ -138,6 +139,7 @@ struct LauncherRootView: View {
                              },
                              onExitSearch: exitSearch,
                              history: historyCommands,
+                             quickAction: { searchMode ? nil : resolveQuickAction($0) },
                              isFocused: inputFocused,
                              trailing: AnyView(inputButtons))
             .focused($inputFocused)
@@ -166,6 +168,7 @@ struct LauncherRootView: View {
             inputFocused = true
             NotificationService().requestPermission()
             installKeyShortcuts()
+            AppCatalog.shared.refresh()
         }
         .onDisappear {
             keyMonitor.map(NSEvent.removeMonitor)
@@ -184,6 +187,7 @@ struct LauncherRootView: View {
             if searchMode { exitSearch() }
             inputFocused = true
             switchToLatinIfEnabled() // фокус мог уже стоять в поле — onChange не сработает
+            AppCatalog.shared.refresh() // приложения могли поставить или удалить
         }
         // курсор в поле ввода — латинская раскладка (если включено в настройках)
         .onChange(of: inputFocused) { _, focused in
@@ -454,6 +458,27 @@ struct LauncherRootView: View {
 
     private var expandedSession: Session? {
         expandedID.flatMap { id in sessionStore.sessions.first { $0.id == id } }
+    }
+
+    // MARK: - Приложения и калькулятор
+
+    private func resolveQuickAction(_ text: String) -> QuickAction? {
+        settings.quickActionResolver(apps: AppCatalog.shared.apps).resolve(text, directory: settings.currentDirectory)
+    }
+
+    /// Enter открыл приложение или скопировал результат расчёта: в историю не попадает,
+    /// панель скрывается. false — это команда.
+    private func performQuickAction(_ command: String) -> Bool {
+        guard let action = resolveQuickAction(command), action.handlesEnter else { return false }
+        action.perform()
+        // деление на ноль: звук, набранное остаётся исправить
+        if action == .divisionByZero { return true }
+        text = ""
+        if case .calculate(let value) = action {
+            showToast(String(format: L.t("calc_copied", lang), Calculator.display(value)))
+        }
+        NotificationCenter.default.post(name: .hatchRequestHide, object: nil)
+        return true
     }
 
     private func run(_ command: String, directory: String? = nil) {
@@ -1331,6 +1356,8 @@ struct CommandInputView: View {
     var onExitSearch: () -> Void = {}
     /// Команды из истории, от новых к старым: источник серой подсказки.
     var history: [String] = []
+    /// Что сделает Enter вместо команды: открыть приложение, скопировать результат (подпись справа).
+    var quickAction: (String) -> QuickAction? = { _ in nil }
     /// Поле в фокусе — светится рамка.
     var isFocused = false
     /// Кнопки справа в поле (настройки, очистка).
@@ -1386,7 +1413,7 @@ struct CommandInputView: View {
                     .onPreferenceChange(TypedWidthKey.self) { typedWidth = $0 }
             }
 
-            if let ghost = historyGhost {
+            if let ghost = historyGhost ?? appGhost {
                 Text(ghost)
                     .font(font)
                     .foregroundStyle(.tertiary)
@@ -1398,6 +1425,7 @@ struct CommandInputView: View {
                 .textFieldStyle(.plain)
                 .font(font)
         }
+        if let quick { QuickActionLabel(action: quick, lang: lang) }
         if searching { searchBadge }
         if let trailing { trailing }
         }
@@ -1460,6 +1488,21 @@ struct CommandInputView: View {
         .transition(.opacity.combined(with: .scale(scale: 0.85)))
     }
 
+    private var quick: QuickAction? { searching ? nil : quickAction(text) }
+
+    /// Имя приложения по набранному началу: «saf» → «safari».
+    private var appCompletion: String? {
+        guard completer.menu == nil, case .suggestApp(_, let completion) = quick,
+              completion.hasPrefix(text), completion.count > text.count else { return nil }
+        return completion
+    }
+
+    /// Остаток имени приложения — серым, если нет подсказки из истории.
+    private var appGhost: String? {
+        guard historyGhost == nil, let completion = appCompletion else { return nil }
+        return String(completion.dropFirst(text.count))
+    }
+
     /// Остаток подсказки из истории после набранного.
     private var historyGhost: String? {
         guard !searching, completer.menu == nil, let completion = historyCompletion,
@@ -1509,6 +1552,11 @@ struct CommandInputView: View {
     // MARK: - TAB
 
     private func tab(_ direction: TabCompleter.Direction) -> KeyPress.Result {
+        // серым видно имя приложения — TAB дописывает его, как в подписи «⇥ Safari»
+        if direction == .forward, appGhost != nil, let completion = appCompletion {
+            text = completion
+            return .handled
+        }
         // текст мог прийти не с клавиатуры (стрелки по истории) — варианты считаем для него
         if completer.menu == nil, candidatesText != text { refresh(text) }
         guard let newText = completer.press(direction, text: text, candidates: candidates,
@@ -1547,6 +1595,10 @@ struct CommandInputView: View {
 
     /// → принимает серую подсказку из истории; без подсказки — обычное движение курсора.
     private func acceptHistory() -> KeyPress.Result {
+        if appGhost != nil, let completion = appCompletion {
+            text = completion
+            return .handled
+        }
         guard let completion = historyCompletion, historyGhost != nil else { return .ignored }
         historyCompletion = nil
         text = completion

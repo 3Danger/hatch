@@ -4,6 +4,8 @@ import SwiftUI
 extension Notification.Name {
     /// Панель показана — можно ставить фокус в поле ввода.
     static let hatchDidShow = Notification.Name("hatch.didShow")
+    /// Скрыть панель: после запуска приложения или копирования результата из поля ввода.
+    static let hatchRequestHide = Notification.Name("hatch.requestHide")
 }
 
 /// Панель без системной рамки: форму и стекло рисует SwiftUI.
@@ -62,6 +64,9 @@ final class FloatingWindowController {
         })
         observers.append(center.addObserver(forName: NSWindow.didResizeNotification, object: panel, queue: .main) {
             [weak self] _ in self?.keepTopAfterResize()
+        })
+        observers.append(center.addObserver(forName: .hatchRequestHide, object: nil, queue: .main) {
+            [weak self] _ in self?.hide()
         })
     }
 

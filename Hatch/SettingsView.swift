@@ -7,6 +7,10 @@ import AppKit
 struct SettingsView: View {
     @Environment(SettingsStore.self) private var settings
     var onClose: () -> Void = {}
+    @State private var aliasDraft = ""
+    @State private var exclusionDraft = ""
+    /// Высота групп: на невысоком экране они прокручиваются, кнопки внизу всегда видны.
+    @State private var groupsHeight: CGFloat = 0
 
     private var lang: String { settings.languageCode }
 
@@ -31,6 +35,8 @@ struct SettingsView: View {
             .padding(.top, 14)
             .padding(.bottom, 6)
 
+            ScrollView {
+            VStack(spacing: 0) {
             group {
                 row(L.t("hotkey", lang), first: true) { HotKeyCapsField(spec: binding(\.hotkeyString), lang: lang) }
                 row(L.t("folder_tree", lang), hint: L.t("folder_tree_hint", lang)) {
@@ -71,6 +77,14 @@ struct SettingsView: View {
                         .help(L.t("latin_layout_hint", lang))
                 }
             }
+
+            group { appRows }
+            }
+            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { groupsHeight = $0 }
+            }
+            .scrollIndicators(.automatic)
+            .scrollBounceBehavior(.basedOnSize)
+            .frame(height: min(groupsHeight, Self.maxGroupsHeight))
 
             HStack(spacing: 8) {
                 Text("Hatch \(version)").font(.caption).foregroundStyle(.tertiary)
@@ -142,6 +156,11 @@ struct SettingsView: View {
 
     private func binding<T>(_ keyPath: ReferenceWritableKeyPath<SettingsStore, T>) -> Binding<T> {
         Binding(get: { settings[keyPath: keyPath] }, set: { settings[keyPath: keyPath] = $0 })
+    }
+
+    /// Сколько места под группы: экран минус заголовок, кнопки и отступы панели.
+    private static var maxGroupsHeight: CGFloat {
+        (NSScreen.main?.visibleFrame.height ?? 900) - 220
     }
 
     private var version: String {
@@ -360,5 +379,111 @@ private struct KeyCap: View {
             .frame(minWidth: 28, minHeight: 28)
             // в макете у клавиши и рамка, и внутренняя кромка — край в 2 точки
             .tactileRaised(RoundedRectangle(cornerRadius: 7, style: .circular), edgeWidth: 2)
+    }
+}
+
+// MARK: - Приложения из поля ввода
+
+extension SettingsView {
+    /// Переключатели, алиасы (сгруппированы по приложению) и исключения.
+    @ViewBuilder fileprivate var appRows: some View {
+        row(L.t("open_apps", lang), hint: L.t("open_apps_hint", lang), first: true) {
+            Toggle("", isOn: binding(\.openAppsFromInput)).toggleStyle(GlassSwitchStyle()).labelsHidden()
+        }
+        row(L.t("calculator", lang), hint: L.t("calculator_hint", lang)) {
+            Toggle("", isOn: binding(\.calculatorInInput)).toggleStyle(GlassSwitchStyle()).labelsHidden()
+        }
+        row(L.t("app_aliases", lang), hint: L.t("app_aliases_hint", lang)) { newAliasControls }
+        ForEach(aliasGroups, id: \.id) { entry in
+            lineRow { aliasRow(entry.id, aliases: entry.aliases) }
+        }
+        row(L.t("app_exclusions", lang), hint: L.t("app_exclusions_hint", lang)) {
+            GlassField(text: $exclusionDraft, placeholder: L.t("exclusion_placeholder", lang), width: 120)
+                .onSubmit {
+                    settings.addExclusion(exclusionDraft)
+                    exclusionDraft = ""
+                }
+        }
+        if !settings.appExclusions.isEmpty {
+            lineRow {
+                HStack(spacing: 6) {
+                    ForEach(settings.appExclusions, id: \.self) { name in chip(name) { settings.removeExclusion(name) } }
+                    Spacer(minLength: 0)
+                }
+            }
+        }
+    }
+
+    /// Строка группы без подписи слева: алиасы, поле нового алиаса, исключения.
+    private func lineRow<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
+        content()
+            .padding(.horizontal, 14)
+            .frame(minHeight: 40)
+            .overlay(alignment: .top) { Rectangle().fill(Tactile.groupEdge).frame(height: 1) }
+    }
+
+    /// Алиасы по приложениям: у VS Code — `code` и `vscode` в одной строке.
+    fileprivate var aliasGroups: [(id: String, aliases: [String])] {
+        Dictionary(grouping: settings.appAliases.keys, by: { settings.appAliases[$0] ?? "" })
+            .map { (id: $0.key, aliases: $0.value.sorted()) }
+            .sorted { appTitle($0.id).localizedCaseInsensitiveCompare(appTitle($1.id)) == .orderedAscending }
+    }
+
+    private func app(_ id: String) -> AppEntry? { AppCatalog.shared.apps.first { $0.identifier == id } }
+
+    private func appTitle(_ id: String) -> String { app(id)?.title ?? id }
+
+    private func aliasRow(_ id: String, aliases: [String]) -> some View {
+        HStack(spacing: 8) {
+            HStack(spacing: 6) {
+                ForEach(aliases, id: \.self) { alias in chip(alias) { settings.removeAlias(alias) } }
+            }
+            Text("→").foregroundStyle(.tertiary)
+            if let app = app(id) {
+                AppIconView(app: app)
+                Text(app.title).font(.system(size: 13)).lineLimit(1).truncationMode(.middle)
+            } else {
+                Text(id).font(.system(size: 12)).lineLimit(1).truncationMode(.middle).foregroundStyle(.secondary)
+                Text(L.t("app_missing", lang)).font(.system(size: 11)).foregroundStyle(.tertiary).fixedSize()
+            }
+            Spacer(minLength: 0)
+        }
+    }
+
+    /// Новый алиас: набрать имя и выбрать приложение из списка.
+    private var newAliasControls: some View {
+        HStack(spacing: 6) {
+            GlassField(text: $aliasDraft, placeholder: L.t("alias_placeholder", lang), width: 90)
+            Menu {
+                ForEach(AppCatalog.shared.apps, id: \.self) { app in
+                    Button(app.title) {
+                        settings.setAlias(aliasDraft, for: app.identifier)
+                        aliasDraft = ""
+                    }
+                }
+            } label: {
+                Text(L.t("alias_pick_app", lang)).font(.system(size: 12.5))
+            }
+            .menuStyle(.borderlessButton)
+            .fixedSize()
+            .disabled(aliasDraft.trimmingCharacters(in: .whitespaces).isEmpty)
+        }
+    }
+
+    private func chip(_ text: String, onRemove: @escaping () -> Void) -> some View {
+        HStack(spacing: 3) {
+            Text(text).font(.system(size: 12, design: .monospaced))
+            Button(action: onRemove) {
+                Text("×").font(.system(size: 12)).foregroundStyle(.secondary).frame(width: 14, height: 14).contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help(L.t("remove", lang))
+        }
+        .padding(.leading, 8)
+        .padding(.trailing, 4)
+        .frame(height: 22)
+        .background(Tactile.accent.opacity(0.18), in: RoundedRectangle(cornerRadius: 6))
+        .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(Tactile.accent.opacity(0.6), lineWidth: 0.5))
+        .fixedSize()
     }
 }

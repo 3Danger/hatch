@@ -48,6 +48,17 @@ final class SettingsStore {
     /// Недавние директории, свежая первой (меню на пути над полем ввода).
     private(set) var recentDirectories: [String] { didSet { defaults.set(recentDirectories, forKey: Keys.recentDirectories) } }
     static let recentDirectoriesLimit = 10
+    /// Enter по имени или алиасу приложения открывает приложение (как в Spotlight).
+    var openAppsFromInput: Bool { didSet { defaults.set(openAppsFromInput, forKey: Keys.openApps) } }
+    /// Калькулятор в поле ввода: результат справа, Enter копирует.
+    var calculatorInInput: Bool { didSet { defaults.set(calculatorInInput, forKey: Keys.calculator) } }
+    /// Алиас → приложение (bundle id или путь): `code` → VS Code.
+    private(set) var appAliases: [String: String] { didSet { defaults.set(appAliases, forKey: Keys.appAliases) } }
+    /// Имена, которые остаются командами, даже если совпали с приложением (`claude`, `mail`).
+    private(set) var appExclusions: [String] { didSet { defaults.set(appExclusions, forKey: Keys.appExclusions) } }
+    static let defaultAppAliases = ["vscode": "com.microsoft.VSCode", "code": "com.microsoft.VSCode"]
+    /// CLI, у которых есть одноимённое приложение: `claude` должен запускать Claude Code, а не Claude.app.
+    static let defaultAppExclusions = ["claude", "ollama", "opencode"]
 
     private let defaults: UserDefaults
 
@@ -68,6 +79,10 @@ final class SettingsStore {
         static let folderTreeShortcut = "settings.folderTreeShortcut"
         static let favoriteDirectories = "settings.favoriteDirectories"
         static let favoriteCommands = "settings.favoriteCommands"
+        static let openApps = "settings.openAppsFromInput"
+        static let calculator = "settings.calculatorInInput"
+        static let appAliases = "settings.appAliases"
+        static let appExclusions = "settings.appExclusions"
     }
 
     init(defaults: UserDefaults = .standard) {
@@ -93,6 +108,10 @@ final class SettingsStore {
         self.folderTreeShortcut = defaults.string(forKey: Keys.folderTreeShortcut) ?? Self.defaultFolderTreeShortcut
         self.favoriteDirectories = defaults.stringArray(forKey: Keys.favoriteDirectories) ?? []
         self.favoriteCommands = defaults.stringArray(forKey: Keys.favoriteCommands) ?? []
+        self.openAppsFromInput = defaults.object(forKey: Keys.openApps) as? Bool ?? true
+        self.calculatorInInput = defaults.object(forKey: Keys.calculator) as? Bool ?? true
+        self.appAliases = defaults.dictionary(forKey: Keys.appAliases) as? [String: String] ?? Self.defaultAppAliases
+        self.appExclusions = defaults.stringArray(forKey: Keys.appExclusions) ?? Self.defaultAppExclusions
         let width = defaults.object(forKey: Keys.panelWidth) as? Double
         self.panelWidth = PanelSize.clampWidth(width.map { CGFloat($0) } ?? PanelSize.defaultWidth)
         let height = defaults.object(forKey: Keys.historyMaxHeight) as? Double
@@ -149,6 +168,39 @@ final class SettingsStore {
         favoriteCommands.contains(command.trimmingCharacters(in: .whitespacesAndNewlines))
     }
 
+    // MARK: - Приложения из поля ввода
+
+    /// Алиас без пробелов, в нижнем регистре; занятый алиас переходит к новому приложению.
+    func setAlias(_ alias: String, for appID: String) {
+        let alias = Self.normalizedName(alias)
+        guard !alias.isEmpty, !alias.contains(where: \.isWhitespace) else { return }
+        appAliases[alias] = appID
+    }
+
+    func removeAlias(_ alias: String) {
+        appAliases[alias] = nil
+    }
+
+    func addExclusion(_ name: String) {
+        let name = Self.normalizedName(name)
+        guard !name.isEmpty, !appExclusions.contains(name) else { return }
+        appExclusions.append(name)
+    }
+
+    func removeExclusion(_ name: String) {
+        appExclusions.removeAll { $0 == name }
+    }
+
+    private static func normalizedName(_ name: String) -> String {
+        name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    }
+
+    /// Разбор поля ввода с текущими настройками.
+    func quickActionResolver(apps: [AppEntry]) -> QuickActionResolver {
+        QuickActionResolver(apps: apps, aliases: appAliases, exclusions: appExclusions,
+                            appsEnabled: openAppsFromInput, calculatorEnabled: calculatorInInput)
+    }
+
     private func rememberRecent(_ path: String) {
         var list = recentDirectories.filter { $0 != path }
         list.insert(path, at: 0)
@@ -174,6 +226,8 @@ final class SettingsStore {
         timeoutSeconds = 0
         latinLayoutInInput = true
         showStatusIcon = true
+        openAppsFromInput = true
+        calculatorInInput = true
         folderTreeShortcut = Self.defaultFolderTreeShortcut
         panelWidth = PanelSize.defaultWidth
         historyMaxHeight = PanelSize.defaultHistoryHeight
