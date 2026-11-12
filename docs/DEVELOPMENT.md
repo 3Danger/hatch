@@ -70,6 +70,8 @@ node docs/demo/record.js
 - **Уведомления** — о завершении долгих команд, запрос при первом запуске.
 - **Доступ к папкам** («Рабочий стол», «Документы») — macOS спросит, когда команда или `~/.zshrc`
   впервые обратится к защищённой папке. Пока запрос не подтверждён, команда ждёт.
+- **Буфер обмена** — Hatch раз в полсекунды сверяет счётчик изменений буфера и читает его после
+  копирования. История лежит в `~/Library/Application Support/Hatch/clipboard.json` (права 0600).
 - Сборка подписана ad-hoc, поэтому после пересборки macOS может спросить разрешения заново.
 
 ## Перенос с MacUtils
@@ -95,6 +97,7 @@ node docs/demo/record.js
 | `HistoryNavigator.swift`, `HistorySuggestion.swift` | ↑/↓ по истории, серая подсказка |
 | `QuickActions.swift`, `QuickActionLabel.swift`, `Calculator.swift` | приложения и калькулятор в поле ввода: список приложений, разбор строки, подпись справа |
 | `CommandNotFound.swift` | опечатка в имени команды: распознать «command not found», похожие имена |
+| `ClipboardHistory.swift`, `ClipboardView.swift` | буфер обмена (⌘4): слежение за копированием, хранение, список |
 | `DirectoryBreadcrumbsView.swift`, `FolderTreeView.swift`, `FolderTree.swift` | путь над полем ввода и дерево папок |
 | `KeyboardLayoutSwitcher.swift`, `HotKeyRecorder.swift` | латиница в поле ввода, запись сочетаний |
 | `SessionStore.swift`, `HistoryStore.swift`, `SettingsStore.swift` | состояние и хранение |

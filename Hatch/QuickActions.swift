@@ -225,8 +225,7 @@ extension QuickAction {
         case .openPaths(let app, let urls):
             NSWorkspace.shared.open(urls, withApplicationAt: app.url, configuration: NSWorkspace.OpenConfiguration())
         case .calculate(let value):
-            NSPasteboard.general.clearContents()
-            NSPasteboard.general.setString(Calculator.clipboard(value), forType: .string)
+            Clipboard.copy(Calculator.clipboard(value))
         case .divisionByZero:
             NSSound.beep()
         case .suggestApp:

@@ -40,11 +40,17 @@ struct LauncherRootView: View {
     @Environment(ProcessRunner.self) private var runner
     @Environment(SettingsStore.self) private var settings
     @Environment(HotKeyController.self) private var hotKeys
+    @Environment(ClipboardHistory.self) private var clipboard
 
     @State private var text = ""
     /// Режим поиска (⌘F): то же поле ввода ищет по истории; набранная команда ждёт в `text`.
     @State private var searchMode = false
     @State private var searchQuery = ""
+    /// Режим буфера обмена (⌘4): поле ищет по скопированному, вместо истории — фрагменты.
+    @State private var clipboardMode = false
+    @State private var clipboardQuery = ""
+    /// Выбранный фрагмент (↑/↓) в отфильтрованном списке.
+    @State private var clipSelection = 0
     /// ⌘1 (или сочетание из настроек): дерево папок у текущей папки; счётчик — каждое нажатие.
     @State private var folderTreeRequest = 0
     /// Список «Избранное» (кнопка ★, ⌘E).
@@ -122,12 +128,13 @@ struct LauncherRootView: View {
                 .padding(.horizontal, 14) // по левому краю текста в поле ввода
                 .padding(.bottom, -4)     // ближе к полю, чем к краю панели
 
-            CommandInputView(text: searchMode ? $searchQuery : $text,
+            CommandInputView(text: searchMode ? $searchQuery : clipboardMode ? $clipboardQuery : $text,
                              directory: settings.currentDirectory,
-                             mode: searchMode ? .search : .command,
+                             mode: searchMode ? .search : clipboardMode ? .clipboard : .command,
                              lang: lang,
                              onSubmit: { command in
                                  if searchMode { openFound(); return }
+                                 if clipboardMode { copyClip(nil); return }
                                  navigator.reset()
                                  if performQuickAction(command) { return }
                                  run(command)
@@ -142,24 +149,27 @@ struct LauncherRootView: View {
                                  }
                                  // фильтрует историю только поиск; набор команды список не трогает
                                  if searchMode { sessionStore.filterText = searchQuery.trimmingCharacters(in: .whitespaces) }
+                                 if clipboardMode { clipSelection = 0 }
                              },
-                             onExitSearch: exitSearch,
+                             onExitSearch: { clipboardMode ? exitClipboard() : exitSearch() },
                              history: historyCommands,
-                             quickAction: { searchMode ? nil : resolveQuickAction($0) },
-                             fix: searchMode ? nil : missingFix,
-                             alert: !searchMode && runner.missingCommand != nil,
+                             quickAction: { commandMode ? resolveQuickAction($0) : nil },
+                             fix: commandMode ? missingFix : nil,
+                             alert: commandMode && runner.missingCommand != nil,
                              isFocused: inputFocused,
                              trailing: AnyView(inputButtons))
             .focused($inputFocused)
 
-            if let missing = runner.missingCommand, !searchMode {
+            if let missing = runner.missingCommand, commandMode {
                 MissingCommandRow(missing: missing, suggestions: missingSuggestions, lang: lang) { word in
                     text = CommandNotFound.replacingFirstWord(in: missing.command, with: word)
                     inputFocused = true
                 }
             }
 
-            historyArea
+            Group {
+                if clipboardMode { clipboardArea } else { historyArea }
+            }
                 .frame(maxWidth: .infinity, alignment: .top)
                 .onGeometryChange(for: CGFloat.self) { $0.size.height.rounded() } action: {
                     historyVisibleHeight = $0
@@ -201,6 +211,7 @@ struct LauncherRootView: View {
         .onReceive(NotificationCenter.default.publisher(for: .hatchDidShow)) { _ in
             // панель открывается заново — в обычном режиме, с набранной командой
             if searchMode { exitSearch() }
+            if clipboardMode { exitClipboard() }
             inputFocused = true
             switchToLatinIfEnabled() // фокус мог уже стоять в поле — onChange не сработает
             AppCatalog.shared.refresh() // приложения могли поставить или удалить
@@ -223,7 +234,7 @@ struct LauncherRootView: View {
             guard let missing else { missingSuggestionsCache = nil; return }
             missingSuggestionsCache = (missing.word, CommandNotFound.suggestions(
                 for: missing.word, commands: CommandIndex.shared(for: settings.shellPath).allCommands, apps: appNames))
-            if text.isEmpty, !searchMode {
+            if text.isEmpty, commandMode {
                 text = missing.command
                 inputFocused = true
             } else {
@@ -394,6 +405,13 @@ struct LauncherRootView: View {
     // MARK: - Actions
 
     private func navigateHistory(_ direction: HistoryDirection) -> String? {
+        if clipboardMode {
+            // в буфере стрелки двигают выбор, запрос остаётся
+            let count = visibleClips.count
+            guard count > 0 else { return clipboardQuery }
+            clipSelection = min(max(clipSelection + (direction == .older ? 1 : -1), 0), count - 1)
+            return clipboardQuery
+        }
         let current = searchMode ? searchQuery : text
         let step: String?
         switch direction {
@@ -458,6 +476,7 @@ struct LauncherRootView: View {
     /// ⌘F: поле ввода становится поиском по командам и выводу; повторно — обратно к команде.
     private func toggleSearch() {
         if searchMode { exitSearch(); return }
+        if clipboardMode { exitClipboard() }
         navigator.reset()
         searchQuery = ""
         sessionStore.filterText = ""
@@ -492,6 +511,61 @@ struct LauncherRootView: View {
 
     private var expandedSession: Session? {
         expandedID.flatMap { id in sessionStore.sessions.first { $0.id == id } }
+    }
+
+    // MARK: - Буфер обмена (⌘4)
+
+    /// Поле ввода — для команды (не поиск и не буфер): подсказки, приложения, калькулятор.
+    private var commandMode: Bool { !searchMode && !clipboardMode }
+
+    private var visibleClips: [Clip] { clipboard.matching(clipboardQuery) }
+
+    private var selectedClip: Clip? {
+        let clips = visibleClips
+        return clips.indices.contains(clipSelection) ? clips[clipSelection] : clips.first
+    }
+
+    private var clipboardArea: some View {
+        ClipboardListView(clips: visibleClips, total: clipboard.clips.count, query: clipboardQuery,
+                          selection: clipSelection, days: settings.clipboardDays, lang: lang,
+                          maxHeight: settings.historyMaxHeight, onCopy: { copyClip($0) })
+    }
+
+    /// ⌘4: поле ищет по скопированному; повторно или Esc — обратно к команде, набранное на месте.
+    private func toggleClipboard() {
+        if clipboardMode { exitClipboard(); return }
+        guard settings.clipboardEnabled else { NSSound.beep(); return }
+        if searchMode { exitSearch() }
+        favoritesOpen = false
+        clipboardQuery = ""
+        clipSelection = 0
+        withAnimation(.easeOut(duration: 0.2)) { clipboardMode = true }
+        inputFocused = true
+    }
+
+    private func exitClipboard() {
+        guard clipboardMode else { return }
+        clipboardQuery = ""
+        withAnimation(.easeOut(duration: 0.2)) { clipboardMode = false }
+        if expandedID == nil { inputFocused = true }
+    }
+
+    /// Enter или клик: фрагмент снова в буфере, панель скрывается — остаётся ⌘V там, где вы были.
+    private func copyClip(_ clip: Clip?) {
+        guard let clip = clip ?? selectedClip else { NSSound.beep(); return }
+        Clipboard.copy(clip.text)
+        let line = clip.text.split(separator: "\n").first.map(String.init) ?? clip.text
+        showToast(String(format: L.t("clip_copied", lang), line))
+        exitClipboard()
+        NotificationCenter.default.post(name: .hatchRequestHide, object: nil)
+    }
+
+    /// ⌘Enter: фрагмент — в поле ввода как команда (переводы строк — пробелами: поле однострочное).
+    private func insertClip() {
+        guard let clip = selectedClip else { NSSound.beep(); return }
+        exitClipboard()
+        text = clip.text.split(whereSeparator: \.isNewline).joined(separator: " ")
+        inputFocused = true
     }
 
     // MARK: - Приложения и калькулятор
@@ -622,6 +696,15 @@ struct LauncherRootView: View {
                 return nil
             case (53, []) where searchMode && !showSettings && event.window is LauncherPanel:
                 exitSearch()
+                return nil
+            case (53, []) where clipboardMode && !showSettings && event.window is LauncherPanel:
+                exitClipboard()
+                return nil
+            case (21, .command) where !showSettings:
+                toggleClipboard()
+                return nil
+            case (36, .command) where clipboardMode && !showSettings:
+                insertClip()
                 return nil
             case (14, .command) where !showSettings:
                 // ⌘E в раскрытом выводе — «искать выделенное», его не трогаем
@@ -755,8 +838,7 @@ struct LauncherRootView: View {
     /// Без цвета; у работающей команды — весь экран, а не превью.
     private func copyOutput(_ session: Session) {
         let text = runner.terminal(for: session.id)?.snapshot().plain ?? session.output
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(text, forType: .string)
+        Clipboard.copy(text)
     }
 
     private var colorScheme: ColorScheme? {
@@ -1398,10 +1480,11 @@ enum HistoryDirection {
     case newer
 }
 
-/// Что делает поле ввода: запускает команду или ищет по истории (⌘F).
+/// Что делает поле ввода: запускает команду, ищет по истории (⌘F) или по буферу обмена (⌘4).
 enum InputMode {
     case command
     case search
+    case clipboard
 }
 
 struct CommandInputView: View {
@@ -1457,9 +1540,9 @@ struct CommandInputView: View {
         HStack(spacing: 10) {
         Group {
             if searching {
-                Image(systemName: "magnifyingglass")
+                Image(systemName: mode == .clipboard ? "doc.on.clipboard" : "magnifyingglass")
                     .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(Tactile.search)
+                    .foregroundStyle(modeColor)
             } else {
                 Text("›")
                     .font(.system(size: 19, weight: .medium))
@@ -1488,7 +1571,7 @@ struct CommandInputView: View {
                     .allowsHitTesting(false)
             }
 
-            TextField(searching ? L.t("search_placeholder", lang) : "Введите команду…", text: $text)
+            TextField(placeholder, text: $text)
                 .textFieldStyle(.plain)
                 .font(font)
         }
@@ -1506,7 +1589,7 @@ struct CommandInputView: View {
         .sunken(RoundedRectangle(cornerRadius: LauncherMetrics.innerRadius), fill: Tactile.field)
         // в поиске рамка другого цвета и видна всегда: сразу понятно, в каком режиме поле
         .selectionRing(cornerRadius: LauncherMetrics.innerRadius, visible: isFocused || searching || alert,
-                       color: searching ? Tactile.search : alert ? Tactile.red : Tactile.accent)
+                       color: searching ? modeColor : alert ? Tactile.red : Tactile.accent)
         .animation(.easeOut(duration: 0.3), value: isFocused)
         .animation(.easeOut(duration: 0.2), value: searching)
         .onChange(of: mode) { _, _ in
@@ -1544,25 +1627,36 @@ struct CommandInputView: View {
         }
     }
 
-    private var searching: Bool { mode == .search }
+    /// Поле не для команды (поиск, буфер): без дополнения, подсказок и подписи справа.
+    private var searching: Bool { mode != .command }
+
+    private var modeColor: Color { mode == .clipboard ? Tactile.clip : Tactile.search }
+
+    private var placeholder: String {
+        switch mode {
+        case .command: "Введите команду…"
+        case .search: L.t("search_placeholder", lang)
+        case .clipboard: L.t("clip_placeholder", lang)
+        }
+    }
 
     /// Метка режима поиска: клик по ней — выход из поиска.
     private var searchBadge: some View {
         Button(action: onExitSearch) {
             HStack(spacing: 5) {
-                Text(L.t("search", lang))
+                Text(L.t(mode == .clipboard ? "clip_mode" : "search", lang))
                 Text("✕").font(.system(size: 10))
             }
             .font(.system(size: 12, weight: .semibold))
-            .foregroundStyle(Tactile.search)
+            .foregroundStyle(modeColor)
             .padding(.horizontal, 9)
             .frame(height: 22)
-            .background(Tactile.search.opacity(0.14), in: Capsule())
-            .overlay(Capsule().strokeBorder(Tactile.search.opacity(0.55), lineWidth: 1))
+            .background(modeColor.opacity(0.14), in: Capsule())
+            .overlay(Capsule().strokeBorder(modeColor.opacity(0.55), lineWidth: 1))
             .contentShape(Capsule())
         }
         .buttonStyle(.plain)
-        .help(L.t("search_exit", lang))
+        .help(L.t(mode == .clipboard ? "clip_exit" : "search_exit", lang))
         .transition(.opacity.combined(with: .scale(scale: 0.85)))
     }
 

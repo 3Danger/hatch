@@ -56,6 +56,17 @@ final class SettingsStore {
     private(set) var appAliases: [String: String] { didSet { defaults.set(appAliases, forKey: Keys.appAliases) } }
     /// Имена, которые остаются командами, даже если совпали с приложением (`claude`, `mail`).
     private(set) var appExclusions: [String] { didSet { defaults.set(appExclusions, forKey: Keys.appExclusions) } }
+    /// История буфера обмена (⌘4): слежение за копированием в любых приложениях.
+    var clipboardEnabled: Bool { didSet { defaults.set(clipboardEnabled, forKey: Keys.clipboardEnabled) } }
+    /// Сколько дней хранить скопированное.
+    var clipboardDays: Int { didSet { defaults.set(clipboardDays, forKey: Keys.clipboardDays) } }
+    static let clipboardDaysRange = 1...30
+    static let defaultClipboardDays = 7
+    /// Приложения (bundle id), из которых скопированное не сохраняется.
+    private(set) var clipboardExcludedApps: [String] { didSet { defaults.set(clipboardExcludedApps, forKey: Keys.clipboardExcluded) } }
+    /// Менеджеры паролей: их копирование и так помечено скрытым, но бывают старые версии без пометки.
+    static let defaultClipboardExcludedApps = ["com.1password.1password", "com.agilebits.onepassword7",
+                                               "com.apple.Passwords", "com.apple.keychainaccess"]
     static let defaultAppAliases = ["vscode": "com.microsoft.VSCode", "code": "com.microsoft.VSCode"]
     /// CLI, у которых есть одноимённое приложение: `claude` должен запускать Claude Code, а не Claude.app.
     static let defaultAppExclusions = ["claude", "ollama", "opencode"]
@@ -83,6 +94,9 @@ final class SettingsStore {
         static let calculator = "settings.calculatorInInput"
         static let appAliases = "settings.appAliases"
         static let appExclusions = "settings.appExclusions"
+        static let clipboardEnabled = "settings.clipboardEnabled"
+        static let clipboardDays = "settings.clipboardDays"
+        static let clipboardExcluded = "settings.clipboardExcludedApps"
     }
 
     init(defaults: UserDefaults = .standard) {
@@ -112,6 +126,10 @@ final class SettingsStore {
         self.calculatorInInput = defaults.object(forKey: Keys.calculator) as? Bool ?? true
         self.appAliases = defaults.dictionary(forKey: Keys.appAliases) as? [String: String] ?? Self.defaultAppAliases
         self.appExclusions = defaults.stringArray(forKey: Keys.appExclusions) ?? Self.defaultAppExclusions
+        self.clipboardEnabled = defaults.object(forKey: Keys.clipboardEnabled) as? Bool ?? true
+        let days = defaults.object(forKey: Keys.clipboardDays) as? Int ?? Self.defaultClipboardDays
+        self.clipboardDays = min(max(days, Self.clipboardDaysRange.lowerBound), Self.clipboardDaysRange.upperBound)
+        self.clipboardExcludedApps = defaults.stringArray(forKey: Keys.clipboardExcluded) ?? Self.defaultClipboardExcludedApps
         let width = defaults.object(forKey: Keys.panelWidth) as? Double
         self.panelWidth = PanelSize.clampWidth(width.map { CGFloat($0) } ?? PanelSize.defaultWidth)
         let height = defaults.object(forKey: Keys.historyMaxHeight) as? Double
@@ -195,6 +213,15 @@ final class SettingsStore {
         name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
     }
 
+    func addClipboardExclusion(_ bundleID: String) {
+        guard !bundleID.isEmpty, !clipboardExcludedApps.contains(bundleID) else { return }
+        clipboardExcludedApps.append(bundleID)
+    }
+
+    func removeClipboardExclusion(_ bundleID: String) {
+        clipboardExcludedApps.removeAll { $0 == bundleID }
+    }
+
     /// Разбор поля ввода с текущими настройками.
     func quickActionResolver(apps: [AppEntry]) -> QuickActionResolver {
         QuickActionResolver(apps: apps, aliases: appAliases, exclusions: appExclusions,
@@ -228,6 +255,8 @@ final class SettingsStore {
         showStatusIcon = true
         openAppsFromInput = true
         calculatorInInput = true
+        clipboardEnabled = true
+        clipboardDays = Self.defaultClipboardDays
         folderTreeShortcut = Self.defaultFolderTreeShortcut
         panelWidth = PanelSize.defaultWidth
         historyMaxHeight = PanelSize.defaultHistoryHeight

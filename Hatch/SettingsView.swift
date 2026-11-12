@@ -6,6 +6,7 @@ import AppKit
 /// Горячая клавиша колпачками с записью, тема и язык сегментами, глубина истории счётчиком.
 struct SettingsView: View {
     @Environment(SettingsStore.self) private var settings
+    @Environment(ClipboardHistory.self) private var clipboard
     var onClose: () -> Void = {}
     @State private var aliasDraft = ""
     @State private var exclusionDraft = ""
@@ -79,6 +80,7 @@ struct SettingsView: View {
             }
 
             group { appRows }
+            group { clipboardRows }
             }
             .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { groupsHeight = $0 }
             }
@@ -485,5 +487,137 @@ extension SettingsView {
         .background(Tactile.accent.opacity(0.18), in: RoundedRectangle(cornerRadius: 6))
         .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(Tactile.accent.opacity(0.6), lineWidth: 0.5))
         .fixedSize()
+    }
+}
+
+// MARK: - Буфер обмена
+
+extension SettingsView {
+    @ViewBuilder fileprivate var clipboardRows: some View {
+        row(L.t("clipboard", lang), hint: L.t("clipboard_hint", lang), first: true) {
+            Toggle("", isOn: binding(\.clipboardEnabled)).toggleStyle(GlassSwitchStyle()).labelsHidden()
+        }
+        row(L.t("clipboard_days", lang), hint: L.t("clipboard_days_hint", lang)) {
+            GlassStepper(value: binding(\.clipboardDays), range: SettingsStore.clipboardDaysRange)
+        }
+        row(L.t("clipboard_excluded", lang), hint: L.t("clipboard_excluded_hint", lang)) {
+            Menu {
+                ForEach(AppCatalog.shared.apps.filter { $0.bundleID != nil }, id: \.self) { app in
+                    Button(app.title) { settings.addClipboardExclusion(app.bundleID ?? "") }
+                }
+            } label: {
+                Text(L.t("clipboard_add_app", lang)).font(.system(size: 12.5))
+            }
+            .menuStyle(.borderlessButton)
+            .fixedSize()
+        }
+        if !settings.clipboardExcludedApps.isEmpty {
+            lineRow {
+                ExcludedAppsFlow(ids: settings.clipboardExcludedApps, lang: lang) { settings.removeClipboardExclusion($0) }
+            }
+        }
+        row(L.t("clipboard_clear_title", lang), hint: String(format: L.t("clip_count", lang), clipboard.clips.count)) {
+            Button { clipboard.clear() } label: {
+                Text(L.t("clipboard_clear", lang))
+                    .font(.system(size: 12.5, weight: .semibold))
+                    .foregroundStyle(Tactile.redText)
+                    .padding(.horizontal, 12)
+                    .frame(height: 28)
+            }
+            .buttonStyle(KeyCapButtonStyle(cornerRadius: 8))
+            .disabled(clipboard.clips.isEmpty)
+        }
+    }
+}
+
+/// Приложения-исключения буфера: значок и имя, «×» убирает.
+private struct ExcludedAppsFlow: View {
+    let ids: [String]
+    let lang: String
+    var onRemove: (String) -> Void
+
+    var body: some View {
+        // чипы переносятся по ширине листа: иначе длинный ряд раздвигал настройки вбок
+        FlowLayout(spacing: 6) {
+            ForEach(ids, id: \.self) { id in chip(id) }
+        }
+        .padding(.vertical, 8)
+    }
+
+    private func chip(_ id: String) -> some View {
+        HStack(spacing: 4) {
+            if let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: id) {
+                Image(nsImage: NSWorkspace.shared.icon(forFile: url.path)).resizable().frame(width: 14, height: 14)
+            }
+            Text(Self.name(id)).font(.system(size: 12)).lineLimit(1)
+            Button { onRemove(id) } label: {
+                Text("×").font(.system(size: 12)).foregroundStyle(.secondary).frame(width: 14, height: 14).contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help(L.t("remove", lang))
+        }
+        .padding(.leading, 6)
+        .padding(.trailing, 4)
+        .frame(height: 22)
+        .background(Tactile.accent.opacity(0.18), in: RoundedRectangle(cornerRadius: 6))
+        .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(Tactile.accent.opacity(0.6), lineWidth: 0.5))
+        .fixedSize()
+    }
+
+    private static let knownNames = ["com.1password.1password": "1Password", "com.agilebits.onepassword7": "1Password 7"]
+
+    /// Имя приложения: из списка установленных, иначе по bundle id.
+    static func name(_ id: String) -> String {
+        if let app = AppCatalog.shared.apps.first(where: { $0.bundleID == id }) { return app.title }
+        // менеджеры паролей из списка по умолчанию — по имени, даже если не установлены
+        if let known = knownNames[id] { return known }
+        if let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: id) {
+            return FileManager.default.displayName(atPath: url.path).replacingOccurrences(of: ".app", with: "")
+        }
+        return id
+    }
+}
+
+/// Раскладка «как текст»: элементы в строку, не влезло — на следующую.
+struct FlowLayout: Layout {
+    var spacing: CGFloat = 6
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let width = proposal.width ?? .infinity
+        let rows = arrange(subviews, width: width)
+        let height = rows.last.map { $0.y + $0.height } ?? 0
+        let used = rows.map(\.width).max() ?? 0
+        return CGSize(width: proposal.width ?? used, height: height)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        for row in arrange(subviews, width: bounds.width) {
+            var x = bounds.minX
+            for index in row.items {
+                let size = subviews[index].sizeThatFits(.unspecified)
+                subviews[index].place(at: CGPoint(x: x, y: bounds.minY + row.y), proposal: ProposedViewSize(size))
+                x += size.width + spacing
+            }
+        }
+    }
+
+    private struct Row { var items: [Int] = []; var y: CGFloat = 0; var width: CGFloat = 0; var height: CGFloat = 0 }
+
+    private func arrange(_ subviews: Subviews, width: CGFloat) -> [Row] {
+        var rows: [Row] = []
+        var row = Row()
+        for index in subviews.indices {
+            let size = subviews[index].sizeThatFits(.unspecified)
+            let needed = row.items.isEmpty ? size.width : row.width + spacing + size.width
+            if !row.items.isEmpty, needed > width {
+                rows.append(row)
+                row = Row(y: row.y + row.height + spacing)
+            }
+            row.width = row.items.isEmpty ? size.width : row.width + spacing + size.width
+            row.height = max(row.height, size.height)
+            row.items.append(index)
+        }
+        if !row.items.isEmpty { rows.append(row) }
+        return rows
     }
 }

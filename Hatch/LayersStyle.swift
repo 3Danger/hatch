@@ -106,6 +106,8 @@ enum Tactile {
     static let accent = color(dark: 0x0a84ff, light: 0x007aff)
     /// Режим поиска в поле ввода: рамка и метка другого цвета, чтобы было видно, в каком ты режиме.
     static let search = color(dark: 0xff9f0a, light: 0xc93400)
+    /// Режим буфера обмена (⌘4): отличается от оранжевого поиска.
+    static let clip = color(dark: 0xbf5af2, light: 0x8944ab)
     /// Избранное: закрашенная звезда.
     static let star = color(dark: 0xffd60a, light: 0xc79500)
     /// Контекстное меню (своё, сплошное — системное в macOS 26 стеклянное).

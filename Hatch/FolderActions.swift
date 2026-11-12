@@ -43,8 +43,7 @@ enum FolderActions {
     }
 
     static func copyPath(_ folder: String) {
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(folder, forType: .string)
+        Clipboard.copy(folder)
     }
 
     /// Редакторы для «Открыть в редакторе»: только установленные.

@@ -7,6 +7,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, HotKeyDelegate {
     private lazy var history = HistoryStore()
     private lazy var sessionStore = SessionStore(history: history)
     private lazy var runner = ProcessRunner(sessionStore: sessionStore, settings: settings)
+    private lazy var clipboard = ClipboardHistory(fileURL: ClipboardHistory.defaultFileURL)
+    private var clipboardWatcher: ClipboardWatcher?
     private var hotKeyController: HotKeyController?
     private var statusItem: NSStatusItem?
     private var panelController: FloatingWindowController?
@@ -36,11 +38,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, HotKeyDelegate {
         setupStatusItem()
         observeStatusIcon()
 
+        // история буфера (⌘4): старое удаляется при запуске, дальше — при каждом копировании
+        clipboard.prune(days: settings.clipboardDays)
+        let watcher = ClipboardWatcher(history: clipboard, settings: settings)
+        watcher.start()
+        clipboardWatcher = watcher
+
         let root = LauncherRootView()
             .environment(sessionStore)
             .environment(runner)
             .environment(settings)
             .environment(controller)
+            .environment(clipboard)
 
         panelController = FloatingWindowController(rootView: root)
         panelController?.show()
@@ -51,6 +60,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, HotKeyDelegate {
         // под тестами историю не открывали — и записывать нечего (ленивое хранилище открыло бы настоящую)
         guard !Self.isRunningTests else { return }
         sessionStore.flush()
+        clipboard.flush()
     }
 
     /// Повторный запуск Hatch.app (Spotlight, Finder, Dock) открывает панель —

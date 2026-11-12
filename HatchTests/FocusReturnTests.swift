@@ -58,6 +58,7 @@ final class FocusReturnTests: XCTestCase {
         self.runner = runner
         let root = LauncherRootView().environment(store).environment(runner).environment(settings)
             .environment(HotKeyController(delegate: NoHotKeys()))
+            .environment(ClipboardHistory(fileURL: nil))
         let controller = FloatingWindowController(rootView: root, defaults: defaults)
         self.controller = controller
         controller.show()
