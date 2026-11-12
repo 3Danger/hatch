@@ -100,7 +100,6 @@ struct SettingsView: View {
                         .frame(height: 34)
                 }
                 .buttonStyle(KeyCapButtonStyle(cornerRadius: 10))
-                .help("⌘Q")
                 Button(action: onClose) {
                     Text(L.t("done", lang))
                         .font(.system(size: 13, weight: .semibold))

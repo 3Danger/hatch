@@ -146,4 +146,40 @@ final class ClipboardHistoryTests: XCTestCase {
         XCTAssertEqual(store.clipboardDays, 7)
         XCTAssertTrue(store.clipboardExcludedApps.contains("com.1password.1password"))
     }
+
+    // MARK: - Закреплённые
+
+    func testPinnedSurviveAgeLimitAndClear() {
+        let history = ClipboardHistory(fileURL: nil)
+        let now = Date()
+        history.record(clip("old pinned", at: now.addingTimeInterval(-30 * 86_400)), days: 60)
+        history.togglePin(history.clips[0])
+        for i in 0..<(ClipboardHistory.limit + 3) { history.record(clip("item \(i)", at: now), days: 7) }
+        XCTAssertTrue(history.clips.contains { $0.text == "old pinned" }, "срок и лимит закреплённый не удаляют")
+        XCTAssertEqual(history.clips.filter { !$0.isPinned }.count, ClipboardHistory.limit)
+        let removed = history.clearUnpinned()
+        XCTAssertEqual(removed.count, ClipboardHistory.limit)
+        XCTAssertEqual(history.clips.map(\.text), ["old pinned"])
+        history.restore(removed)
+        XCTAssertEqual(history.clips.count, ClipboardHistory.limit + 1, "«Отменить» вернула всё")
+    }
+
+    func testPinnedListedFirstAndKeepPinOnRecopy() {
+        let history = ClipboardHistory(fileURL: nil)
+        history.record(clip("a"), days: 7)
+        history.record(clip("b"), days: 7)
+        history.togglePin(history.clips.first { $0.text == "a" }!)
+        XCTAssertEqual(history.matching("").map(\.text), ["a", "b"])
+        history.record(clip("a", app: "Hatch"), days: 7)
+        XCTAssertEqual(history.clips.first { $0.text == "a" }?.isPinned, true, "повторное копирование не открепляет")
+        history.togglePin(history.clips.first { $0.text == "a" }!)
+        XCTAssertFalse(history.clips.contains(where: \.isPinned))
+    }
+
+    /// Файл буфера из 0.1.7 (без «pinned») читается.
+    func testReadsFileWithoutPinnedKey() throws {
+        let json = #"[{"id":"4F1C7C4E-4C7B-4E37-8B1B-2C3D4E5F6A7B","text":"ls","copiedAt":"2026-11-12T10:00:00Z","isPath":false}]"#
+        try json.write(to: file, atomically: true, encoding: .utf8)
+        XCTAssertEqual(ClipboardHistory(fileURL: file).clips.map(\.text), ["ls"])
+    }
 }

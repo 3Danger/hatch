@@ -30,6 +30,7 @@ final class FloatingWindowController {
     private var anchoredTop: CGFloat?
     private var outsideClickMonitor: Any?
     private var observers: [NSObjectProtocol] = []
+    private var spaceObserver: NSObjectProtocol?
 
     init<V: View>(rootView: V, defaults: UserDefaults = .standard) {
         self.rootView = AnyView(rootView)
@@ -46,6 +47,8 @@ final class FloatingWindowController {
         // избранное), сбрасывала фокус поля ввода — после Esc курсора не было нигде
         panel.becomesKeyOnlyIfNeeded = false
         panel.hidesOnDeactivate = false
+        // показывается на текущем рабочем столе, в том числе поверх приложения во весь экран
+        panel.collectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary]
         // Окно двигает WindowDragArea под стеклом (сам, по событиям мыши). Системное «за фон»
         // с SwiftUI-содержимым не работает, а жест SwiftUI и performDrag срабатывали через раз.
         panel.isMovableByWindowBackground = false
@@ -70,10 +73,17 @@ final class FloatingWindowController {
         observers.append(center.addObserver(forName: .hatchRequestHide, object: nil, queue: .main) {
             [weak self] _ in self?.hide()
         })
+        // сменили рабочий стол — панель исчезает, как Spotlight; хоткей откроет её уже на новом столе
+        spaceObserver = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.activeSpaceDidChangeNotification, object: nil, queue: .main) { [weak self] _ in
+            guard let self, self.panel.isVisible else { return }
+            self.hide()
+        }
     }
 
     deinit {
         observers.forEach(NotificationCenter.default.removeObserver)
+        spaceObserver.map(NSWorkspace.shared.notificationCenter.removeObserver)
         removeOutsideClickMonitor()
     }
 

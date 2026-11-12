@@ -1,8 +1,9 @@
 import SwiftUI
 import AppKit
 
-/// Буфер обмена (⌘4) на месте истории команд: фрагменты, свежие сверху, выбранный — фиолетовым.
-/// Клик — скопировать (как Enter), у выбранного подсказка «↩ копировать · ⌘↩ в поле».
+/// Буфер обмена (⌘4) на месте истории команд: закреплённые группой наверху, затем недавние,
+/// выбранный — фиолетовым. Клик — скопировать (как Enter). У выбранной и под курсором строки —
+/// кнопки «закрепить» и «удалить».
 struct ClipboardListView: View {
     let clips: [Clip]
     /// Всего фрагментов (без фильтра): пусто совсем или ничего не нашлось.
@@ -13,6 +14,11 @@ struct ClipboardListView: View {
     let lang: String
     var maxHeight: CGFloat = 470
     var onCopy: (Clip) -> Void = { _ in }
+    var onTogglePin: (Clip) -> Void = { _ in }
+    var onDelete: (Clip) -> Void = { _ in }
+    @State private var hovered: UUID?
+
+    private var hasGroups: Bool { clips.contains(where: \.isPinned) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -46,10 +52,18 @@ struct ClipboardListView: View {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 2) {
                     ForEach(Array(clips.enumerated()), id: \.element.id) { index, clip in
-                        ClipRow(clip: clip, selected: index == selection, lang: lang)
+                        if hasGroups, index == 0 { groupTitle(L.t("clip_pinned", lang), pin: true) }
+                        if hasGroups, !clip.isPinned, index == 0 || clips[index - 1].isPinned {
+                            groupTitle(L.t("clip_recent", lang), pin: false)
+                        }
+                        ClipRow(clip: clip, selected: index == selection, showsActions: index == selection || hovered == clip.id,
+                                lang: lang, onTogglePin: { onTogglePin(clip) }, onDelete: { onDelete(clip) })
                             .id(clip.id)
                             .contentShape(Rectangle())
                             .onTapGesture { onCopy(clip) }
+                            .onHover { inside in
+                                if inside { hovered = clip.id } else if hovered == clip.id { hovered = nil }
+                            }
                     }
                 }
                 .padding(6)
@@ -64,9 +78,23 @@ struct ClipboardListView: View {
         }
     }
 
-    /// Высота строк: однострочная 44, двухстрочная 61, плюс отступы списка.
+    private func groupTitle(_ title: String, pin: Bool) -> some View {
+        HStack(spacing: 5) {
+            if pin { Image(systemName: "pin.fill").foregroundStyle(Tactile.clip) }
+            Text(title.uppercased()).tracking(0.4)
+        }
+        .font(.system(size: 10.5, weight: .semibold))
+        .foregroundStyle(.secondary)
+        .padding(.horizontal, 9)
+        .padding(.top, 6)
+        .padding(.bottom, 2)
+    }
+
+    /// Высота строк: однострочная 44, двухстрочная 61, заголовки групп по 22, плюс отступы списка.
     private var listHeight: CGFloat {
-        clips.reduce(12) { $0 + ($1.lineCount > 1 ? 61 : 44) + 2 }
+        let rows: CGFloat = clips.reduce(12) { $0 + ($1.lineCount > 1 ? 61 : 44) + 2 }
+        let titles: CGFloat = hasGroups ? (clips.allSatisfy(\.isPinned) ? 24 : 48) : 0
+        return rows + titles
     }
 
     private var empty: some View {
@@ -85,7 +113,11 @@ struct ClipboardListView: View {
 private struct ClipRow: View {
     let clip: Clip
     let selected: Bool
+    /// Кнопки «закрепить» и «удалить»: у выбранной строки и под курсором.
+    let showsActions: Bool
     let lang: String
+    var onTogglePin: () -> Void = {}
+    var onDelete: () -> Void = {}
 
     var body: some View {
         HStack(alignment: .center, spacing: 10) {
@@ -93,7 +125,8 @@ private struct ClipRow: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(preview)
                     .font(.system(size: 12.5, design: .monospaced))
-                    .lineLimit(2)
+                    // однострочный — в одну строку с многоточием: высота списка считается по строкам фрагмента
+                    .lineLimit(clip.lineCount > 1 ? 2 : 1)
                     .truncationMode(.tail)
                     .foregroundStyle(.primary)
                 HStack(spacing: 5) {
@@ -120,11 +153,30 @@ private struct ClipRow: View {
                 .foregroundStyle(.secondary)
                 .fixedSize()
             }
+            if showsActions {
+                HStack(spacing: 4) {
+                    action(clip.isPinned ? "pin.slash" : "pin", help: L.t(clip.isPinned ? "clip_unpin" : "clip_pin", lang),
+                           tint: clip.isPinned ? Tactile.clip : nil, perform: onTogglePin)
+                    action("xmark", help: L.t("clip_delete", lang) + " (⌘⌫)", tint: nil, perform: onDelete)
+                }
+            }
         }
         .padding(.horizontal, 9)
         .padding(.vertical, 6)
         .background(selected ? Tactile.clip.opacity(0.18) : .clear, in: RoundedRectangle(cornerRadius: 8))
         .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(selected ? Tactile.clip.opacity(0.55) : .clear))
+    }
+
+    private func action(_ symbol: String, help: String, tint: Color?, perform: @escaping () -> Void) -> some View {
+        Button(action: perform) {
+            Image(systemName: symbol)
+                .font(.system(size: 10.5, weight: .semibold))
+                .foregroundStyle(tint ?? Tactile.keyText)
+                .frame(width: 24, height: 24)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(KeyCapButtonStyle(cornerRadius: 7))
+        .help(help)
     }
 
     /// Две первые строки, пробелы в начале строк сохраняются.

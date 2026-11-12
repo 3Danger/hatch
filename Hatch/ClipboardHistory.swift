@@ -11,11 +11,20 @@ struct Clip: Codable, Identifiable, Equatable, Hashable {
     var copiedAt: Date
     /// Путь к файлу из Finder, а не текст.
     var isPath = false
+    /// Закреплён: наверху, не удаляется очисткой, сроком и лимитом. Необязательный ключ —
+    /// файлы буфера из 0.1.7, где его нет, читаются как раньше.
+    var pinned: Bool?
+
+    var isPinned: Bool {
+        get { pinned == true }
+        set { pinned = newValue ? true : nil }
+    }
 
     var lineCount: Int { text.split(separator: "\n", omittingEmptySubsequences: false).count }
 }
 
 /// История буфера обмена: свежие сверху, без повторов, не больше `limit` и не старше `days`.
+/// Закреплённые показываются отдельной группой наверху и в срок и лимит не входят.
 /// Хранится локально в `~/Library/Application Support/Hatch/clipboard.json` (доступ только владельцу).
 @Observable
 final class ClipboardHistory {
@@ -55,16 +64,23 @@ final class ClipboardHistory {
             entry.app = existing.app ?? clip.app
             entry.bundleID = existing.bundleID ?? clip.bundleID
             entry.isPath = existing.isPath || clip.isPath
+            entry.pinned = existing.pinned
         }
         clips.insert(entry, at: 0)
         prune(days: days, now: clip.copiedAt)
         scheduleSave()
     }
 
-    /// Старше `days` дней и сверх лимита — удаляются.
+    /// Старше `days` дней и сверх лимита — удаляются. Закреплённые остаются всегда.
     func prune(days: Int, now: Date = Date()) {
         let cutoff = now.addingTimeInterval(-TimeInterval(max(days, 1)) * 86_400)
-        let kept = Array(clips.filter { $0.copiedAt >= cutoff }.prefix(Self.limit))
+        var unpinnedKept = 0
+        let kept = clips.filter { clip in
+            if clip.isPinned { return true }
+            guard clip.copiedAt >= cutoff, unpinnedKept < Self.limit else { return false }
+            unpinnedKept += 1
+            return true
+        }
         if kept != clips {
             clips = kept
             scheduleSave()
@@ -81,11 +97,41 @@ final class ClipboardHistory {
         scheduleSave()
     }
 
+    /// Закрепить или открепить. Открепленный встаёт к недавним на своё место по времени копирования.
+    func togglePin(_ clip: Clip) {
+        guard let index = clips.firstIndex(where: { $0.id == clip.id }) else { return }
+        clips[index].isPinned.toggle()
+        scheduleSave()
+    }
+
+    /// Корзина и ⌃L в режиме буфера: убрать незакреплённые. Возвращает убранное — для «Отменить».
+    @discardableResult
+    func clearUnpinned() -> [Clip] {
+        let removed = clips.filter { !$0.isPinned }
+        guard !removed.isEmpty else { return [] }
+        clips.removeAll { !$0.isPinned }
+        scheduleSave()
+        return removed
+    }
+
+    /// «Отменить» после очистки: убранное возвращается на свои места (по времени копирования).
+    func restore(_ removed: [Clip]) {
+        let ids = Set(clips.map(\.id))
+        let back = removed.filter { !ids.contains($0.id) }
+        guard !back.isEmpty else { return }
+        let pinned = clips.filter(\.isPinned)
+        let recent = (clips.filter { !$0.isPinned } + back).sorted { $0.copiedAt > $1.copiedAt }
+        clips = pinned + recent
+        scheduleSave()
+    }
+
     /// Фрагменты, где встречается запрос (без учёта регистра); пустой запрос — все.
+    /// Порядок как в списке: сначала закреплённые, затем недавние.
     func matching(_ query: String) -> [Clip] {
         let query = query.trimmingCharacters(in: .whitespaces)
-        guard !query.isEmpty else { return clips }
-        return clips.filter { $0.text.range(of: query, options: [.caseInsensitive, .diacriticInsensitive]) != nil }
+        let found = query.isEmpty ? clips
+            : clips.filter { $0.text.range(of: query, options: [.caseInsensitive, .diacriticInsensitive]) != nil }
+        return found.filter(\.isPinned) + found.filter { !$0.isPinned }
     }
 
     /// Записать сразу (при выходе из приложения).

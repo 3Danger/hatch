@@ -300,10 +300,12 @@ struct LauncherRootView: View {
                     }
                 }
             GlassIconButton(icon: .gear, size: LauncherMetrics.inputButton, help: L.t("settings", lang)) { openSettings() }
-            GlassIconButton(icon: .trash, size: LauncherMetrics.inputButton, help: L.t("clear", lang)) {
-                if sessionStore.clearScope != .nothing { confirmClear = true }
+            // в режиме буфера корзина очищает буфер, а не историю команд
+            GlassIconButton(icon: .trash, size: LauncherMetrics.inputButton,
+                            help: clipboardMode ? L.t("clip_clear_help", lang) : L.t("clear", lang)) {
+                if clipboardMode { clearClipboard() } else if sessionStore.clearScope != .nothing { confirmClear = true }
             }
-            .disabled(sessionStore.clearScope == .nothing)
+            .disabled(clipboardMode ? !clipboard.clips.contains { !$0.isPinned } : sessionStore.clearScope == .nothing)
         }
     }
 
@@ -528,7 +530,25 @@ struct LauncherRootView: View {
     private var clipboardArea: some View {
         ClipboardListView(clips: visibleClips, total: clipboard.clips.count, query: clipboardQuery,
                           selection: clipSelection, days: settings.clipboardDays, lang: lang,
-                          maxHeight: settings.historyMaxHeight, onCopy: { copyClip($0) })
+                          maxHeight: settings.historyMaxHeight, onCopy: { copyClip($0) },
+                          onTogglePin: { clipboard.togglePin($0) }, onDelete: deleteClip)
+    }
+
+    private func deleteClip(_ clip: Clip) {
+        clipboard.remove(clip)
+        clipSelection = min(clipSelection, max(visibleClips.count - 1, 0))
+    }
+
+    /// Корзина и ⌃L в режиме буфера: незакреплённые убираются, 5 секунд можно вернуть.
+    private func clearClipboard() {
+        let removed = clipboard.clearUnpinned()
+        guard !removed.isEmpty else { NSSound.beep(); return }
+        clipSelection = 0
+        showToast(L.t("clip_cleared", lang), undo: { clipboard.restore(removed) })
+    }
+
+    private func hidePanel() {
+        NotificationCenter.default.post(name: .hatchRequestHide, object: nil)
     }
 
     /// ⌘4: поле ищет по скопированному; повторно или Esc — обратно к команде, набранное на месте.
@@ -714,6 +734,13 @@ struct LauncherRootView: View {
             case (2, .command) where !showSettings:
                 toggleFavoriteDirectory(settings.currentDirectory)
                 return nil
+            case (37, .control) where clipboardMode && !showSettings:
+                clearClipboard()
+                return nil
+            case (51, .command) where clipboardMode && !showSettings:
+                // ⌘⌫ в буфере — удалить выбранный фрагмент
+                if let clip = selectedClip { deleteClip(clip) } else { NSSound.beep() }
+                return nil
             case (37, .control) where !showSettings:
                 // в живом терминале ⌃L — очистка его экрана
                 if let session = expandedSession, let terminal = runner.terminal(for: session.id),
@@ -723,8 +750,9 @@ struct LauncherRootView: View {
                 quickClear()
                 return nil
             case (12, .command):
-                // без значка в строке меню ⌘Q в панели — способ выйти
-                NSApp.terminate(nil)
+                // ⌘Q только скрывает панель: случайное нажатие не останавливает Hatch и его команды.
+                // Выйти — «Выйти из Hatch» в настройках или значок в строке меню.
+                hidePanel()
                 return nil
             case (3, .command) where !showSettings:
                 // в раскрытом выводе и живом терминале ⌘F — их собственный поиск
@@ -737,6 +765,18 @@ struct LauncherRootView: View {
                 return nil
             case (13, .command) where expandedID != nil:
                 collapse()
+                return nil
+            case (13, .command) where showSettings:
+                closeSettings()
+                return nil
+            case (13, .command):
+                // ⌘W без раскрытого блока — скрыть панель, как окно
+                hidePanel()
+                return nil
+            case (53, []) where commandMode && inputFocused && text.isEmpty && expandedID == nil && !showSettings
+                && runner.missingCommand == nil && event.window is LauncherPanel:
+                // Esc на пустом поле — скрыть панель, как Spotlight
+                hidePanel()
                 return nil
             case (8, .control):
                 return interruptByKeyboard(event) ? nil : event

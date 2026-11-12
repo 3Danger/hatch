@@ -9,6 +9,8 @@ final class FocusReturnTests: XCTestCase {
     private final class NoHotKeys: HotKeyDelegate { func hotKeyPressed() {} }
 
     private var controller: FloatingWindowController?
+    private var store: SessionStore!
+    private var clipboard: ClipboardHistory!
 
     override func tearDown() {
         controller?.hide()
@@ -54,11 +56,14 @@ final class FocusReturnTests: XCTestCase {
         settings.toggleFavoriteDirectory("/usr") // чтобы избранное было не пустым
         let store = SessionStore(history: HistoryStore(fileURL: FileManager.default.temporaryDirectory
             .appendingPathComponent("focus-\(UUID().uuidString).json")))
+        let clipboard = ClipboardHistory(fileURL: nil)
+        self.store = store
+        self.clipboard = clipboard
         let runner = ProcessRunner(sessionStore: store, settings: settings)
         self.runner = runner
         let root = LauncherRootView().environment(store).environment(runner).environment(settings)
             .environment(HotKeyController(delegate: NoHotKeys()))
-            .environment(ClipboardHistory(fileURL: nil))
+            .environment(clipboard)
         let controller = FloatingWindowController(rootView: root, defaults: defaults)
         self.controller = controller
         controller.show()
@@ -109,5 +114,49 @@ final class FocusReturnTests: XCTestCase {
         XCTAssertTrue(panel.firstResponder is SessionTerminalView,
                       "клавиатура в терминале блока: \(String(describing: panel.firstResponder))")
         if let id = runner.inputRequest?.sessionID { runner.stop(sessionID: id) }
+    }
+
+    // MARK: - Скрытие панели и буфер
+
+    /// ⌘Q и ⌘W (без раскрытого блока) только скрывают панель; Hatch продолжает работать.
+    func testCommandQAndWHidePanel() throws {
+        for (code, chars) in [(UInt16(12), "q"), (UInt16(13), "w")] {
+            let panel = try showPanel()
+            key(code, chars, .command, to: panel)
+            wait { !panel.isVisible }
+            XCTAssertFalse(panel.isVisible, "⌘\(chars.uppercased()) скрыл панель")
+            controller?.hide()
+            controller = nil
+        }
+    }
+
+    /// Esc на пустом поле скрывает панель; с набранным текстом — нет.
+    func testEscapeOnEmptyInputHidesPanel() throws {
+        let panel = try showPanel()
+        let editor = try XCTUnwrap(panel.firstResponder as? NSTextView)
+        editor.insertText("ls", replacementRange: NSRange(location: 0, length: 0))
+        spin()
+        key(53, "\u{1b}", to: panel)
+        XCTAssertTrue(panel.isVisible, "с текстом Esc панель не скрывает")
+        editor.selectAll(nil)
+        editor.deleteBackward(nil)
+        spin()
+        key(53, "\u{1b}", to: panel)
+        wait { !panel.isVisible }
+        XCTAssertFalse(panel.isVisible, "на пустом поле Esc скрывает панель")
+    }
+
+    /// В режиме буфера ⌃L чистит буфер (закреплённые остаются), а не историю команд.
+    func testClearInClipboardModeClearsClipboard() throws {
+        let panel = try showPanel()
+        store.add(Session(command: "echo done", state: .completed))
+        let now = Date()
+        clipboard.record(Clip(text: "keep", copiedAt: now), days: 7)
+        clipboard.togglePin(try XCTUnwrap(clipboard.clips.first))
+        clipboard.record(Clip(text: "drop", copiedAt: now), days: 7)
+        key(21, "4", .command, to: panel) // ⌘4
+        key(37, "l", .control, to: panel) // ⌃L
+        XCTAssertEqual(clipboard.clips.map(\.text), ["keep"], "незакреплённое убрано, закреплённое осталось")
+        XCTAssertEqual(store.sessions.count, 1, "история команд не тронута")
     }
 }
