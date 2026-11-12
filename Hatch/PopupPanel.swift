@@ -172,9 +172,10 @@ private struct PopupAnchor: NSViewRepresentable {
         let scheme = context.environment.colorScheme
         let popupContext = PopupContext(anchorView: view, dismiss: { [weak coordinator] in coordinator?.controller.dismiss() })
         let build = content
-        // показываем после текущего прохода раскладки: окно меряет SwiftUI-содержимое
-        DispatchQueue.main.async {
-            guard coordinator.controller.wantsShown else { return }
+        // показываем после текущего прохода раскладки: окно меряет SwiftUI-содержимое.
+        // К тому времени элемент мог пропасть (путь стал короче) — тогда окно осталось бы без хозяина.
+        DispatchQueue.main.async { [weak view] in
+            guard coordinator.controller.wantsShown, view?.window != nil else { return }
             coordinator.controller.present(anchor: anchor, placement: placement, mouse: coordinator.mouse,
                                            parent: window) {
                 AnyView(build(popupContext).environment(\.colorScheme, scheme))
@@ -183,6 +184,7 @@ private struct PopupAnchor: NSViewRepresentable {
     }
 
     static func dismantleNSView(_ view: AnchorView, coordinator: Coordinator) {
+        coordinator.controller.wantsShown = false
         coordinator.controller.dismiss()
     }
 

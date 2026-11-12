@@ -57,4 +57,41 @@ final class PopupPanelTests: XCTestCase {
         XCTAssertFalse(controller.isShown)
         XCTAssertTrue(dismissed)
     }
+    /// Элемент с открытым окном пропал (путь стал короче, его часть исчезла) раньше, чем окно
+    /// успело показаться: окно не должно появиться и остаться висеть без хозяина.
+    func testAnchorRemovedBeforeShowLeavesNoOrphan() {
+        final class Model: ObservableObject {
+            @Published var visible = true
+            @Published var presented = false
+        }
+        struct Host: View {
+            @ObservedObject var model: Model
+            var body: some View {
+                VStack {
+                    if model.visible {
+                        Text("crumb").hatchPopup(isPresented: $model.presented) { _ in
+                            PopupCard { Color.red.frame(width: 100, height: 50) }
+                        }
+                    }
+                }
+                .frame(width: 300, height: 200)
+            }
+        }
+        let parent = parentWindow()
+        let model = Model()
+        let hosting = NSHostingView(rootView: Host(model: model))
+        parent.contentView = hosting
+        hosting.layoutSubtreeIfNeeded()
+
+        model.presented = true
+        hosting.layoutSubtreeIfNeeded() // окно запланировано к показу
+        model.visible = false
+        hosting.layoutSubtreeIfNeeded() // а элемента уже нет
+        RunLoop.main.run(until: Date().addingTimeInterval(0.2))
+
+        XCTAssertTrue(parent.childWindows?.isEmpty ?? true, "окно осталось без элемента, к которому привязано")
+        parent.childWindows?.forEach { $0.orderOut(nil) }
+        parent.orderOut(nil)
+    }
 }
+
