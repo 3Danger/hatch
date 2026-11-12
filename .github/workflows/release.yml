@@ -1,0 +1,50 @@
+# Релиз по тегу: git tag v0.2.0 && git push origin v0.2.0
+# Собирает Hatch (universal, ad-hoc подпись без аккаунта Apple Developer)
+# и выкладывает Hatch-<версия>.zip в GitHub Releases.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Version from tag
+        run: echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
+
+      - name: Generate project
+        run: |
+          brew install xcodegen
+          xcodegen generate
+
+      - name: Test
+        run: |
+          xcodebuild test -scheme Hatch -destination 'platform=macOS' -derivedDataPath build \
+            CODE_SIGN_STYLE=Manual CODE_SIGN_IDENTITY=- DEVELOPMENT_TEAM=""
+
+      - name: Build
+        run: |
+          xcodebuild build -scheme Hatch -configuration Release -destination 'generic/platform=macOS' \
+            -derivedDataPath build \
+            ARCHS="arm64 x86_64" ONLY_ACTIVE_ARCH=NO \
+            MARKETING_VERSION="$VERSION" CURRENT_PROJECT_VERSION="$GITHUB_RUN_NUMBER" \
+            CODE_SIGN_STYLE=Manual CODE_SIGN_IDENTITY=- DEVELOPMENT_TEAM=""
+
+      - name: Package
+        run: |
+          APP=build/Build/Products/Release/Hatch.app
+          codesign --verify --deep --strict "$APP"
+          ditto -c -k --keepParent "$APP" "Hatch-$VERSION.zip"
+          shasum -a 256 "Hatch-$VERSION.zip" | tee "Hatch-$VERSION.zip.sha256"
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" "Hatch-$VERSION.zip" "Hatch-$VERSION.zip.sha256" --generate-notes

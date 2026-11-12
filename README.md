@@ -120,6 +120,21 @@
 - Зависимость: [SwiftTerm](https://github.com/migueldeicaza/SwiftTerm) 1.18.0 (Swift Package,
   подтягивается автоматически)
 
+## Установка
+
+1. Скачать `Hatch-<версия>.zip` со страницы [Releases](https://github.com/3Danger/hatch/releases/latest) и распаковать.
+2. Перенести `Hatch.app` в «Программы».
+3. Hatch не подписан сертификатом Apple, поэтому при первом запуске macOS его заблокирует.
+   Разрешить запуск: «Системные настройки» → «Конфиденциальность и безопасность» → «Всё равно открыть».
+   Или одной командой:
+
+```bash
+xattr -dr com.apple.quarantine /Applications/Hatch.app
+```
+
+Новая версия выходит по тегу: GitHub Actions собирает Hatch и выкладывает zip в Releases
+(`.github/workflows/release.yml`).
+
 ## Сборка и запуск
 
 ```bash
