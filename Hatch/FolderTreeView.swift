@@ -68,7 +68,8 @@ struct FolderTreeView: View {
         .focusEffectDisabled()
         .focused($focused)
         .onAppear { focused = true }
-        .onKeyPress(phases: .down) { press in handle(press) }
+        // удержание стрелки — повторы, как в Finder: строки листаются подряд
+        .onKeyPress(phases: [.down, .repeat]) { press in handle(press) }
         .onChange(of: tree.crumb) { _, crumb in onCrumbChange(crumb) }
     }
 
@@ -187,8 +188,19 @@ struct FolderTreeView: View {
 
     // MARK: - Клавиши
 
+    /// Повторяются при удержании только стрелки, в том числе ⌥←/⌥→ (дерево бежит по пути
+    /// и останавливается на краю). Enter, Space и буквы — по одному нажатию.
+    static func repeats(_ key: KeyEquivalent, modifiers: EventModifiers) -> Bool {
+        let arrows: [KeyEquivalent] = [.upArrow, .downArrow, .leftArrow, .rightArrow]
+        if modifiers == .option { return key == .leftArrow || key == .rightArrow }
+        return arrows.contains(key) && (modifiers.isEmpty || modifiers == .shift)
+    }
+
     private func handle(_ press: KeyPress) -> KeyPress.Result {
         let modifiers = press.modifiers.subtracting([.numericPad, .function, .capsLock])
+        let isRepeat = press.phase == .repeat
+        // повтор не той клавиши поглощаем: иначе он ушёл бы панели (Enter — дважды в папку)
+        if isRepeat, !Self.repeats(press.key, modifiers: modifiers) { return .handled }
         if modifiers == .option, press.key == .leftArrow || press.key == .rightArrow {
             onSwitchCrumb(press.key == .leftArrow ? -1 : 1)
             return .handled
@@ -210,7 +222,8 @@ struct FolderTreeView: View {
                   character.isLetter || character.isNumber || "-_.".contains(character) else { return .ignored }
             key = .character(character)
         }
-        withAnimation(.easeOut(duration: 0.12)) { _ = tree.handle(key, children: listing.children) }
+        // при удержании без анимации: повторы идут чаще, чем она успевает доиграть
+        withAnimation(isRepeat ? nil : .easeOut(duration: 0.12)) { _ = tree.handle(key, children: listing.children) }
         if case .character = key { flashTyped() }
         return .handled
     }

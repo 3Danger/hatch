@@ -1,4 +1,5 @@
 import XCTest
+import SwiftUI
 @testable import Hatch
 
 /// Дерево папок у пути: клавиши как в хлебных крошках VS Code, Enter — переход, ← на верху — уровнем выше.
@@ -126,5 +127,18 @@ final class FolderTreeTests: XCTestCase {
         XCTAssertEqual(DirectoryBreadcrumbsView.treeIndex(of: "/", in: paths), -1)
         XCTAssertNil(DirectoryBreadcrumbsView.treeIndex(of: "/opt", in: paths))
         XCTAssertNil(DirectoryBreadcrumbsView.treeIndex(of: nil, in: paths))
+    }
+
+    /// Удержание: повторяются стрелки и ⌥←/⌥→; Enter, Space и буквы — по одному нажатию.
+    func testOnlyArrowsRepeatWhenHeld() {
+        for key in [KeyEquivalent.upArrow, .downArrow, .leftArrow, .rightArrow] {
+            XCTAssertTrue(FolderTreeView.repeats(key, modifiers: []))
+        }
+        XCTAssertFalse(FolderTreeView.repeats(.return, modifiers: []))
+        XCTAssertFalse(FolderTreeView.repeats(.space, modifiers: []))
+        XCTAssertFalse(FolderTreeView.repeats(KeyEquivalent("a"), modifiers: []))
+        XCTAssertTrue(FolderTreeView.repeats(.leftArrow, modifiers: .option), "⌥← бежит по пути")
+        XCTAssertTrue(FolderTreeView.repeats(.rightArrow, modifiers: .option))
+        XCTAssertFalse(FolderTreeView.repeats(.upArrow, modifiers: .option))
     }
 }
