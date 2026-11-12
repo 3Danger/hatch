@@ -129,7 +129,7 @@ final class FolderTreeTests: XCTestCase {
         XCTAssertNil(DirectoryBreadcrumbsView.treeIndex(of: nil, in: paths))
     }
 
-    /// Удержание: повторяются стрелки и ⌥←/⌥→; Enter, Space и буквы — по одному нажатию.
+    /// Удержание: повторяются стрелки и ⌘←/⌘→; Enter, Space и буквы — по одному нажатию.
     func testOnlyArrowsRepeatWhenHeld() {
         for key in [KeyEquivalent.upArrow, .downArrow, .leftArrow, .rightArrow] {
             XCTAssertTrue(FolderTreeView.repeats(key, modifiers: []))
@@ -137,8 +137,9 @@ final class FolderTreeTests: XCTestCase {
         XCTAssertFalse(FolderTreeView.repeats(.return, modifiers: []))
         XCTAssertFalse(FolderTreeView.repeats(.space, modifiers: []))
         XCTAssertFalse(FolderTreeView.repeats(KeyEquivalent("a"), modifiers: []))
-        XCTAssertTrue(FolderTreeView.repeats(.leftArrow, modifiers: .option), "⌥← бежит по пути")
-        XCTAssertTrue(FolderTreeView.repeats(.rightArrow, modifiers: .option))
-        XCTAssertFalse(FolderTreeView.repeats(.upArrow, modifiers: .option))
+        XCTAssertTrue(FolderTreeView.repeats(.leftArrow, modifiers: .command), "⌘← бежит по пути")
+        XCTAssertTrue(FolderTreeView.repeats(.rightArrow, modifiers: .command))
+        XCTAssertFalse(FolderTreeView.repeats(.upArrow, modifiers: .command))
+        XCTAssertFalse(FolderTreeView.repeats(.leftArrow, modifiers: .option), "⌥ больше не переключает")
     }
 }

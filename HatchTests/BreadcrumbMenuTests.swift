@@ -41,6 +41,13 @@ final class BreadcrumbMenuTests: XCTestCase {
 
     private func spin() { RunLoop.main.run(until: Date().addingTimeInterval(0.3)) }
 
+    /// Ждать, пока условие не выполнится (до 2 с): окна показываются после прохода раскладки,
+    /// а на медленной машине (раннер CI) это дольше фиксированной паузы.
+    private func wait(until condition: () -> Bool) {
+        let deadline = Date().addingTimeInterval(2)
+        while !condition(), Date() < deadline { RunLoop.main.run(until: Date().addingTimeInterval(0.05)) }
+    }
+
     /// У каждой папки ровно один якорь берёт правый клик, и он открывает меню.
     private func assertEveryCrumbOpensMenu(_ host: NSView, _ window: NSWindow, crumbs: Int,
                                            file: StaticString = #filePath, line: UInt = #line) {
@@ -52,10 +59,10 @@ final class BreadcrumbMenuTests: XCTestCase {
             // никакой другой якорь в той же точке клик не перехватывает
             XCTAssertEqual(all.filter { $0.handlesSecondaryClick(event) }, [anchor], file: file, line: line)
             anchor.onSecondaryClick?(NSPoint(x: 300, y: 300))
-            spin()
+            wait { window.childWindows?.count == 1 }
             XCTAssertEqual(window.childWindows?.count, 1, "меню открылось", file: file, line: line)
             NotificationCenter.default.post(name: .hatchDidHide, object: nil)
-            spin()
+            wait { (window.childWindows?.count ?? 0) == 0 }
             XCTAssertEqual(window.childWindows?.count ?? 0, 0, file: file, line: line)
         }
     }
@@ -85,16 +92,16 @@ final class BreadcrumbMenuTests: XCTestCase {
         window.orderFront(nil)
         spin()
         model.request += 1
-        spin()
+        wait { window.childWindows?.count == 1 }
         XCTAssertEqual(window.childWindows?.count, 1, "дерево открылось")
         model.request += 1
-        spin()
+        wait { (window.childWindows?.count ?? 0) == 0 }
         XCTAssertEqual(window.childWindows?.count ?? 0, 0, "и закрылось")
     }
 
-    private func press(_ window: NSWindow, _ code: UInt16, option: Bool = false) {
+    private func press(_ window: NSWindow, _ code: UInt16, command: Bool = false) {
         let character = String(UnicodeScalar(code == 123 ? NSLeftArrowFunctionKey : NSRightArrowFunctionKey)!)
-        let flags: NSEvent.ModifierFlags = option ? [.option, .function, .numericPad] : [.function, .numericPad]
+        let flags: NSEvent.ModifierFlags = command ? [.command, .function, .numericPad] : [.function, .numericPad]
         let event = NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: flags,
                                      timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber,
                                      context: nil, characters: character, charactersIgnoringModifiers: character,
@@ -110,7 +117,7 @@ final class BreadcrumbMenuTests: XCTestCase {
             .sorted()
     }
 
-    /// После ← на верхнем уровне дерево относится к папке выше — ⌥←/⌥→ считают соседей от неё,
+    /// После ← на верхнем уровне дерево относится к папке выше — ⌘←/⌘→ считают соседей от неё,
     /// а не от папки, у которой дерево открыли.
     func testSwitchCrumbAfterTreeWentUp() throws {
         let model = Model() // / › usr › local
@@ -123,15 +130,17 @@ final class BreadcrumbMenuTests: XCTestCase {
         let centers = crumbCenters(host, window)
         XCTAssertEqual(centers.count, 3)
         model.request += 1 // ⌘P — дерево у local
-        spin()
+        wait { window.childWindows?.count == 1 }
         var tree = try XCTUnwrap(window.childWindows?.first)
         XCTAssertEqual(tree.frame.midX, centers[2], accuracy: 1)
         press(tree, 123) // ← на верхнем уровне: дерево уровнем выше, в пути — usr
-        press(tree, 123, option: true) // ⌥← — дерево у «/»
+        press(tree, 123, command: true) // ⌘← — дерево у «/»
+        wait { abs((window.childWindows?.first?.frame.midX ?? 0) - centers[0]) < 1 }
         tree = try XCTUnwrap(window.childWindows?.first)
-        XCTAssertEqual(tree.frame.midX, centers[0], accuracy: 1, "⌥← от usr — к «/»")
-        press(tree, 124, option: true) // ⌥→ — обратно к usr
+        XCTAssertEqual(tree.frame.midX, centers[0], accuracy: 1, "⌘← от usr — к «/»")
+        press(tree, 124, command: true) // ⌘→ — обратно к usr
+        wait { abs((window.childWindows?.first?.frame.midX ?? 0) - centers[1]) < 1 }
         tree = try XCTUnwrap(window.childWindows?.first)
-        XCTAssertEqual(tree.frame.midX, centers[1], accuracy: 1, "⌥→ от «/» — к usr")
+        XCTAssertEqual(tree.frame.midX, centers[1], accuracy: 1, "⌘→ от «/» — к usr")
     }
 }

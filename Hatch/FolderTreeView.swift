@@ -3,12 +3,12 @@ import SwiftUI
 /// Дерево папок у папки пути (клик по ней или ⌘P): соседи папки, она выделена.
 /// ↑/↓ — по строкам, → — раскрыть и войти, ← — свернуть, к родителю, на верху — уровнем выше,
 /// Space — свернуть/развернуть, буквы — к папке по имени, Enter — перейти (как `cd`),
-/// ⌥←/⌥→ — дерево соседней папки пути, Esc — закрыть. Клик по имени — перейти, по шеврону — раскрыть.
+/// ⌘←/⌘→ — дерево соседней папки пути, Esc — закрыть. Клик по имени — перейти, по шеврону — раскрыть.
 struct FolderTreeView: View {
     let currentDirectory: String
     let lang: String
     var onNavigate: (String) -> Void = { _ in }
-    /// ⌥←/⌥→: открыть дерево соседней папки пути (−1 — левее, +1 — правее).
+    /// ⌘←/⌘→: открыть дерево соседней папки пути (−1 — левее, +1 — правее).
     var onSwitchCrumb: (Int) -> Void = { _ in }
     /// Дерево поднялось уровнем выше — в пути подсвечивается эта папка.
     var onCrumbChange: (String) -> Void = { _ in }
@@ -128,7 +128,7 @@ struct FolderTreeView: View {
                 hint("↩", L.t("tree_go", lang))
             }
             HStack(spacing: 10) {
-                hint("⌥←→", L.t("tree_neighbor", lang))
+                hint("⌘←→", L.t("tree_neighbor", lang))
                 hint("esc", L.t("fav_close", lang))
             }
         }
@@ -188,11 +188,11 @@ struct FolderTreeView: View {
 
     // MARK: - Клавиши
 
-    /// Повторяются при удержании только стрелки, в том числе ⌥←/⌥→ (дерево бежит по пути
+    /// Повторяются при удержании только стрелки, в том числе ⌘←/⌘→ (дерево бежит по пути
     /// и останавливается на краю). Enter, Space и буквы — по одному нажатию.
     static func repeats(_ key: KeyEquivalent, modifiers: EventModifiers) -> Bool {
         let arrows: [KeyEquivalent] = [.upArrow, .downArrow, .leftArrow, .rightArrow]
-        if modifiers == .option { return key == .leftArrow || key == .rightArrow }
+        if modifiers == .command { return key == .leftArrow || key == .rightArrow }
         return arrows.contains(key) && (modifiers.isEmpty || modifiers == .shift)
     }
 
@@ -201,7 +201,7 @@ struct FolderTreeView: View {
         let isRepeat = press.phase == .repeat
         // повтор не той клавиши поглощаем: иначе он ушёл бы панели (Enter — дважды в папку)
         if isRepeat, !Self.repeats(press.key, modifiers: modifiers) { return .handled }
-        if modifiers == .option, press.key == .leftArrow || press.key == .rightArrow {
+        if modifiers == .command, press.key == .leftArrow || press.key == .rightArrow {
             onSwitchCrumb(press.key == .leftArrow ? -1 : 1)
             return .handled
         }

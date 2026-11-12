@@ -424,7 +424,7 @@ async function film_() {
   const draw = () => tree.innerHTML = `<div class="up">в <b>~/git</b></div><div class="rows">${rows().map(([p, d]) => {
     const kids = FS[p]?.length, nm = p.split('/').pop();
     return `<div class="trow ${p === T.focus ? 'sel' : ''}" style="padding-left:${4 + d * 16}px"><span class="tw ${kids ? '' : 'leaf'} ${T.open.has(p) ? 'open' : ''}">${ICON.chev}</span><span class="fg"></span>${nm}${p === '~/git/hatch' ? '<span class="cur">текущая</span>' : ''}</div>` }).join('')}</div>
-    <div class="foot"><span><span class="kh">→</span> войти</span><span><span class="kh">←</span> выше</span><span><span class="kh">↩</span> перейти</span><span><span class="kh">⌥←→</span> соседняя</span><span><span class="kh">esc</span> закрыть</span></div>`;
+    <div class="foot"><span><span class="kh">→</span> войти</span><span><span class="kh">←</span> выше</span><span><span class="kh">↩</span> перейти</span><span><span class="kh">⌘←→</span> соседняя</span><span><span class="kh">esc</span> закрыть</span></div>`;
   draw();
   await wait(900);
   for (const step of [['↓', () => T.focus = '~/git/notes'], ['↓', () => T.focus = '~/git/website'], ['→', () => T.open.add('~/git/website')], ['→', () => T.focus = '~/git/website/public'], ['↑', () => T.focus = '~/git/website']]) {

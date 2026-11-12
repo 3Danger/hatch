@@ -46,7 +46,7 @@ struct DirectoryBreadcrumbsView: View {
         .onChange(of: path) { _, _ in openTree(nil) }
     }
 
-    /// ⌥←/⌥→: дерево соседней папки пути. Соседи считаются от папки, к которой дерево относится
+    /// ⌘←/⌘→: дерево соседней папки пути. Соседи считаются от папки, к которой дерево относится
     /// сейчас: после ← на верхнем уровне это уже папка выше, а не та, у которой дерево открыли.
     private func switchTree(by delta: Int, from opened: Int) {
         let segments = PathBreadcrumbs.segments(for: path)
@@ -56,7 +56,7 @@ struct DirectoryBreadcrumbsView: View {
     }
 
     /// Место папки дерева в пути. Дерево могло подняться выше начала пути (выше `~`) —
-    /// тогда это «левее первой», и ⌥→ ведёт к первой папке пути.
+    /// тогда это «левее первой», и ⌘→ ведёт к первой папке пути.
     static func treeIndex(of crumb: String?, in paths: [String]) -> Int? {
         guard let crumb else { return nil }
         if let index = paths.firstIndex(of: crumb) { return index }
