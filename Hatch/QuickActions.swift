@@ -98,10 +98,23 @@ final class AppCatalog {
     }
 }
 
+/// Подсказка приложения по началу имени: «saf» → Safari.
+struct AppSuggestion: Equatable {
+    let app: AppEntry
+    /// Строка после дописывания: набранное как есть плюс остаток имени («saf» → «safari»).
+    let completion: String
+    /// Имя или алиас, до которого дописывается («Safari», «code»).
+    let name: String
+    /// Сколько ещё приложений начинаются так же («te»: Telegram и ещё 2).
+    let others: Int
+    /// Вариант один и набранное ни с чем не совпадает полностью — Enter дописывает имя.
+    let completesOnEnter: Bool
+}
+
 /// Что сделает Enter для набранного (подпись справа в поле). nil — выполнить как команду.
 enum QuickAction: Equatable {
-    /// По началу имени: Tab или → дописывают имя до `completion`, Enter ещё выполняет команду.
-    case suggestApp(AppEntry, completion: String)
+    /// По началу имени: Tab или → дописывают имя; Enter — тоже, если вариант один.
+    case suggestApp(AppSuggestion)
     case openApp(AppEntry)
     /// Имя и существующие пути: `code .` открывает текущую папку в VS Code.
     case openPaths(AppEntry, [URL])
@@ -124,6 +137,8 @@ struct QuickActionResolver {
     var exclusions: [String] = []
     var appsEnabled = true
     var calculatorEnabled = true
+    /// Шелл знает это имя (команда, алиас, функция): тогда Enter его выполняет, а не дописывает.
+    var isCommand: (String) -> Bool = { _ in false }
     /// С какого числа букв подсказывать приложение по началу имени.
     static let minimumPrefix = 2
 
@@ -150,8 +165,8 @@ struct QuickActionResolver {
         }
         // подсказка — пока набирается первое слово имени, без пробела в конце
         guard !text.hasSuffix(" "), trimmed.count >= Self.minimumPrefix,
-              let completion = completion(for: trimmed, excluded: excluded) else { return nil }
-        return .suggestApp(completion.app, completion: completion.text)
+              let suggestion = suggestion(for: trimmed, excluded: excluded) else { return nil }
+        return .suggestApp(suggestion)
     }
 
     /// Приложение по алиасу или по полному имени (без учёта регистра).
@@ -165,19 +180,23 @@ struct QuickActionResolver {
     }
 
     /// Самое короткое имя или алиас, начинающиеся с набранного: «saf» → «safari».
-    private func completion(for typed: String, excluded: Set<String>) -> (app: AppEntry, text: String)? {
+    private func suggestion(for typed: String, excluded: Set<String>) -> AppSuggestion? {
         let lower = typed.lowercased()
         var candidates: [(app: AppEntry, name: String)] = []
         for (alias, id) in aliases {
             if let app = apps.first(where: { $0.identifier == id }) { candidates.append((app, alias)) }
         }
         for app in apps { for name in app.names { candidates.append((app, name)) } }
-        let best = candidates
+        let matching = candidates
             .filter { $0.name.count > typed.count && $0.name.lowercased().hasPrefix(lower) && !excluded.contains($0.name.lowercased()) }
-            .min { ($0.name.count, $0.name.lowercased()) < ($1.name.count, $1.name.lowercased()) }
-        guard let best else { return nil }
-        // набранное остаётся как есть, дописывается остаток имени
-        return (best.app, typed + best.name.dropFirst(typed.count))
+        guard let best = matching.min(by: { ($0.name.count, $0.name.lowercased()) < ($1.name.count, $1.name.lowercased()) })
+        else { return nil }
+        // алиас и имя одного приложения — один вариант (code и Visual Studio Code)
+        let others = Set(matching.map(\.app.identifier)).count - 1
+        return AppSuggestion(app: best.app,
+                             completion: typed + best.name.dropFirst(typed.count), // набранное как есть
+                             name: best.name, others: others,
+                             completesOnEnter: others == 0 && !isCommand(typed))
     }
 
     /// Аргумент — существующий файл или папка: `.`, `~/proj`, `src/main.go`.

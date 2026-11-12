@@ -102,7 +102,7 @@ final class ShellCompletionEngine {
 
 // MARK: - Команды
 
-/// Команды и алиасы из шелла пользователя: собираются один раз (с его rc), дальше —
+/// Команды, алиасы, встроенные команды и функции из шелла пользователя: собираются один раз (с его rc), дальше —
 /// поиск в памяти. Раз в несколько минут список обновляется в фоне (новые программы, алиасы).
 final class CommandIndex {
     private static var instances: [String: CommandIndex] = [:]
@@ -123,6 +123,7 @@ final class CommandIndex {
     private let shellPath: String
     private let lock = NSLock()
     private var commands: [String]?
+    private var knownNames: Set<String>?
     private var loadedAt = Date.distantPast
     private var refreshing = false
 
@@ -140,6 +141,17 @@ final class CommandIndex {
     func commands(withPrefix prefix: String) -> [String] {
         guard !prefix.isEmpty else { return [] }
         return currentCommands().filter { $0.hasPrefix(prefix) }
+    }
+
+    /// Все известные имена: команды из PATH, алиасы, встроенные команды и функции шелла.
+    var allCommands: [String] { currentCommands() }
+
+    /// Шелл знает это имя — значит, «command not found» не будет.
+    func isKnown(_ name: String) -> Bool {
+        lock.lock()
+        let known = knownNames
+        lock.unlock()
+        return (known ?? Set(currentCommands())).contains(name)
     }
 
     private func currentCommands() -> [String] {
@@ -174,6 +186,7 @@ final class CommandIndex {
     private func store(_ list: [String]) {
         lock.lock()
         commands = list
+        knownNames = Set(list)
         loadedAt = Date()
         lock.unlock()
     }
@@ -181,8 +194,8 @@ final class CommandIndex {
     private func load() -> [String] {
         let isZsh = (shellPath as NSString).lastPathComponent.lowercased().contains("zsh")
         let script = isZsh
-            ? #"emulate -L zsh; [ -r "${ZDOTDIR:-$HOME}/.zshrc" ] && source "${ZDOTDIR:-$HOME}/.zshrc"; print -rl -- ${(k)commands} ${(k)aliases}"#
-            : #"[ -r "$HOME/.bashrc" ] && . "$HOME/.bashrc"; compgen -c; compgen -a"#
+            ? #"emulate -L zsh; [ -r "${ZDOTDIR:-$HOME}/.zshrc" ] && source "${ZDOTDIR:-$HOME}/.zshrc"; print -rl -- ${(k)commands} ${(k)aliases} ${(k)builtins} ${(k)reswords} ${(k)functions[(I)[^_]*]}"#
+            : #"[ -r "$HOME/.bashrc" ] && . "$HOME/.bashrc"; compgen -c; compgen -a; compgen -b; compgen -A function"#
 
         let process = Process()
         process.executableURL = URL(fileURLWithPath: shellPath)

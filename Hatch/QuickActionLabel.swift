@@ -10,10 +10,16 @@ struct QuickActionLabel: View {
     var body: some View {
         HStack(spacing: 6) {
             switch action {
-            case .suggestApp(let app, _):
-                KeyHint(key: "⇥")
-                AppIconView(app: app)
-                name(app.title).foregroundStyle(.secondary)
+            case .suggestApp(let suggestion):
+                KeyHint(key: suggestion.completesOnEnter ? "↩" : "⇥")
+                AppIconView(app: suggestion.app)
+                if suggestion.completesOnEnter {
+                    name(String(format: L.t("quick_complete", lang), suggestion.name)).foregroundStyle(.secondary)
+                } else if suggestion.others > 0 {
+                    name(String(format: L.t("quick_more", lang), suggestion.name, suggestion.others)).foregroundStyle(.secondary)
+                } else {
+                    name(suggestion.name).foregroundStyle(.secondary)
+                }
             case .openApp(let app):
                 KeyHint(key: "↩")
                 AppIconView(app: app)
@@ -64,7 +70,8 @@ struct QuickActionLabel: View {
 
     private var help: String {
         switch action {
-        case .suggestApp: L.t("quick_suggest_help", lang)
+        case .suggestApp(let suggestion):
+            L.t(suggestion.completesOnEnter ? "quick_complete_help" : "quick_suggest_help", lang)
         case .openApp, .openPaths: L.t("quick_open_help", lang)
         case .calculate: L.t("quick_copy_help", lang)
         case .divisionByZero: ""
@@ -87,5 +94,69 @@ struct AppIconView: View {
             .resizable()
             .interpolation(.high)
             .frame(width: size, height: size)
+    }
+}
+
+/// Подсказка после «Команды нет»: «⇥ git status» — Tab заменит первое слово.
+struct FixLabel: View {
+    let text: String
+
+    var body: some View {
+        HStack(spacing: 6) {
+            KeyHint(key: "⇥")
+            Text(text)
+                .font(.system(size: 12, design: .monospaced))
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .truncationMode(.middle)
+                .frame(maxWidth: 300, alignment: .leading)
+                .fixedSize(horizontal: true, vertical: false)
+        }
+        .padding(.leading, 4)
+        .padding(.trailing, 8)
+        .frame(height: 26)
+    }
+}
+
+/// Строка под полем: «✕ Команды gti нет. Похоже: git». Клик по варианту — подставить его.
+struct MissingCommandRow: View {
+    let missing: MissingCommand
+    let suggestions: [String]
+    let lang: String
+    var onPick: (String) -> Void = { _ in }
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Text("✕").font(.system(size: 12, weight: .bold)).foregroundStyle(Tactile.redText)
+            Text(String(format: L.t("missing_command", lang), missing.word))
+                .font(.system(size: 12.5))
+                .lineLimit(1)
+                .truncationMode(.middle)
+            if !suggestions.isEmpty {
+                Text(L.t("missing_similar", lang)).font(.system(size: 12.5)).foregroundStyle(.secondary).fixedSize()
+                ForEach(Array(suggestions.enumerated()), id: \.offset) { index, suggestion in
+                    Button { onPick(suggestion) } label: {
+                        HStack(spacing: 4) {
+                            if index == 0 { KeyHint(key: "⇥") }
+                            Text(suggestion).font(.system(size: 12, design: .monospaced))
+                        }
+                        .padding(.leading, index == 0 ? 3 : 7)
+                        .padding(.trailing, 7)
+                        .frame(height: 22)
+                        .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 6))
+                        .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(Color.primary.opacity(0.14), lineWidth: 0.5))
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .fixedSize()
+                }
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 6)
+        .background(Tactile.red.opacity(0.10), in: RoundedRectangle(cornerRadius: 9))
+        .overlay(RoundedRectangle(cornerRadius: 9).strokeBorder(Tactile.red.opacity(0.35), lineWidth: 0.5))
+        .transition(.opacity.combined(with: .move(edge: .top)))
     }
 }

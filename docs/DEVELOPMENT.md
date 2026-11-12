@@ -94,6 +94,7 @@ node docs/demo/record.js
 | `ShellCompletionEngine.swift`, `TabCompleter.swift` | автодополнение и TAB как в zsh |
 | `HistoryNavigator.swift`, `HistorySuggestion.swift` | ↑/↓ по истории, серая подсказка |
 | `QuickActions.swift`, `QuickActionLabel.swift`, `Calculator.swift` | приложения и калькулятор в поле ввода: список приложений, разбор строки, подпись справа |
+| `CommandNotFound.swift` | опечатка в имени команды: распознать «command not found», похожие имена |
 | `DirectoryBreadcrumbsView.swift`, `FolderTreeView.swift`, `FolderTree.swift` | путь над полем ввода и дерево папок |
 | `KeyboardLayoutSwitcher.swift`, `HotKeyRecorder.swift` | латиница в поле ввода, запись сочетаний |
 | `SessionStore.swift`, `HistoryStore.swift`, `SettingsStore.swift` | состояние и хранение |

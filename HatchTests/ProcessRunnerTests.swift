@@ -76,6 +76,29 @@ final class ProcessRunnerTests: XCTestCase {
         poll()
     }
 
+    /// Опечатка в имени команды: блок убирается, набранное ждёт в поле, пока шелл не ответил — блока не видно.
+    func testMissingCommandLeavesNoBlock() {
+        let (store, _, runner) = makeEnvironment()
+        runner.run(command: "hatchnosuchcmd42 --flag")
+        XCTAssertTrue(store.filteredSessions.isEmpty, "незнакомая команда не мелькает в истории")
+
+        let exp = expectation(description: "missing reported")
+        waitUntil({ runner.missingCommand != nil }, onFulfill: { exp.fulfill() })
+        wait(for: [exp], timeout: 8)
+        XCTAssertEqual(runner.missingCommand, MissingCommand(command: "hatchnosuchcmd42 --flag", word: "hatchnosuchcmd42"))
+        XCTAssertTrue(store.sessions.isEmpty)
+    }
+
+    /// Команда, которая сама вернула 127 про другое имя, остаётся в истории.
+    func testExit127FromInsideCommandKeepsBlock() {
+        let (store, _, runner) = makeEnvironment()
+        runner.run(command: "echo inner; exit 127")
+        let session = waitTerminal(store)
+        XCTAssertEqual(session?.exitCode, 127)
+        XCTAssertNil(runner.missingCommand)
+        XCTAssertEqual(store.filteredSessions.count, 1)
+    }
+
     func testRunEchoStreamsOutput() {
         let (store, _, runner) = makeEnvironment()
         runner.run(command: "echo hello-hatch")

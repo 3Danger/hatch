@@ -17,6 +17,12 @@ final class ProcessRunner {
     /// Метка текущего запуска сессии. Перезапуск идёт в той же сессии, поэтому события
     /// прошлого процесса (вывод, завершение) отбрасываются по несовпадению метки.
     private var runTokens: [UUID: UUID] = [:]
+    /// Сессии, запущенные из поля ввода (не повтор): только их убирает «command not found».
+    private var freshRuns: Set<UUID> = []
+    /// Последний запуск с опечаткой в имени команды: блока нет, набранное — снова в поле.
+    private(set) var missingCommand: MissingCommand?
+    /// Сколько ждать ответа шелла, прежде чем показать блок незнакомой команды.
+    static let provisionalDelay: TimeInterval = 1.0
 
     /// Окружение для команд (в тестах подменяется, например ZDOTDIR).
     private let environment: [String: String]
@@ -42,11 +48,38 @@ final class ProcessRunner {
 
         let interactive = isInteractive(command: trimmed)
         let workingDirectory = resolveDirectory(directory)
-        let session = Session(command: trimmed, state: interactive ? .interactive : .running,
+        var session = Session(command: trimmed, state: interactive ? .interactive : .running,
                               directory: workingDirectory)
+        // незнакомое шеллу имя — скорее всего опечатка: блок ждёт ответа шелла и не мелькает
+        let provisional = !interactive && !isKnownCommand(trimmed)
+        if provisional { session.isProvisional = true }
+        missingCommand = nil
+        freshRuns.insert(session.id)
         sessionStore.add(session)
         start(sessionID: session.id, command: trimmed, directory: workingDirectory,
               followsCurrent: directory == nil, interactive: interactive)
+        if provisional {
+            DispatchQueue.main.asyncAfter(deadline: .now() + Self.provisionalDelay) { [weak self] in
+                self?.reveal(session.id)
+            }
+        }
+    }
+
+    /// Строку под полем закрыли (начали править набранное).
+    func dismissMissingCommand() {
+        missingCommand = nil
+    }
+
+    private func reveal(_ sessionID: UUID) {
+        guard sessionStore.sessions.first(where: { $0.id == sessionID })?.isProvisional == true else { return }
+        sessionStore.update(id: sessionID) { $0.isProvisional = nil }
+    }
+
+    /// Первое слово знакомо шеллу (команда, алиас, встроенная, функция) или это путь.
+    private func isKnownCommand(_ command: String) -> Bool {
+        guard let word = CommandNotFound.firstWord(command) else { return true }
+        if word.contains("/") || !word.allSatisfy({ $0.isLetter || $0.isNumber || "-_.+".contains($0) }) { return true }
+        return CommandIndex.shared(for: settings.shellPath).isKnown(word)
     }
 
     /// Запуск как интерактивной программы, независимо от имени команды.
@@ -186,6 +219,7 @@ final class ProcessRunner {
     // MARK: - Запуск
 
     private func restart(_ session: Session) {
+        freshRuns.remove(session.id) // повтор старого блока не убираем, даже если команды уже нет
         let directory = resolveDirectory(session.directory)
         // режим прошлого запуска сохраняется; у завершённой сессии его подскажет имя команды
         let interactive = session.state == .interactive || isInteractive(command: session.command)
@@ -253,6 +287,16 @@ final class ProcessRunner {
                 }
                 s.finishedAt = s.finishedAt ?? Date()
             }
+            if self.freshRuns.remove(sessionID) != nil, !interactive,
+               let finished = self.sessionStore.sessions.first(where: { $0.id == sessionID }),
+               CommandNotFound.isMissing(command: command, exitCode: code, output: finished.output),
+               let word = CommandNotFound.firstWord(command) {
+                // опечатка: в истории ей не место, набранное вернётся в поле
+                self.sessionStore.remove(id: sessionID)
+                self.missingCommand = MissingCommand(command: command, word: word)
+                return
+            }
+            self.reveal(sessionID)
             self.applyPipeline(sessionID)
             // уведомление о завершении долгой команды, если приложение не в фокусе
             if !interactive, Date().timeIntervalSince(startedAt) >= 5 {

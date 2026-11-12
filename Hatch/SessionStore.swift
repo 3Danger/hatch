@@ -28,7 +28,7 @@ final class SessionStore {
 
     /// Сессии с учётом фильтра и сортировки: закреплённые выше, затем активные, затем по времени.
     var filteredSessions: [Session] {
-        var result = sessions
+        var result = sessions.filter { $0.isProvisional != true }
         if !filterText.isEmpty {
             let query = filterText
             result = result.filter {

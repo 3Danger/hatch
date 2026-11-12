@@ -70,6 +70,8 @@ struct LauncherRootView: View {
     @State private var frames = PanelFrames()
     /// Сессия, прерванная ⌃C из раскрытого блока: после остановки блок сворачивается.
     @State private var interruptedID: UUID?
+    /// Похожие имена считаются один раз на опечатку, а не на каждую перерисовку.
+    @State private var missingSuggestionsCache: (word: String, list: [String])?
 
     private var lang: String { settings.languageCode }
 
@@ -134,15 +136,28 @@ struct LauncherRootView: View {
                              onHistory: navigateHistory,
                              onEdit: {
                                  navigator.reset()
+                                 // начали править — строка «Команды нет» больше не про это
+                                 if let missing = runner.missingCommand, text != missing.command {
+                                     runner.dismissMissingCommand()
+                                 }
                                  // фильтрует историю только поиск; набор команды список не трогает
                                  if searchMode { sessionStore.filterText = searchQuery.trimmingCharacters(in: .whitespaces) }
                              },
                              onExitSearch: exitSearch,
                              history: historyCommands,
                              quickAction: { searchMode ? nil : resolveQuickAction($0) },
+                             fix: searchMode ? nil : missingFix,
+                             alert: !searchMode && runner.missingCommand != nil,
                              isFocused: inputFocused,
                              trailing: AnyView(inputButtons))
             .focused($inputFocused)
+
+            if let missing = runner.missingCommand, !searchMode {
+                MissingCommandRow(missing: missing, suggestions: missingSuggestions, lang: lang) { word in
+                    text = CommandNotFound.replacingFirstWord(in: missing.command, with: word)
+                    inputFocused = true
+                }
+            }
 
             historyArea
                 .frame(maxWidth: .infinity, alignment: .top)
@@ -159,6 +174,7 @@ struct LauncherRootView: View {
             }
         }
         .animation(.spring(response: 0.3, dampingFraction: 0.85), value: toast)
+        .animation(.easeOut(duration: 0.15), value: runner.missingCommand)
     }
 
     /// Жизненный цикл, горячие клавиши и диалоги панели — отдельно от раскладки.
@@ -195,6 +211,18 @@ struct LauncherRootView: View {
         }
         .onChange(of: settings.latinLayoutInInput) { _, enabled in
             if enabled { switchToLatinIfEnabled() } else { KeyboardLayoutSwitcher.shared.restore() }
+        }
+        // команды нет: блока в истории нет, набранное возвращается в поле, если оно ещё пустое
+        .onChange(of: runner.missingCommand) { _, missing in
+            guard let missing else { missingSuggestionsCache = nil; return }
+            missingSuggestionsCache = (missing.word, CommandNotFound.suggestions(
+                for: missing.word, commands: CommandIndex.shared(for: settings.shellPath).allCommands, apps: appNames))
+            if text.isEmpty, !searchMode {
+                text = missing.command
+                inputFocused = true
+            } else {
+                runner.dismissMissingCommand()
+            }
         }
         .onChange(of: settings.hotkeyString) { _, newValue in
             hotKeys.rebind(newValue)
@@ -463,7 +491,36 @@ struct LauncherRootView: View {
     // MARK: - Приложения и калькулятор
 
     private func resolveQuickAction(_ text: String) -> QuickAction? {
-        settings.quickActionResolver(apps: AppCatalog.shared.apps).resolve(text, directory: settings.currentDirectory)
+        var resolver = settings.quickActionResolver(apps: AppCatalog.shared.apps)
+        let index = CommandIndex.shared(for: settings.shellPath)
+        resolver.isCommand = { index.isKnown($0) }
+        return resolver.resolve(text, directory: settings.currentDirectory)
+    }
+
+    // MARK: - Команды нет
+
+    /// Похожие имена для строки «Команды gti нет. Похоже: git».
+    private var missingSuggestions: [String] {
+        guard let missing = runner.missingCommand else { return [] }
+        if let cached = missingSuggestionsCache, cached.word == missing.word { return cached.list }
+        return CommandNotFound.suggestions(for: missing.word,
+                                           commands: CommandIndex.shared(for: settings.shellPath).allCommands,
+                                           apps: appNames)
+    }
+
+    /// Имена и алиасы приложений: по началу подсказываются только они.
+    private var appNames: [String] {
+        let apps = AppCatalog.shared.apps
+        return apps.flatMap(\.names) + settings.appAliases.keys.filter { alias in
+            apps.contains { $0.identifier == settings.appAliases[alias] }
+        }
+    }
+
+    /// Строка в поле с первым похожим вместо опечатки — её подставит Tab.
+    private var missingFix: String? {
+        guard let missing = runner.missingCommand, text == missing.command,
+              let first = missingSuggestions.first else { return nil }
+        return CommandNotFound.replacingFirstWord(in: missing.command, with: first)
     }
 
     /// Enter открыл приложение или скопировал результат расчёта: в историю не попадает,
@@ -1358,6 +1415,10 @@ struct CommandInputView: View {
     var history: [String] = []
     /// Что сделает Enter вместо команды: открыть приложение, скопировать результат (подпись справа).
     var quickAction: (String) -> QuickAction? = { _ in nil }
+    /// После «Команды нет»: исправленная строка, которую подставит Tab («git status»).
+    var fix: String?
+    /// Последний запуск не нашёл команду — рамка поля красная.
+    var alert = false
     /// Поле в фокусе — светится рамка.
     var isFocused = false
     /// Кнопки справа в поле (настройки, очистка).
@@ -1425,7 +1486,11 @@ struct CommandInputView: View {
                 .textFieldStyle(.plain)
                 .font(font)
         }
-        if let quick { QuickActionLabel(action: quick, lang: lang) }
+        if let fix {
+            FixLabel(text: fix)
+        } else if let quick, showsQuickLabel {
+            QuickActionLabel(action: quick, lang: lang)
+        }
         if searching { searchBadge }
         if let trailing { trailing }
         }
@@ -1434,8 +1499,8 @@ struct CommandInputView: View {
         .padding(.vertical, 10)
         .sunken(RoundedRectangle(cornerRadius: LauncherMetrics.innerRadius), fill: Tactile.field)
         // в поиске рамка другого цвета и видна всегда: сразу понятно, в каком режиме поле
-        .selectionRing(cornerRadius: LauncherMetrics.innerRadius, visible: isFocused || searching,
-                       color: searching ? Tactile.search : Tactile.accent)
+        .selectionRing(cornerRadius: LauncherMetrics.innerRadius, visible: isFocused || searching || alert,
+                       color: searching ? Tactile.search : alert ? Tactile.red : Tactile.accent)
         .animation(.easeOut(duration: 0.3), value: isFocused)
         .animation(.easeOut(duration: 0.2), value: searching)
         .onChange(of: mode) { _, _ in
@@ -1455,7 +1520,14 @@ struct CommandInputView: View {
         .onKeyPress(.downArrow) { stepHistory(.older) }
         .onKeyPress(.upArrow) { stepHistory(.newer) }
         .onExitCommand { cancelCompletion() }
-        .onSubmit { onSubmit(text) }
+        .onSubmit {
+            // однозначное начало имени приложения: Enter дописывает, повторный — открывает
+            if let completion = enterCompletion {
+                text = completion
+                return
+            }
+            onSubmit(text)
+        }
         .onChange(of: text) { _, newValue in
             if settingText { settingText = false; return }
             // пользователь печатает: выбранный вариант принят, перебор окончен
@@ -1490,17 +1562,31 @@ struct CommandInputView: View {
 
     private var quick: QuickAction? { searching ? nil : quickAction(text) }
 
-    /// Имя приложения по набранному началу: «saf» → «safari».
-    private var appCompletion: String? {
-        guard completer.menu == nil, case .suggestApp(_, let completion) = quick,
-              completion.hasPrefix(text), completion.count > text.count else { return nil }
-        return completion
+    /// Подсказка приложения по набранному началу: «saf» → «safari».
+    private var appSuggestion: AppSuggestion? {
+        guard fix == nil, completer.menu == nil, case .suggestApp(let suggestion) = quick,
+              suggestion.completion.hasPrefix(text), suggestion.completion.count > text.count else { return nil }
+        return suggestion
     }
+
+    private var appCompletion: String? { appSuggestion?.completion }
 
     /// Остаток имени приложения — серым, если нет подсказки из истории.
     private var appGhost: String? {
         guard historyGhost == nil, let completion = appCompletion else { return nil }
         return String(completion.dropFirst(text.count))
+    }
+
+    /// Что Enter допишет вместо запуска: вариант один и виден серым.
+    private var enterCompletion: String? {
+        guard appGhost != nil, let suggestion = appSuggestion, suggestion.completesOnEnter else { return nil }
+        return suggestion.completion
+    }
+
+    /// Подпись подсказки приложения — только когда её имя видно серым (иначе Tab сделает другое).
+    private var showsQuickLabel: Bool {
+        if case .suggestApp = quick { return appGhost != nil }
+        return true
     }
 
     /// Остаток подсказки из истории после набранного.
@@ -1552,6 +1638,11 @@ struct CommandInputView: View {
     // MARK: - TAB
 
     private func tab(_ direction: TabCompleter.Direction) -> KeyPress.Result {
+        // после «Команды нет»: Tab подставляет похожее имя («gti» → «git»)
+        if direction == .forward, completer.menu == nil, let fix {
+            text = fix
+            return .handled
+        }
         // серым видно имя приложения — TAB дописывает его, как в подписи «⇥ Safari»
         if direction == .forward, appGhost != nil, let completion = appCompletion {
             text = completion

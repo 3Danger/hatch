@@ -133,6 +133,11 @@ enum L {
             "exclusion_placeholder": "add name",
             "app_missing": "not installed",
             "remove": "Remove",
+            "quick_complete": "Complete to %@",
+            "quick_more": "%@ and %d more",
+            "quick_complete_help": "Enter completes the app name; Enter again opens it",
+            "missing_command": "No command %@.",
+            "missing_similar": "Did you mean:",
         ]
         let ru: [String: String] = [
             "input_placeholder": "Введите команду…",
@@ -264,6 +269,11 @@ enum L {
             "exclusion_placeholder": "добавить имя",
             "app_missing": "не установлено",
             "remove": "Убрать",
+            "quick_complete": "Дописать %@",
+            "quick_more": "%@ и ещё %d",
+            "quick_complete_help": "Enter дописывает имя приложения, повторный Enter открывает его",
+            "missing_command": "Команды %@ нет.",
+            "missing_similar": "Похоже:",
         ]
         let table = lang == "ru" ? ru : en
         return table[key] ?? key

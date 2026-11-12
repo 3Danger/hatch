@@ -66,16 +66,46 @@ final class QuickActionTests: XCTestCase {
         XCTAssertNil(resolve("docker ps"))
     }
 
-    /// По началу имени — только подсказка: Enter её не выполняет.
-    func testPrefixSuggestsOnly() {
-        XCTAssertEqual(resolve("saf"), .suggestApp(safari, completion: "safari"))
-        XCTAssertEqual(resolve("Saf"), .suggestApp(safari, completion: "Safari"))
-        XCTAssertEqual(resolve("каль"), .suggestApp(calculator, completion: "калькулятор"))
-        XCTAssertEqual(resolve("vs"), .suggestApp(vscode, completion: "vscode"))
+    private func suggestion(_ text: String, _ r: QuickActionResolver? = nil) -> AppSuggestion? {
+        if case .suggestApp(let suggestion) = resolve(text, r) { return suggestion }
+        return nil
+    }
+
+    /// По началу имени — подсказка; Enter её дописывает, только если вариант один.
+    func testPrefixSuggests() {
+        XCTAssertEqual(suggestion("saf")?.completion, "safari")
+        XCTAssertEqual(suggestion("saf")?.name, "Safari")
+        XCTAssertEqual(suggestion("Saf")?.completion, "Safari")
+        XCTAssertEqual(suggestion("каль")?.completion, "калькулятор")
+        XCTAssertEqual(suggestion("vs")?.completion, "vscode")
+        XCTAssertEqual(suggestion("saf")?.completesOnEnter, true)
         XCTAssertFalse(resolve("saf")!.handlesEnter)
         XCTAssertNil(resolve("s"))     // слишком коротко
         XCTAssertNil(resolve("saf "))  // после пробела — аргументы команды
         XCTAssertNil(resolve("ma", resolver(exclusions: ["mail"])))
+    }
+
+    /// Несколько приложений с тем же началом — Enter выполняет набранное, подпись «и ещё N».
+    func testAmbiguousPrefixDoesNotCompleteOnEnter() {
+        func app(_ name: String) -> AppEntry {
+            AppEntry(url: URL(fileURLWithPath: "/Applications/\(name).app"), bundleID: "test.\(name)", name: name, localizedName: nil)
+        }
+        let r = QuickActionResolver(apps: [app("Telegram"), app("Terminal"), app("TextEdit")])
+        let te = suggestion("te", r)
+        XCTAssertEqual(te?.name, "Telegram")
+        XCTAssertEqual(te?.others, 2)
+        XCTAssertEqual(te?.completesOnEnter, false)
+        XCTAssertEqual(suggestion("tel", r)?.completesOnEnter, true)
+    }
+
+    /// Набранное — существующая команда: Enter её выполняет, а не дописывает приложение.
+    func testExactCommandIsNotCompletedOnEnter() {
+        var r = resolver()
+        r.isCommand = { $0 == "saf" }
+        XCTAssertEqual(suggestion("saf", r)?.completesOnEnter, false)
+        // алиас и полное имя одного приложения — один вариант
+        XCTAssertEqual(suggestion("v")?.others, nil) // одна буква — без подсказки
+        XCTAssertEqual(suggestion("vi")?.others, 0)
     }
 
     func testCalculatorComesFirst() {

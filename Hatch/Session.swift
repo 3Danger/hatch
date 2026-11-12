@@ -61,6 +61,8 @@ struct Session: Identifiable, Codable, Equatable, Hashable {
     /// Исходный вывод команды, пока к нему применён конвейер (`output` — результат конвейера).
     var rawOutput: String?
     var rawOutputANSI: String?
+    /// Незнакомая шеллу команда, пока он не ответил: блок не показывается (опечатка не мелькает).
+    var isProvisional: Bool?
 
     var pipeline: [String] { pipeStages ?? [] }
 
