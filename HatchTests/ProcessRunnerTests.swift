@@ -99,6 +99,58 @@ final class ProcessRunnerTests: XCTestCase {
         XCTAssertEqual(store.filteredSessions.count, 1)
     }
 
+    // MARK: - Команда ждёт ввода
+
+    private func waitForInputRequest(_ runner: ProcessRunner, timeout: TimeInterval = 5) {
+        let exp = expectation(description: "input request")
+        waitUntil(timeout: timeout, { runner.inputRequest != nil }, onFulfill: { exp.fulfill() })
+        wait(for: [exp], timeout: timeout + 1)
+    }
+
+    /// «Сырой» режим терминала (так работают claude, htop, fzf) — полноэкранная программа:
+    /// блок становится интерактивным, как vim.
+    func testRawModeProgramIsDetectedAsFullScreen() {
+        let (store, _, runner) = makeEnvironment()
+        runner.run(command: "stty raw -echo; sleep 3")
+        waitForInputRequest(runner)
+        let session = store.sessions.first
+        XCTAssertEqual(runner.inputRequest?.sessionID, session?.id)
+        XCTAssertEqual(runner.inputRequest?.wait, .fullScreen)
+        XCTAssertEqual(session?.state, .interactive)
+        if let id = session?.id { runner.stop(sessionID: id) }
+    }
+
+    /// Вопрос посреди строки и тишина — блок раскрывается, ответ уходит в программу.
+    func testPromptIsDetectedAndAnswerReachesProgram() {
+        let (store, _, runner) = makeEnvironment()
+        runner.run(command: #"printf 'Continue? [y/N] '; read answer; echo "got $answer""#)
+        waitForInputRequest(runner)
+        XCTAssertEqual(runner.inputRequest?.wait, .prompt)
+        let session = store.sessions.first
+        XCTAssertEqual(session?.state, .running, "вопрос не делает команду полноэкранной")
+        if let id = session?.id { runner.terminal(for: id)?.send("y\r") }
+        let finished = waitTerminal(store)
+        XCTAssertTrue(finished?.output.contains("got y") ?? false, finished?.output ?? "")
+    }
+
+    /// Пароль (ввод без отображения) — тоже вопрос.
+    func testHiddenInputIsDetectedAsPrompt() {
+        let (store, _, runner) = makeEnvironment()
+        runner.run(command: "stty -echo; read secret; stty echo")
+        waitForInputRequest(runner)
+        XCTAssertEqual(runner.inputRequest?.wait, .prompt)
+        if let id = store.sessions.first?.id { runner.stop(sessionID: id) }
+    }
+
+    /// Долгая команда без вопроса не раскрывается.
+    func testQuietCommandWithFinishedLineIsNotInput() {
+        let (store, _, runner) = makeEnvironment()
+        runner.run(command: "echo working; sleep 1.5")
+        let finished = waitTerminal(store)
+        XCTAssertEqual(finished?.state, .completed)
+        XCTAssertNil(runner.inputRequest)
+    }
+
     func testRunEchoStreamsOutput() {
         let (store, _, runner) = makeEnvironment()
         runner.run(command: "echo hello-hatch")

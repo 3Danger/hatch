@@ -44,6 +44,8 @@ final class FocusReturnTests: XCTestCase {
         return nil
     }
 
+    private var runner: ProcessRunner?
+
     /// Панель Hatch, как при запуске, с фокусом в поле ввода.
     private func showPanel() throws -> NSWindow {
         ShellTestIsolation.apply()
@@ -53,6 +55,7 @@ final class FocusReturnTests: XCTestCase {
         let store = SessionStore(history: HistoryStore(fileURL: FileManager.default.temporaryDirectory
             .appendingPathComponent("focus-\(UUID().uuidString).json")))
         let runner = ProcessRunner(sessionStore: store, settings: settings)
+        self.runner = runner
         let root = LauncherRootView().environment(store).environment(runner).environment(settings)
             .environment(HotKeyController(delegate: NoHotKeys()))
         let controller = FloatingWindowController(rootView: root, defaults: defaults)
@@ -85,5 +88,25 @@ final class FocusReturnTests: XCTestCase {
 
     func testEscapeFromFavoritesReturnsFocusToInput() throws {
         try assertEscapeReturnsFocus(open: 14, "e", "избранное") // ⌘E
+    }
+
+    /// Команда спросила и ждёт ответа — её блок раскрывается, клавиатура в её терминале.
+    func testCommandWaitingForInputExpandsAndTakesKeyboard() throws {
+        let panel = try showPanel()
+        let runner = try XCTUnwrap(runner)
+        runner.run(command: "printf 'Continue? [y/N] '; read answer")
+        let deadline = Date().addingTimeInterval(5)
+        while !(panel.firstResponder is SessionTerminalView), Date() < deadline { spin(0.05) }
+        var trace: [String] = []
+        for _ in 0..<30 { // 1,5 с: фокус не должен уйти после раскрытия
+            spin(0.05)
+            let name = panel.firstResponder.map { String(describing: type(of: $0)) } ?? "nil"
+            if trace.last != name { trace.append(name) }
+        }
+        XCTAssertEqual(trace, ["SessionTerminalView"], "клавиатура остаётся в терминале")
+        XCTAssertNotNil(runner.inputRequest, "вопрос замечен")
+        XCTAssertTrue(panel.firstResponder is SessionTerminalView,
+                      "клавиатура в терминале блока: \(String(describing: panel.firstResponder))")
+        if let id = runner.inputRequest?.sessionID { runner.stop(sessionID: id) }
     }
 }

@@ -212,6 +212,12 @@ struct LauncherRootView: View {
         .onChange(of: settings.latinLayoutInInput) { _, enabled in
             if enabled { switchToLatinIfEnabled() } else { KeyboardLayoutSwitcher.shared.restore() }
         }
+        // команда ждёт ввода (вопрос, пароль, полноэкранная программа) — раскрыть её блок
+        .onChange(of: runner.inputRequest) { _, request in
+            guard let request, sessionStore.sessions.contains(where: { $0.id == request.sessionID }) else { return }
+            if searchMode { exitSearch() }
+            if expandedID != request.sessionID { expand(request.sessionID) }
+        }
         // команды нет: блока в истории нет, набранное возвращается в поле, если оно ещё пустое
         .onChange(of: runner.missingCommand) { _, missing in
             guard let missing else { missingSuggestionsCache = nil; return }
@@ -1725,10 +1731,24 @@ struct TerminalHostView: NSViewRepresentable {
         terminalView.frame = container.bounds
         terminalView.autoresizingMask = [.width, .height]
         container.addSubview(terminalView)
-        DispatchQueue.main.async {
-            terminalView.window?.makeFirstResponder(terminalView)
-        }
+        Self.claimKeyboard(terminalView, attempts: 8)
         return container
+    }
+
+    /// Клавиатура — терминалу блока, сразу после раскрытия. Поле ввода при раскрытии теряет фокус,
+    /// и SwiftUI, снимая его, может сделать это уже после нас: клавиатура падала на само окно,
+    /// и в терминал приходилось кликать. Поэтому несколько коротких попыток, пока клавиатура ничья.
+    /// Отнимать её у того, кто взял её сам (клик в поле ввода), не будем.
+    private static func claimKeyboard(_ view: NSView, attempts: Int) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak view] in
+            guard let view, let window = view.window else { return }
+            let responder = window.firstResponder
+            if responder === view { return }
+            if responder == nil || responder === window {
+                window.makeFirstResponder(view)
+            }
+            if attempts > 1 { claimKeyboard(view, attempts: attempts - 1) }
+        }
     }
 
     func updateNSView(_ nsView: NSView, context: Context) {

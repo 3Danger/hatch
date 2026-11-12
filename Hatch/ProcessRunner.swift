@@ -21,6 +21,14 @@ final class ProcessRunner {
     private var freshRuns: Set<UUID> = []
     /// Последний запуск с опечаткой в имени команды: блока нет, набранное — снова в поле.
     private(set) var missingCommand: MissingCommand?
+    /// Команда ждёт ввода: блок раскрывается. Номер растёт, чтобы раскрывать и повторно ту же сессию.
+    private(set) var inputRequest: InputRequest?
+    struct InputRequest: Equatable {
+        let sessionID: UUID
+        let wait: InteractiveTerminal.InputWait
+        let serial: Int
+    }
+    private var inputRequests = 0
     /// Сколько ждать ответа шелла, прежде чем показать блок незнакомой команды.
     static let provisionalDelay: TimeInterval = 1.0
 
@@ -301,6 +309,23 @@ final class ProcessRunner {
             // уведомление о завершении долгой команды, если приложение не в фокусе
             if !interactive, Date().timeIntervalSince(startedAt) >= 5 {
                 NotificationService().notifyIfNotFocused(title: "Готово", body: "Команда «\(command)» завершилась")
+            }
+        }
+
+        // ждёт пользователя: полноэкранная программа ведёт себя как vim (свернётся при выходе),
+        // вопрос — блок раскрыт и после выхода, чтобы был виден результат
+        terminal.onNeedsInput = { [weak self] wait in
+            guard let self, self.runTokens[sessionID] == token, !interactive else { return }
+            self.reveal(sessionID)
+            if wait == .fullScreen {
+                self.sessionStore.update(id: sessionID, persist: .never) { s in
+                    if s.state == .running { s.state = .interactive }
+                }
+            }
+            self.inputRequests += 1
+            self.inputRequest = InputRequest(sessionID: sessionID, wait: wait, serial: self.inputRequests)
+            if !NSApp.windows.contains(where: { $0 is LauncherPanel && $0.isVisible }) {
+                NotificationService().notifyIfNotFocused(title: "Команда ждёт ввода", body: command)
             }
         }
 

@@ -22,6 +22,22 @@ final class InteractiveTerminal: NSObject, LocalProcessTerminalViewDelegate {
     var onOutput: ((TerminalSnapshot) -> Void)?
     /// Вызывается на main после выхода: код выхода и итоговый экран.
     var onExit: ((Int32, TerminalSnapshot) -> Void)?
+    /// Команда ждёт пользователя (на main): блок нужно раскрыть живым терминалом.
+    var onNeedsInput: ((InputWait) -> Void)?
+
+    /// Чего ждёт команда.
+    enum InputWait: Equatable {
+        /// Полноэкранная программа: терминал в «сыром» режиме (`claude`, `htop`, `fzf`, мастер со стрелками).
+        case fullScreen
+        /// Вопрос в обычном выводе: `Continue? [y/N]`, пароль `sudo`, `read -p`.
+        case prompt
+    }
+
+    /// Как часто смотреть, не ждёт ли команда ввода.
+    private static let inputCheckInterval: TimeInterval = 0.15
+    /// Тишина после незаконченной строки, после которой это считается вопросом.
+    static let promptQuiet: TimeInterval = 0.7
+    private var reportedWait: InputWait?
 
     var pid: pid_t { view.process.shellPid }
 
@@ -53,7 +69,9 @@ final class InteractiveTerminal: NSObject, LocalProcessTerminalViewDelegate {
                           environment: Self.terminalEnvironment(environment),
                           execName: nil,
                           currentDirectory: directory)
-        return pid > 0
+        guard pid > 0 else { return false }
+        scheduleInputCheck()
+        return true
     }
 
     /// Цвета как у поля вывода в блоке: тёмная лунка в тёмной теме, светлая — в светлой.
@@ -89,6 +107,44 @@ final class InteractiveTerminal: NSObject, LocalProcessTerminalViewDelegate {
     func sizeChanged(source: LocalProcessTerminalView, newCols: Int, newRows: Int) {}
     func setTerminalTitle(source: LocalProcessTerminalView, title: String) {}
     func hostCurrentDirectoryUpdate(source: TerminalView, directory: String?) {}
+
+    // MARK: - Ждёт ли команда ввода
+
+    private func scheduleInputCheck() {
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.inputCheckInterval) { [weak self] in
+            guard let self, !self.finished else { return }
+            self.checkInput()
+            // полноэкранная — уже всё ясно; вопрос может смениться полноэкранной программой
+            if self.reportedWait != .fullScreen { self.scheduleInputCheck() }
+        }
+    }
+
+    private func checkInput() {
+        let mode = Self.terminalMode(fd: view.process.childfd)
+        let wait: InputWait?
+        if mode?.canonical == false {
+            wait = .fullScreen
+        } else if mode?.echo == false {
+            wait = .prompt // пароль: строка вводится, но не отображается
+        } else if Date().timeIntervalSince(lastDataAt) >= Self.promptQuiet, view.getTerminal().buffer.x > 0 {
+            // вывод замолчал посреди строки — так выглядит вопрос, ждущий ответа
+            wait = .prompt
+        } else {
+            wait = nil
+        }
+        guard let wait, wait != reportedWait, reportedWait != .fullScreen else { return }
+        reportedWait = wait
+        onNeedsInput?(wait)
+    }
+
+    /// Режим терминала со стороны программы: построчный ли ввод и видны ли набранные символы.
+    /// Настройки читаются через ведущую сторону PTY — они общие для пары.
+    static func terminalMode(fd: Int32) -> (canonical: Bool, echo: Bool)? {
+        guard fd >= 0 else { return nil }
+        var attributes = termios()
+        guard tcgetattr(fd, &attributes) == 0 else { return nil }
+        return ((attributes.c_lflag & tcflag_t(ICANON)) != 0, (attributes.c_lflag & tcflag_t(ECHO)) != 0)
+    }
 
     // MARK: - Private
 
