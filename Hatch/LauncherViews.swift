@@ -78,6 +78,8 @@ struct LauncherRootView: View {
     @State private var interruptedID: UUID?
     /// Похожие имена считаются один раз на опечатку, а не на каждую перерисовку.
     @State private var missingSuggestionsCache: (word: String, list: [String])?
+    /// Открыт список вариантов TAB: Esc сначала возвращает набранное.
+    @State private var completionMenuOpen = false
 
     private var lang: String { settings.languageCode }
 
@@ -161,6 +163,7 @@ struct LauncherRootView: View {
                              fix: commandMode ? missingFix : nil,
                              alert: commandMode && runner.missingCommand != nil,
                              isFocused: inputFocused,
+                             onCompletionMenu: { completionMenuOpen = $0 },
                              trailing: AnyView(inputButtons))
             .focused($inputFocused)
 
@@ -721,12 +724,8 @@ struct LauncherRootView: View {
             case (53, []) where showSettings && !HotKeyCapsField.isRecording:
                 closeSettings()
                 return nil
-            case (53, []) where searchMode && !showSettings && event.window is LauncherPanel:
-                exitSearch()
-                return nil
-            case (53, []) where clipboardMode && !showSettings && event.window is LauncherPanel:
-                exitClipboard()
-                return nil
+            case (53, []) where !showSettings && event.window is LauncherPanel:
+                return escape(event) ? nil : event
             case (21, .command) where !showSettings:
                 toggleClipboard()
                 return nil
@@ -770,24 +769,17 @@ struct LauncherRootView: View {
                 }
                 toggleSearch()
                 return nil
-            case (13, .command) where expandedID != nil:
+            case (13, .command) where expandedID != nil && event.window is LauncherPanel:
+                // раскрытый блок ⌘W сворачивает всегда, и живой терминал тоже (Esc там — программе)
                 collapse()
                 return nil
-            case (13, .command) where showSettings:
-                closeSettings()
+            case (13, .command):
+                // ⌘W — то же, что Esc: закрыть верхний слой (окно, настройки, режим), иначе скрыть панель
+                Self.sendEscape(to: event.window)
                 return nil
             case (43, .command):
                 // ⌘, — настройки, как в приложениях macOS; повторно — закрыть
                 if showSettings { closeSettings() } else { openSettings() }
-                return nil
-            case (13, .command):
-                // ⌘W без раскрытого блока — скрыть панель, как окно
-                hidePanel()
-                return nil
-            case (53, []) where commandMode && inputFocused && text.isEmpty && expandedID == nil && !showSettings
-                && runner.missingCommand == nil && event.window is LauncherPanel:
-                // Esc на пустом поле — скрыть панель, как Spotlight
-                hidePanel()
                 return nil
             case (8, .control):
                 return interruptByKeyboard(event) ? nil : event
@@ -795,6 +787,42 @@ struct LauncherRootView: View {
                 return event
             }
         }
+    }
+
+    // MARK: - Esc и ⌘W
+
+    /// Esc в панели закрывает верхний слой, по одному за нажатие; закрывать нечего — скрывает панель
+    /// (набранное остаётся). ⌘W делает то же самое. Всплывающие окна, настройки и диалоги
+    /// закрываются своим Esc раньше, в своих окнах. false — нажатие идёт дальше как обычно.
+    private func escape(_ event: NSEvent) -> Bool {
+        // варианты TAB и правка шага конвейера — Esc у поля: вернуть набранное
+        if completionMenuOpen { return false }
+        if let editor = event.window?.firstResponder as? NSTextView, editor.isFieldEditor, !inputFocused { return false }
+        // раскрытый блок: в живом терминале Esc нужен программе (vim, ssh); иначе — свернуть
+        if let session = expandedSession {
+            if let terminal = runner.terminal(for: session.id), event.window?.firstResponder === terminal.view {
+                return false
+            }
+            collapse()
+            return true
+        }
+        if searchMode { exitSearch(); return true }
+        if clipboardMode { exitClipboard(); return true }
+        if runner.missingCommand != nil { runner.dismissMissingCommand(); return true }
+        hidePanel()
+        return true
+    }
+
+    /// ⌘W как Esc: нажатие Esc уходит в то же окно (всплывающее, настройки, диалог или панель).
+    private static func sendEscape(to window: NSWindow?) {
+        guard let window,
+              let escape = NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [],
+                                            timestamp: ProcessInfo.processInfo.systemUptime,
+                                            windowNumber: window.windowNumber, context: nil,
+                                            characters: "\u{1b}", charactersIgnoringModifiers: "\u{1b}",
+                                            isARepeat: false, keyCode: 53) else { return }
+        // после текущего нажатия: так Esc проходит обычный путь, через мониторы клавиш
+        DispatchQueue.main.async { NSApp.sendEvent(escape) }
     }
 
     /// Клик в самой панели, но не по раскрытому блоку, полосе прокрутки или краю для изменения размера.
@@ -1561,6 +1589,8 @@ struct CommandInputView: View {
     var alert = false
     /// Поле в фокусе — светится рамка.
     var isFocused = false
+    /// Список вариантов TAB открылся или закрылся.
+    var onCompletionMenu: (Bool) -> Void = { _ in }
     /// Кнопки справа в поле (настройки, очистка).
     var trailing: AnyView?
     @State private var engine = ShellCompletionEngine()
@@ -1660,6 +1690,7 @@ struct CommandInputView: View {
         .onKeyPress(.downArrow) { stepHistory(.older) }
         .onKeyPress(.upArrow) { stepHistory(.newer) }
         .onExitCommand { cancelCompletion() }
+        .onChange(of: completer.menu != nil) { _, open in onCompletionMenu(open) }
         .onSubmit {
             // однозначное начало имени приложения: Enter дописывает, повторный — открывает
             if let completion = enterCompletion {

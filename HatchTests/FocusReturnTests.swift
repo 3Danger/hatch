@@ -130,20 +130,58 @@ final class FocusReturnTests: XCTestCase {
         }
     }
 
-    /// Esc на пустом поле скрывает панель; с набранным текстом — нет.
-    func testEscapeOnEmptyInputHidesPanel() throws {
+    /// Esc, когда ничего не открыто, скрывает панель — и с набранным текстом, который остаётся.
+    func testEscapeHidesPanelKeepingText() throws {
         let panel = try showPanel()
         let editor = try XCTUnwrap(panel.firstResponder as? NSTextView)
-        editor.insertText("ls", replacementRange: NSRange(location: 0, length: 0))
-        spin()
-        key(53, "\u{1b}", to: panel)
-        XCTAssertTrue(panel.isVisible, "с текстом Esc панель не скрывает")
-        editor.selectAll(nil)
-        editor.deleteBackward(nil)
+        editor.insertText("ls -la", replacementRange: NSRange(location: 0, length: 0))
         spin()
         key(53, "\u{1b}", to: panel)
         wait { !panel.isVisible }
-        XCTAssertFalse(panel.isVisible, "на пустом поле Esc скрывает панель")
+        XCTAssertFalse(panel.isVisible, "Esc скрыл панель")
+        XCTAssertEqual(editor.string, "ls -la", "набранное осталось")
+    }
+
+    /// Esc и ⌘W закрывают верхний слой по одному: режим буфера, потом — панель.
+    func testEscapeAndCommandWStepBackOneLayer() throws {
+        for (code, chars, flags) in [(UInt16(53), "\u{1b}", NSEvent.ModifierFlags()), (UInt16(13), "w", .command)] {
+            let panel = try showPanel()
+            key(21, "4", .command, to: panel) // ⌘4 — режим буфера
+            key(code, chars, flags, to: panel)
+            spin()
+            XCTAssertTrue(panel.isVisible, "первое нажатие закрыло только режим буфера")
+            key(code, chars, flags, to: panel)
+            wait { !panel.isVisible }
+            XCTAssertFalse(panel.isVisible, "второе — скрыло панель")
+            controller?.hide()
+            controller = nil
+        }
+    }
+
+    /// ⌘W во всплывающем окне (дерево папок) закрывает только его, как Esc.
+    func testCommandWClosesPopupOnly() throws {
+        let panel = try showPanel()
+        key(18, "1", .command, to: panel) // ⌘1
+        wait { panel.childWindows?.count == 1 }
+        let tree = try XCTUnwrap(panel.childWindows?.first)
+        key(13, "w", .command, to: tree)
+        wait { (panel.childWindows?.count ?? 0) == 0 }
+        XCTAssertEqual(panel.childWindows?.count ?? 0, 0, "дерево закрылось")
+        XCTAssertTrue(panel.isVisible, "панель осталась")
+        wait { self.inputHasFocus(panel) }
+        XCTAssertTrue(inputHasFocus(panel))
+    }
+
+    /// ⌘W в настройках закрывает их, как Esc; панель остаётся.
+    func testCommandWClosesSettingsOnly() throws {
+        let panel = try showPanel()
+        key(43, ",", .command, to: panel)
+        wait { panel.childWindows?.count == 1 }
+        let sheet = try XCTUnwrap(panel.childWindows?.first)
+        key(13, "w", .command, to: sheet)
+        wait { (panel.childWindows?.count ?? 0) == 0 }
+        XCTAssertEqual(panel.childWindows?.count ?? 0, 0, "настройки закрылись")
+        XCTAssertTrue(panel.isVisible, "панель осталась")
     }
 
     /// В режиме буфера ⌃L чистит буфер (закреплённые остаются), а не историю команд.
