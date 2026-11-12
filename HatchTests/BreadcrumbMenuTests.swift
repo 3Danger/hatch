@@ -156,13 +156,31 @@ final class BreadcrumbMenuTests: XCTestCase {
         spin()
         model.request += 1 // ⌘1 — дерево у local: папки /usr
         wait { window.childWindows?.count == 1 }
-        let tree = try XCTUnwrap(window.childWindows?.first)
-        let atLocal = tree.frame.height
-        press(tree, 123) // ← — дерево у usr: папки «/»
-        wait { tree.frame.height != atLocal }
-        XCTAssertNotEqual(tree.frame.height, atLocal, "дерево поднялось к «/»")
-        press(tree, 124, command: true) // ⌘→ — снова у local
+        let atLocal = try XCTUnwrap(window.childWindows?.first).frame.height
+        press(try XCTUnwrap(window.childWindows?.first), 123) // ← — дерево у usr: папки «/»
+        wait { (window.childWindows?.first?.frame.height ?? atLocal) != atLocal }
+        XCTAssertNotEqual(window.childWindows?.first?.frame.height ?? atLocal, atLocal, "дерево поднялось к «/»")
+        press(try XCTUnwrap(window.childWindows?.first), 124, command: true) // ⌘→ — снова у local
         wait { (window.childWindows?.first?.frame.height ?? 0) == atLocal }
         XCTAssertEqual(window.childWindows?.first?.frame.height ?? 0, atLocal, accuracy: 1, "дерево снова у local")
+    }
+
+    /// ← на верхнем уровне: окно дерева переезжает к папке выше в пути, как при ⌘←.
+    func testTreeWindowFollowsLeftArrowUp() throws {
+        let model = Model() // / › usr › local
+        let host = NSHostingView(rootView: Host(model: model))
+        let window = NSPanel(contentRect: NSRect(x: 300, y: 500, width: 640, height: 60),
+                             styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+        window.contentView = host
+        window.orderFront(nil)
+        spin()
+        let centers = crumbCenters(host, window)
+        model.request += 1 // ⌘1 — дерево у local
+        wait { window.childWindows?.count == 1 }
+        XCTAssertEqual(try XCTUnwrap(window.childWindows?.first).frame.midX, centers[2], accuracy: 1)
+        press(try XCTUnwrap(window.childWindows?.first), 123) // ← — дерево у usr
+        wait { abs((window.childWindows?.first?.frame.midX ?? 0) - centers[1]) < 1 }
+        XCTAssertEqual(window.childWindows?.first?.frame.midX ?? 0, centers[1], accuracy: 1, "окно у usr")
+        XCTAssertEqual(window.childWindows?.count, 1, "окно одно, старое закрылось")
     }
 }

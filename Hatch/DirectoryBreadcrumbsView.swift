@@ -58,6 +58,16 @@ struct DirectoryBreadcrumbsView: View {
         if target != current || treeCrumb != segments[target].path { openTree(target) }
     }
 
+    /// ← на верхнем уровне подняло дерево к папке выше: окно переезжает к ней в пути, как при ⌘←.
+    /// Дерево у новой папки такое же, каким его сделало ← (уровень выше, папка выделена, всё свёрнуто),
+    /// поэтому оно просто открывается у неё заново. Выше начала пути (выше `~`) окно остаётся у первой папки.
+    private func followTree(_ crumb: String) {
+        treeCrumb = crumb
+        let paths = PathBreadcrumbs.segments(for: path).map(\.path)
+        guard let index = paths.firstIndex(of: crumb), index != openCrumb else { return }
+        openTree(index)
+    }
+
     /// Место папки дерева в пути. Дерево могло подняться выше начала пути (выше `~`) —
     /// тогда это «левее первой», и ⌘→ ведёт к первой папке пути.
     static func treeIndex(of crumb: String?, in paths: [String]) -> Int? {
@@ -123,7 +133,7 @@ struct DirectoryBreadcrumbsView: View {
                                                onNavigate(folder)
                                            },
                                            onSwitchCrumb: { delta in switchTree(by: delta, from: index) },
-                                           onCrumbChange: { treeCrumb = $0 })
+                                           onCrumbChange: followTree)
                             .id(treeGeneration)
                         }
                     }
