@@ -6,7 +6,8 @@ import AppKit
 
 /// Поведение блоков: при раскрытом блоке остальные приглушены.
 enum LayersDepth {
-    static let dimmedOpacity = 0.5
+    /// Соседи раскрытого блока приглушены слегка: раскрытый выделяет только это, без обводки.
+    static let dimmedOpacity = 0.7
 
     static let spring = Animation.spring(response: 0.42, dampingFraction: 0.86)
     /// Приближение при наведении — в полтора раза быстрее раскрытия и появления.
@@ -150,13 +151,12 @@ extension View {
         }
     }
 
-    /// Синее выделение: линия по краю и мягкое кольцо снаружи (раскрытый блок, поле в фокусе).
+    /// Фокус: тонкая полупрозрачная линия по краю, без кольца снаружи
+    /// (поле в фокусе, блок, выбранный стрелками, поле шага).
     func selectionRing(cornerRadius: CGFloat, visible: Bool, color: Color = Tactile.accent) -> some View {
         overlay {
             if visible {
-                RoundedRectangle(cornerRadius: cornerRadius).strokeBorder(color, lineWidth: 1)
-                RoundedRectangle(cornerRadius: cornerRadius + 3).strokeBorder(color.opacity(0.45), lineWidth: 3)
-                    .padding(-3)
+                RoundedRectangle(cornerRadius: cornerRadius).strokeBorder(color.opacity(0.55), lineWidth: 1)
             }
         }
     }

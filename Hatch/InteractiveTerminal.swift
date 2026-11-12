@@ -56,6 +56,20 @@ final class InteractiveTerminal: NSObject, LocalProcessTerminalViewDelegate {
         return pid > 0
     }
 
+    /// Цвета как у поля вывода в блоке: тёмная лунка в тёмной теме, светлая — в светлой.
+    /// Без этого SwiftTerm рисует системный фон — белый прямоугольник посреди тёмной панели.
+    func applyColors(dark: Bool) {
+        guard appliedDark != dark else { return }
+        appliedDark = dark
+        view.nativeBackgroundColor = dark ? NSColor(srgbRed: 0x1d / 255, green: 0x1d / 255, blue: 0x1f / 255, alpha: 1)
+                                          : NSColor(srgbRed: 0xe6 / 255, green: 0xe6 / 255, blue: 0xea / 255, alpha: 1)
+        view.nativeForegroundColor = dark ? NSColor(srgbRed: 0xd5 / 255, green: 0xd5 / 255, blue: 0xda / 255, alpha: 1)
+                                          : NSColor(srgbRed: 0x1d / 255, green: 0x1d / 255, blue: 0x1f / 255, alpha: 1)
+        view.caretColor = .controlAccentColor
+        view.needsDisplay = true
+    }
+    private var appliedDark: Bool?
+
     /// Ввод в процесс, как с клавиатуры.
     func send(_ text: String) {
         view.process.send(data: ArraySlice(Array(text.utf8)))

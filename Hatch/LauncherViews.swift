@@ -11,8 +11,6 @@ enum LauncherMetrics {
     static let panelRadius = innerRadius + padding
     /// Отступ содержимого внутри блока истории.
     static let blockPadding: CGFloat = 12
-    /// Терминал внутри раскрытого блока.
-    static let terminalRadius = innerRadius - blockPadding
     /// Кнопки-колпачки одного размера с соседями: в заголовке блока («+» и действия) и в поле ввода.
     static let blockButton: CGFloat = 24
     /// «Развернуть» в строке «скрыто N»: колпачок как в макете, строка под него выше обычной.
@@ -430,13 +428,15 @@ struct LauncherRootView: View {
     }
 
     /// Выход из поиска (Esc, ⌘F, «✕» на метке): история целиком, набранная команда на месте.
+    /// Раскрытый из поиска блок остаётся раскрытым, и фокус — у него: поле ввода в фокусе
+    /// и раскрытый блок вместе не бывают (клик в поле блок сворачивает).
     private func exitSearch() {
         guard searchMode else { return }
         navigator.reset()
         searchQuery = ""
         sessionStore.filterText = ""
         withAnimation(.easeOut(duration: 0.2)) { searchMode = false }
-        inputFocused = true
+        if expandedID == nil { inputFocused = true }
     }
 
     /// Enter в поиске раскрывает выбранный стрелками блок, а без выбора — первый найденный.
@@ -894,7 +894,8 @@ struct SessionBlockView: View {
         .padding(LauncherMetrics.blockPadding)
         // утоплен в окно: тень по верхней стенке, мягкий блик снизу; под курсором чуть светлее
         .sunken(blockShape, fill: hovered && !dimmed ? Tactile.sunkenHover : Tactile.sunken)
-        .selectionRing(cornerRadius: LauncherMetrics.innerRadius, visible: isExpanded || isSelected)
+        // раскрытый выделен приглушёнными соседями, обводка — только у выбранного стрелками
+        .selectionRing(cornerRadius: LauncherMetrics.innerRadius, visible: isSelected && !isExpanded)
         // при раскрытом блоке остальные приглушены
         .opacity(dimmed ? LayersDepth.dimmedOpacity : 1)
         .animation(LayersDepth.hoverSpring, value: DepthKey(hovered: hovered || isSelected, dimmed: dimmed, expanded: isExpanded))
@@ -1175,11 +1176,14 @@ struct SessionBlockView: View {
     private var expandedBody: some View {
         // пока команда работает — живой терминал (можно отвечать на вопросы, жать ⌃C)
         if let terminal, session.state.isActive {
+            // в той же утопленной лунке, что и готовый вывод: блок не «всплывает», пока команда работает
             TerminalHostView(terminal: terminal)
                 .id(ObjectIdentifier(terminal)) // после перезапуска — новый терминал
                 .frame(maxWidth: .infinity)
-                .frame(height: terminalHeight)
-                .clipShape(RoundedRectangle(cornerRadius: LauncherMetrics.terminalRadius))
+                .frame(height: max(terminalHeight - 16, 80))
+                .padding(.horizontal, 10)
+                .padding(.vertical, 8)
+                .sunken(RoundedRectangle(cornerRadius: 8), fill: Tactile.field)
         } else {
             // по высоте текста: список прокручивается дальше, к остальным блокам
             fullOutput
@@ -1571,6 +1575,7 @@ struct TerminalHostView: NSViewRepresentable {
     let terminal: InteractiveTerminal
 
     func makeNSView(context: Context) -> NSView {
+        terminal.applyColors(dark: context.environment.colorScheme == .dark)
         let terminalView = terminal.view
         let container = NSView(frame: terminalView.frame)
         terminalView.removeFromSuperview()
@@ -1583,7 +1588,10 @@ struct TerminalHostView: NSViewRepresentable {
         return container
     }
 
-    func updateNSView(_ nsView: NSView, context: Context) {}
+    func updateNSView(_ nsView: NSView, context: Context) {
+        // сменили тему — терминал перекрашивается вместе с панелью
+        terminal.applyColors(dark: context.environment.colorScheme == .dark)
+    }
 }
 
 /// Изменение конвейера по сохранённому выводу.
