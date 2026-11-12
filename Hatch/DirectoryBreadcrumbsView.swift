@@ -23,6 +23,9 @@ struct DirectoryBreadcrumbsView: View {
     @State private var menuCrumb: Int?
     /// Папка, к которой сейчас относится открытое дерево (после ← на верху — уровнем выше).
     @State private var treeCrumb: String?
+    /// Растёт при каждом открытии дерева: ⌘→ обратно к той же папке пути (после ← дерево ушло
+    /// выше) открывает дерево заново, а не оставляет его уровнем выше в том же окне.
+    @State private var treeGeneration = 0
 
     private var font: Font { .system(size: 12) }
 
@@ -68,6 +71,7 @@ struct DirectoryBreadcrumbsView: View {
         let segments = PathBreadcrumbs.segments(for: path)
         menuCrumb = nil
         openCrumb = index
+        treeGeneration += 1
         treeCrumb = index.flatMap { segments.indices.contains($0) ? segments[$0].path : nil }
     }
 
@@ -120,6 +124,7 @@ struct DirectoryBreadcrumbsView: View {
                                            },
                                            onSwitchCrumb: { delta in switchTree(by: delta, from: index) },
                                            onCrumbChange: { treeCrumb = $0 })
+                            .id(treeGeneration)
                         }
                     }
                     .hatchPopup(isPresented: Binding(get: { menuCrumb == index },

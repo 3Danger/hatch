@@ -143,4 +143,26 @@ final class BreadcrumbMenuTests: XCTestCase {
         tree = try XCTUnwrap(window.childWindows?.first)
         XCTAssertEqual(tree.frame.midX, centers[1], accuracy: 1, "⌘→ от «/» — к usr")
     }
+
+    /// ⌘1, ← (дерево поднялось к usr), ⌘→ — обратно к local: дерево снова у local, а не застряло выше.
+    /// Какое дерево показано, видно по высоте окна: в /usr и «/» разное число папок.
+    func testSwitchBackToOpenedCrumbResetsTree() throws {
+        let model = Model() // / › usr › local
+        let host = NSHostingView(rootView: Host(model: model))
+        let window = NSPanel(contentRect: NSRect(x: 300, y: 500, width: 640, height: 60),
+                             styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+        window.contentView = host
+        window.orderFront(nil)
+        spin()
+        model.request += 1 // ⌘1 — дерево у local: папки /usr
+        wait { window.childWindows?.count == 1 }
+        let tree = try XCTUnwrap(window.childWindows?.first)
+        let atLocal = tree.frame.height
+        press(tree, 123) // ← — дерево у usr: папки «/»
+        wait { tree.frame.height != atLocal }
+        XCTAssertNotEqual(tree.frame.height, atLocal, "дерево поднялось к «/»")
+        press(tree, 124, command: true) // ⌘→ — снова у local
+        wait { (window.childWindows?.first?.frame.height ?? 0) == atLocal }
+        XCTAssertEqual(window.childWindows?.first?.frame.height ?? 0, atLocal, accuracy: 1, "дерево снова у local")
+    }
 }
