@@ -113,8 +113,8 @@ final class PopupController {
         // клик мимо окна закрывает его; сам клик идёт дальше как обычно
         monitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown]) {
             [weak self] event in
-            guard let self, let window = self.window else { return event }
-            if event.window !== window, !self.isOnAnchor(event) { self.dismiss() }
+            guard let self, self.window != nil else { return event }
+            if !self.owns(event.window), !self.isOnAnchor(event) { self.dismiss() }
             return event
         }
         hideObserver = NotificationCenter.default.addObserver(forName: .hatchDidHide, object: nil, queue: .main) {
@@ -124,6 +124,17 @@ final class PopupController {
 }
 
 extension PopupController {
+    /// Клик в самом окне или в окне, открытом из него (меню папки поверх дерева), — свой:
+    /// дерево не закрывается, пока работаешь с его меню.
+    func owns(_ other: NSWindow?) -> Bool {
+        var current = other
+        while let candidate = current {
+            if candidate === window { return true }
+            current = candidate.parent
+        }
+        return false
+    }
+
     fileprivate func isOnAnchor(_ event: NSEvent) -> Bool {
         guard let anchorView, event.window === anchorView.window, event.type == .leftMouseDown else { return false }
         return anchorView.bounds.contains(anchorView.convert(event.locationInWindow, from: nil))

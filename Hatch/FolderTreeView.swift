@@ -1,12 +1,16 @@
 import SwiftUI
+import AppKit
 
 /// Дерево папок у папки пути (клик по ней или ⌘1): соседи папки, она выделена.
 /// ↑/↓ — по строкам, → — раскрыть и войти, ← — свернуть, к родителю, на верху — уровнем выше,
 /// Space — свернуть/развернуть, буквы — к папке по имени, Enter — перейти (как `cd`),
-/// ⌘←/⌘→ — дерево соседней папки пути, Esc — закрыть. Клик по имени — перейти, по шеврону — раскрыть.
+/// ⌘←/⌘→ — дерево соседней папки пути, Esc — закрыть. Клик по имени — перейти, по шеврону — раскрыть,
+/// ⌘-клик — скопировать путь, правый клик — меню папки (те же действия, что в меню пути, FolderActions).
 struct FolderTreeView: View {
     let currentDirectory: String
     let lang: String
+    var favorites: [String] = []
+    var onToggleFavorite: (String) -> Void = { _ in }
     var onNavigate: (String) -> Void = { _ in }
     /// ⌘←/⌘→: открыть дерево соседней папки пути (−1 — левее, +1 — правее).
     var onSwitchCrumb: (Int) -> Void = { _ in }
@@ -17,6 +21,11 @@ struct FolderTreeView: View {
     @State private var listing = Listing()
     @State private var showTyped = false
     @State private var typedToken = 0
+    /// Строка под курсором: по ней правый клик открывает меню.
+    @State private var hoveredRow: String?
+    /// Папка, для которой открыто меню.
+    @State private var menuRow: String?
+    @State private var copied = false
     @FocusState private var focused: Bool
 
     private static let rowHeight: CGFloat = 26
@@ -27,11 +36,14 @@ struct FolderTreeView: View {
     private static let rowRadius: CGFloat = 8
 
     init(crumb: String, currentDirectory: String, lang: String,
+         favorites: [String] = [], onToggleFavorite: @escaping (String) -> Void = { _ in },
          onNavigate: @escaping (String) -> Void = { _ in },
          onSwitchCrumb: @escaping (Int) -> Void = { _ in },
          onCrumbChange: @escaping (String) -> Void = { _ in }) {
         self.currentDirectory = currentDirectory
         self.lang = lang
+        self.favorites = favorites
+        self.onToggleFavorite = onToggleFavorite
         self.onNavigate = onNavigate
         self.onSwitchCrumb = onSwitchCrumb
         self.onCrumbChange = onCrumbChange
@@ -75,7 +87,8 @@ struct FolderTreeView: View {
 
     private var header: some View {
         HStack(spacing: 4) {
-            Text(String(format: L.t("tree_in", lang), ShellCompletionEngine.normalizeHomePath(tree.root)))
+            Text(copied ? L.t("path_copied", lang)
+                        : String(format: L.t("tree_in", lang), ShellCompletionEngine.normalizeHomePath(tree.root)))
                 .font(.system(size: 11))
                 .foregroundStyle(.tertiary)
                 .lineLimit(1)
@@ -117,6 +130,31 @@ struct FolderTreeView: View {
             }
         }
         .frame(height: listHeight)
+        // правый клик по строке — меню папки у курсора; сама папка не открывается
+        .hatchPopup(isPresented: Binding(get: { menuRow != nil }, set: { if !$0 { menuRow = nil } }),
+                    placement: .atMouse,
+                    onSecondaryClick: {
+                        guard let row = hoveredRow else { return }
+                        tree.select(row)
+                        menuRow = row
+                    }) { context in
+            if let folder = menuRow {
+                MenuCard {
+                    FolderMenuView(sections: FolderActions.sections(
+                        for: folder, currentDirectory: currentDirectory, favorites: favorites, lang: lang,
+                        context: context, close: { menuRow = nil }, onToggleFavorite: onToggleFavorite,
+                        onCopied: showCopied))
+                }
+            }
+        }
+    }
+
+    /// «Путь скопирован» в заголовке дерева — на секунду.
+    private func showCopied() {
+        withAnimation(.easeOut(duration: 0.15)) { copied = true }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
+            withAnimation(.easeOut(duration: 0.15)) { copied = false }
+        }
     }
 
     /// Подсказки в две строки: в одну при ширине дерева не влезают.
@@ -167,7 +205,15 @@ struct FolderTreeView: View {
                 .truncationMode(.middle)
                 .padding(.leading, 3)
                 .contentShape(Rectangle())
-                .onTapGesture { onNavigate(row.path) }
+                .onTapGesture {
+                    if NSEvent.modifierFlags.contains(.command) {
+                        tree.select(row.path)
+                        FolderActions.copyPath(row.path)
+                        showCopied()
+                    } else {
+                        onNavigate(row.path)
+                    }
+                }
             if row.path == currentDirectory {
                 Text(L.t("tree_current", lang))
                     .font(.system(size: 10.5))
@@ -184,6 +230,9 @@ struct FolderTreeView: View {
         .overlay(RoundedRectangle(cornerRadius: Self.rowRadius, style: .circular)
             .strokeBorder(selected ? Tactile.accent.opacity(0.55) : .clear, lineWidth: 1))
         .contentShape(Rectangle())
+        .onHover { inside in
+            if inside { hoveredRow = row.path } else if hoveredRow == row.path { hoveredRow = nil }
+        }
     }
 
     // MARK: - Клавиши

@@ -93,5 +93,24 @@ final class PopupPanelTests: XCTestCase {
         parent.childWindows?.forEach { $0.orderOut(nil) }
         parent.orderOut(nil)
     }
-}
 
+    /// Меню, открытое из всплывающего окна (меню папки поверх дерева), — «своё» для дерева:
+    /// клик в меню не закрывает дерево; клик в панели под ним — закрывает.
+    func testNestedPopupIsOwnedByParentPopup() throws {
+        let parent = parentWindow()
+        let tree = PopupController()
+        tree.present(anchor: NSRect(x: 300, y: 500, width: 20, height: 20), placement: .below, mouse: nil,
+                     parent: parent) { self.card() }
+        let treeWindow = try XCTUnwrap(parent.childWindows?.first)
+        let menu = PopupController()
+        menu.present(anchor: .zero, placement: .atMouse, mouse: NSPoint(x: 350, y: 450), parent: treeWindow) { self.card() }
+        let menuWindow = try XCTUnwrap(treeWindow.childWindows?.first)
+        XCTAssertTrue(tree.owns(treeWindow))
+        XCTAssertTrue(tree.owns(menuWindow), "клик в меню — не мимо дерева")
+        XCTAssertFalse(tree.owns(parent), "клик в панели — мимо дерева")
+        XCTAssertFalse(menu.owns(treeWindow), "клик в дереве — мимо меню")
+        menu.dismiss()
+        tree.dismiss()
+        parent.orderOut(nil)
+    }
+}
