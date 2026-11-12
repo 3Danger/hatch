@@ -42,7 +42,9 @@ final class FloatingWindowController {
                               defer: false)
         panel.level = .floating
         panel.isFloatingPanel = true
-        panel.becomesKeyOnlyIfNeeded = true
+        // false: с «только если нужно» панель, отдав клавиатуру всплывающему окну (дерево папок,
+        // избранное), сбрасывала фокус поля ввода — после Esc курсора не было нигде
+        panel.becomesKeyOnlyIfNeeded = false
         panel.hidesOnDeactivate = false
         // Окно двигает WindowDragArea под стеклом (сам, по событиям мыши). Системное «за фон»
         // с SwiftUI-содержимым не работает, а жест SwiftUI и performDrag срабатывали через раз.
