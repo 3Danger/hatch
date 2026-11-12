@@ -7,7 +7,7 @@ final class SettingsStoreTests: XCTestCase {
 
     func testDefaults() {
         let store = SettingsStore(defaults: UserDefaults(suiteName: suiteName)!)
-        XCTAssertEqual(store.hotkeyString, "ctrl-space")
+        XCTAssertEqual(store.hotkeyString, "alt-space")
         XCTAssertEqual(store.themeRaw, "system")
         XCTAssertEqual(store.languageCode, "en")
         XCTAssertEqual(store.historyLimit, 50)
@@ -16,9 +16,25 @@ final class SettingsStoreTests: XCTestCase {
         XCTAssertEqual(store.timeoutSeconds, 0)
         XCTAssertEqual(store.previewLines, 10)
         XCTAssertTrue(store.showStatusIcon)
-        XCTAssertEqual(store.folderTreeShortcut, "cmd-p")
+        XCTAssertEqual(store.folderTreeShortcut, "cmd-1")
         XCTAssertEqual(store.favoriteDirectories, [])
         XCTAssertEqual(store.favoriteCommands, [])
+    }
+
+    /// Обновление с прежней версии: несохранённые сочетания остаются старыми умолчаниями,
+    /// сохранённые — какими были.
+    func testUpdateKeepsOldDefaultShortcuts() {
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defaults.set("/tmp", forKey: "settings.currentDirectory") // Hatch уже запускали
+        let store = SettingsStore(defaults: defaults)
+        XCTAssertEqual(store.hotkeyString, "ctrl-space")
+        XCTAssertEqual(store.folderTreeShortcut, "cmd-p")
+
+        let custom = UserDefaults(suiteName: suiteName)!
+        custom.set("cmd-shift-k", forKey: "settings.hotkey")
+        let customStore = SettingsStore(defaults: custom)
+        XCTAssertEqual(customStore.hotkeyString, "cmd-shift-k")
+        XCTAssertEqual(customStore.folderTreeShortcut, "cmd-p")
     }
 
     /// Избранное: добавить и убрать тем же действием, порядок добавления, переживает перезапуск.

@@ -267,7 +267,7 @@ const ICON = {
 /* ───── данные ───── */
 const LOG = [
   ['a1c9e42', 'fix: popup no longer sticks after cd'],
-  ['9b3f0d7', 'feat: folder tree on ⌘P'],
+  ['9b3f0d7', 'feat: folder tree on ⌘1'],
   ['4e7a2c1', 'fix: stage field closes on blur'],
   ['c2d8b55', 'feat: favorite folders and commands'],
   ['71fe3a9', 'docs: install from Releases'],
@@ -357,7 +357,7 @@ async function film_() {
   await wait(1700);
 
   // 1. хоткей и команда
-  keys(['⌃', 'Space']);
+  keys(['⌥', 'Space']);
   await wait(320);
   $('panel').classList.add('on'); $('inbar').classList.add('on');
   await wait(900);
@@ -410,9 +410,9 @@ async function film_() {
   await wait(1300);
 
   // 3. дерево папок
-  await caption('3 · Папки', '⌘P — дерево папок', 'Стрелками по соседним папкам, Enter — перейти, как cd.');
+  await caption('3 · Папки', '⌘1 — дерево папок', 'Стрелками по соседним папкам, Enter — перейти, как cd.');
   await wait(400);
-  keys(['⌘', 'P']);
+  keys(['⌘', '1']);
   await wait(300);
   setCrumbs(['~', 'git', 'hatch'], false, 'hatch');
   const tree = document.createElement('div'); tree.className = 'tree';
@@ -465,7 +465,7 @@ async function film_() {
 
   // 5. финал
   $('cap').className = 'cap hide';
-  keys(['⌃', 'Space'], 500);
+  keys(['⌥', 'Space'], 500);
   await wait(300);
   $('panel').classList.remove('on');
   await moveTo(film, 900, 700, 800);

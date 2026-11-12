@@ -45,7 +45,7 @@ struct LauncherRootView: View {
     /// Режим поиска (⌘F): то же поле ввода ищет по истории; набранная команда ждёт в `text`.
     @State private var searchMode = false
     @State private var searchQuery = ""
-    /// ⌘P (или сочетание из настроек): дерево папок у текущей папки; счётчик — каждое нажатие.
+    /// ⌘1 (или сочетание из настроек): дерево папок у текущей папки; счётчик — каждое нажатие.
     @State private var folderTreeRequest = 0
     /// Список «Избранное» (кнопка ★, ⌘E).
     @State private var favoritesOpen = false
@@ -520,7 +520,7 @@ struct LauncherRootView: View {
                modifiers.subtracting([.function, .numericPad]).isEmpty {
                 return routeArrowToHistory(event) ? nil : event
             }
-            // дерево папок — сочетание из настроек (по умолчанию ⌘P), пока открыта панель
+            // дерево папок — сочетание из настроек (по умолчанию ⌘1), пока открыта панель
             if !showSettings,
                KeyChordFormatter.matches(settings.folderTreeShortcut, modifiers: modifiers, keyCode: event.keyCode,
                                          characters: event.charactersIgnoringModifiers) {

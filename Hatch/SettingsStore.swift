@@ -33,9 +33,13 @@ final class SettingsStore {
     /// Ширина панели и предел высоты истории: тянутся за край панели, переживают перезапуск.
     var panelWidth: CGFloat { didSet { defaults.set(Double(panelWidth), forKey: Keys.panelWidth) } }
     var historyMaxHeight: CGFloat { didSet { defaults.set(Double(historyMaxHeight), forKey: Keys.historyMaxHeight) } }
-    /// Сочетание для дерева папок (пока открыта панель), формат как у горячей клавиши: "cmd-p".
+    /// Сочетание для дерева папок (пока открыта панель), формат как у горячей клавиши: "cmd-1".
     var folderTreeShortcut: String { didSet { defaults.set(folderTreeShortcut, forKey: Keys.folderTreeShortcut) } }
-    static let defaultFolderTreeShortcut = "cmd-p"
+    static let defaultHotkey = "alt-space"
+    static let defaultFolderTreeShortcut = "cmd-1"
+    /// Умолчания до 0.1.3: у тех, кто их не менял, сочетания после обновления остаются прежними.
+    static let legacyDefaultHotkey = "ctrl-space"
+    static let legacyDefaultFolderTreeShortcut = "cmd-p"
     /// Значок в строке меню. Без него Hatch открывается хоткеем или повторным запуском приложения.
     var showStatusIcon: Bool { didSet { defaults.set(showStatusIcon, forKey: Keys.showStatusIcon) } }
     /// Избранные папки и команды (кнопка ★ в поле ввода), в порядке добавления.
@@ -68,7 +72,8 @@ final class SettingsStore {
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
-        self.hotkeyString = defaults.string(forKey: Keys.hotkey) ?? "ctrl-space"
+        Self.keepLegacyShortcuts(in: defaults)
+        self.hotkeyString = defaults.string(forKey: Keys.hotkey) ?? Self.defaultHotkey
         self.themeRaw = defaults.string(forKey: Keys.theme) ?? "system"
         self.languageCode = defaults.string(forKey: Keys.language) ?? "en"
         let limit = defaults.object(forKey: Keys.historyLimit) as? Int
@@ -92,6 +97,18 @@ final class SettingsStore {
         self.panelWidth = PanelSize.clampWidth(width.map { CGFloat($0) } ?? PanelSize.defaultWidth)
         let height = defaults.object(forKey: Keys.historyMaxHeight) as? Double
         self.historyMaxHeight = PanelSize.clampHistoryHeight(height.map { CGFloat($0) } ?? PanelSize.defaultHistoryHeight)
+    }
+
+    /// Умолчания сочетаний сменились (⌃Space → ⌥Space, ⌘P → ⌘1). Новая установка получает новые,
+    /// а у прежней (настройки Hatch уже есть) несохранённые сочетания записываются старыми —
+    /// иначе после обновления хоткей молча стал бы другим.
+    static func keepLegacyShortcuts(in defaults: UserDefaults) {
+        let existing = defaults.dictionaryRepresentation().keys.contains { $0.hasPrefix("settings.") }
+        guard existing else { return }
+        if defaults.string(forKey: Keys.hotkey) == nil { defaults.set(legacyDefaultHotkey, forKey: Keys.hotkey) }
+        if defaults.string(forKey: Keys.folderTreeShortcut) == nil {
+            defaults.set(legacyDefaultFolderTreeShortcut, forKey: Keys.folderTreeShortcut)
+        }
     }
 
     /// Перейти в папку, как `cd`: только если она ещё существует. false — папки нет, ничего не меняем.
@@ -148,7 +165,7 @@ final class SettingsStore {
     var theme: ThemePreference? { ThemePreference(rawValue: themeRaw) }
 
     func resetToDefaults() {
-        hotkeyString = "ctrl-space"
+        hotkeyString = Self.defaultHotkey
         themeRaw = "system"
         languageCode = "en"
         historyLimit = 50
