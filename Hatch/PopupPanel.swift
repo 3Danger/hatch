@@ -12,6 +12,8 @@ enum PopupPlacement: Equatable {
     case below
     /// Верхним левым углом у курсора (контекстное меню).
     case atMouse
+    /// Поверх элемента, верхние края вровень, по центру (настройки поверх панели).
+    case overTop
 }
 
 /// Всплывающее окно Hatch: сплошное, со своей тенью. Системные меню и всплывающие окна
@@ -65,10 +67,13 @@ final class PopupController {
         case .atMouse:
             let point = mouse ?? NSPoint(x: anchor.minX, y: anchor.minY)
             origin = NSPoint(x: point.x - Self.margin + 2, y: point.y - size.height + Self.margin - 2)
+        case .overTop:
+            origin = NSPoint(x: anchor.midX - size.width / 2, y: anchor.maxY - size.height + Self.margin)
         }
         // не за край экрана (тень может заходить за него)
         origin.x = min(max(origin.x, screen.minX - Self.margin), screen.maxX - size.width + Self.margin)
         origin.y = max(origin.y, screen.minY - Self.margin)
+        origin.y = min(origin.y, screen.maxY - size.height + Self.margin)
         window.setFrame(NSRect(origin: origin, size: size), display: true)
         if firstShow {
             parent?.addChildWindow(window, ordered: .above)

@@ -83,17 +83,21 @@ struct LauncherRootView: View {
 
     var body: some View {
         // Высота панели — по содержимому (до предела истории); окно следует за ней.
-        // Настройки выезжают сверху, как лист окна macOS; панель за ними темнеет.
+        // Настройки — отдельное окно поверх панели: их высота панель не растягивает.
+        // Панель за ними темнеет; клик по ней, Esc, ✕ и «Готово» закрывают настройки.
         attachLifecycle(ZStack(alignment: .top) {
             panelContent
                 .brightness(showSettings ? -0.35 : 0)
                 .allowsHitTesting(!showSettings)
-            if showSettings {
-                SettingsView(onClose: closeSettings)
-                    .padding(.top, 2)
-                    .transition(.settingsLayer)
-                    .zIndex(1)
-            }
+                .hatchPopup(isPresented: Binding(get: { showSettings }, set: { if !$0 { closeSettings() } }),
+                            placement: .overTop) { _ in
+                    // своё окно — своё окружение: хранилища передаются явно
+                    SettingsView(onClose: closeSettings)
+                        .environment(settings)
+                        .environment(clipboard)
+                        .padding(PopupController.margin)
+                        .fixedSize()
+                }
         }
         .padding(LauncherMetrics.padding)
         .frame(width: settings.panelWidth)
@@ -315,6 +319,7 @@ struct LauncherRootView: View {
     }
 
     private func closeSettings() {
+        guard showSettings else { return }
         withAnimation(LayersDepth.spring) { showSettings = false }
         inputFocused = true
     }
@@ -697,6 +702,8 @@ struct LauncherRootView: View {
             return event
         }
         keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            // идёт запись хоткея в настройках — любое сочетание (⌘W, ⌘Q, Esc) принадлежит записи
+            if HotKeyCapsField.isRecording { return event }
             let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
             if Self.arrowKeyCodes.contains(event.keyCode),
                modifiers.subtracting([.function, .numericPad]).isEmpty {
@@ -768,6 +775,10 @@ struct LauncherRootView: View {
                 return nil
             case (13, .command) where showSettings:
                 closeSettings()
+                return nil
+            case (43, .command):
+                // ⌘, — настройки, как в приложениях macOS; повторно — закрыть
+                if showSettings { closeSettings() } else { openSettings() }
                 return nil
             case (13, .command):
                 // ⌘W без раскрытого блока — скрыть панель, как окно

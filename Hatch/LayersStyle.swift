@@ -311,9 +311,6 @@ private struct RowOut: ViewModifier {
 }
 
 extension AnyTransition {
-    /// Настройки выезжают сверху, как лист окна macOS.
-    static var settingsLayer: AnyTransition { .move(edge: .top) }
-
     static var layersBlock: AnyTransition {
         .asymmetric(insertion: .modifier(active: RowIn(progress: 0), identity: RowIn(progress: 1)),
                     removal: .modifier(active: RowOut(progress: 1), identity: RowOut(progress: 0)))

@@ -159,4 +159,48 @@ final class FocusReturnTests: XCTestCase {
         XCTAssertEqual(clipboard.clips.map(\.text), ["keep"], "незакреплённое убрано, закреплённое осталось")
         XCTAssertEqual(store.sessions.count, 1, "история команд не тронута")
     }
+
+    // MARK: - Настройки отдельным окном
+
+    /// ⌘, открывает настройки своим окном: высота панели не меняется. Esc закрывает, фокус — в поле.
+    func testSettingsOpenInOwnWindow() throws {
+        let panel = try showPanel()
+        let height = panel.frame.height
+        key(43, ",", .command, to: panel) // ⌘,
+        wait { panel.childWindows?.count == 1 }
+        let sheet = try XCTUnwrap(panel.childWindows?.first, "настройки — отдельное окно")
+        spin(0.5)
+        XCTAssertEqual(panel.frame.height, height, accuracy: 1, "панель не растянулась под настройки")
+        XCTAssertGreaterThan(sheet.frame.height, 300)
+        key(53, "\u{1b}", to: sheet)
+        wait { (panel.childWindows?.count ?? 0) == 0 }
+        XCTAssertEqual(panel.childWindows?.count ?? 0, 0, "Esc закрыл настройки")
+        XCTAssertTrue(panel.isVisible, "панель осталась")
+        wait { self.inputHasFocus(panel) }
+        XCTAssertTrue(inputHasFocus(panel), "фокус снова в поле")
+    }
+
+    /// Пока записывается хоткей, Esc и ⌘W достаются записи, а не закрывают настройки и панель.
+    func testKeysWhileRecordingHotkeyStayInSettings() throws {
+        let panel = try showPanel()
+        key(43, ",", .command, to: panel)
+        wait { panel.childWindows?.count == 1 }
+        let sheet = try XCTUnwrap(panel.childWindows?.first)
+        // как запись в HotKeyCapsField: забирает нажатия себе
+        HotKeyCapsField.isRecording = true
+        var recorded: [UInt16] = []
+        let recorder = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            recorded.append(event.keyCode)
+            return nil
+        }
+        defer {
+            recorder.map(NSEvent.removeMonitor)
+            HotKeyCapsField.isRecording = false
+        }
+        key(13, "w", .command, to: sheet) // ⌘W
+        key(53, "\u{1b}", to: sheet) // Esc
+        XCTAssertEqual(recorded, [13, 53], "нажатия получила запись")
+        XCTAssertEqual(panel.childWindows?.count, 1, "настройки открыты")
+        XCTAssertTrue(panel.isVisible, "панель не скрылась")
+    }
 }
