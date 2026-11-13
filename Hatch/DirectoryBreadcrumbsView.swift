@@ -272,8 +272,14 @@ private struct Reveal: ViewModifier, Animatable {
         set { progress = newValue }
     }
 
+    /// Подсветка папки выступает за её края на 4 pt (`padding(-4)` у папки) — обрезка с запасом,
+    /// иначе у крайней папки срезало бы рамку. Запас растёт вместе с долей: ширина остаётся та же.
+    static let bleed: CGFloat = 4
+
     func body(content: Content) -> some View {
-        RevealLayout(progress: progress) { content.fixedSize() }.clipped()
+        RevealLayout(progress: progress) { content.fixedSize().padding(.horizontal, Self.bleed) }
+            .clipped()
+            .padding(.horizontal, -Self.bleed * min(max(progress, 0), 1))
     }
 }
 
