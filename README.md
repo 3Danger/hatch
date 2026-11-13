@@ -1,170 +1,171 @@
-<p align="center"><img src="docs/media/icon.png" width="128" alt="Значок Hatch"></p>
+<p align="center"><img src="docs/media/icon.png" width="128" alt="Hatch icon"></p>
 
 <h1 align="center">Hatch</h1>
 
-<p align="center"><b>Терминал по одной клавише.</b> Нажал <kbd>⌥</kbd><kbd>Space</kbd>, выполнил команду, закрыл.</p>
+<p align="center"><b>A terminal one keystroke away.</b> Press <kbd>⌥</kbd><kbd>Space</kbd>, run a command, close it.</p>
 
 <p align="center">
-  <a href="https://github.com/3Danger/hatch/releases/latest"><b>Скачать для macOS</b></a> · macOS 26+ · бесплатно, MIT
+  <a href="https://github.com/3Danger/hatch/releases/latest"><b>Download for macOS</b></a> · macOS 26+ · free, MIT
 </p>
 
-<p align="center"><img src="docs/media/demo.gif" width="800" alt="Hatch: команда в панели, фильтр grep, буфер обмена, скриншоты по ⇧⌘4, дерево папок, приложения и калькулятор"></p>
-<p align="center"><a href="docs/media/demo.mp4">Видео в хорошем качестве</a></p>
+<p align="center"><img src="docs/media/demo.gif" width="800" alt="Hatch: a command in the panel, a grep filter, the clipboard, screenshots with ⇧⌘4, the folder tree, apps and the calculator"></p>
+<p align="center"><a href="docs/media/demo.mp4">Full-quality video</a></p>
 
-## Зачем
+## Why
 
-Нужна одна команда, а терминал — это отдельное окно, вкладки и поиск, где что запускал.
-Hatch выезжает поверх любого приложения, выполняет команду в вашем шелле и оставляет вывод
-в истории. Закрыли — и вы снова там, где были.
+You need one command, but a terminal means a separate window, tabs, and hunting for where you ran what.
+Hatch slides over any app, runs the command in your shell and keeps the output in its history.
+Close it and you are right back where you were.
 
-## Что умеет
+## Features
 
-- **Ваш шелл.** zsh или bash с `~/.zshrc`: алиасы, функции, цвета. `ssh`, `vim`, `htop` открываются прямо в панели.
-- **История блоками.** Каждая команда — блок с выводом и статусом: повторить, скопировать, закрепить.
-- **Фильтр без перезапуска.** «+» у блока добавляет `grep`, `sort` или `jq` к сохранённому выводу. Сама команда не выполняется снова.
-- **Папки с клавиатуры.** <kbd>⌘1</kbd> — дерево папок, ★ — избранные папки и команды.
-- **Поиск.** <kbd>⌘F</kbd> ищет по всем командам и их выводу.
-- **Автодополнение как в zsh.** TAB и подсказка из истории, без задержек.
-- **Буфер обмена.** <kbd>⌘4</kbd> — всё, что вы копировали, с поиском, включая скриншоты и текст на них. Пароли из менеджеров паролей не сохраняются.
-- **Форматирование.** JSON, SQL, YAML и XML в буфере и в выводе команд — с отступами и подсветкой; кнопка `{}` у каждой записи и блока.
-- **Скриншоты.** <kbd>⇧⌘4</kbd> — область экрана сразу в буфер и в историю Hatch, миниатюра справа внизу открывает снимок крупно.
-- **Приложения и калькулятор, как в Spotlight.** `safari` и Enter открывают Safari, `code .` — текущую папку в VS Code. `(1200-150)/3` сразу показывает 350, Enter копирует результат.
+- **Your shell.** zsh or bash with your `~/.zshrc`: aliases, functions, colors. `ssh`, `vim` and `htop` open right in the panel.
+- **History as blocks.** Every command is a block with its output and status: rerun, copy, pin.
+- **Filters without rerunning.** The “+” on a block adds `grep`, `sort` or `jq` to the saved output. The command itself does not run again.
+- **Folders from the keyboard.** <kbd>⌘1</kbd> opens the folder tree, ★ holds favorite folders and commands.
+- **Search.** <kbd>⌘F</kbd> searches all commands and their output.
+- **zsh-style completion.** TAB and suggestions from history, with no lag.
+- **Clipboard.** <kbd>⌘4</kbd> shows everything you copied, with search, including screenshots and the text on them. Passwords from password managers are never saved.
+- **Formatting.** JSON, SQL, YAML and XML in the clipboard and in command output, indented and highlighted; a `{}` button on every item and block.
+- **Screenshots.** <kbd>⇧⌘4</kbd> puts a screen area straight into the clipboard and Hatch history; the thumbnail in the bottom-right corner opens it full size.
+- **Apps and a calculator, like Spotlight.** `safari` and Enter opens Safari, `code .` opens the current folder in VS Code. `(1200-150)/3` shows 350 right away, Enter copies the result.
 
-## Установка
+## Installation
 
-1. Скачайте `Hatch-<версия>.zip` со страницы [Releases](https://github.com/3Danger/hatch/releases/latest) и перенесите `Hatch.app` в «Программы».
-2. Hatch не подписан сертификатом Apple, поэтому первый запуск macOS заблокирует. Разрешите его в «Системные настройки» → «Конфиденциальность и безопасность» → «Всё равно открыть» или командой:
+1. Download `Hatch-<version>.zip` from [Releases](https://github.com/3Danger/hatch/releases/latest) and move `Hatch.app` to Applications.
+2. Hatch is not signed with an Apple certificate, so macOS blocks the first launch. Allow it in System Settings → Privacy & Security → Open Anyway, or with this command:
 
 ```bash
 xattr -dr com.apple.quarantine /Applications/Hatch.app
 ```
 
-3. Нажмите <kbd>⌥</kbd><kbd>Space</kbd>. Hatch живёт в строке меню, в Dock его нет.
+3. Press <kbd>⌥</kbd><kbd>Space</kbd>. Hatch lives in the menu bar, not in the Dock.
 
-macOS попросит разрешение на уведомления (о завершении долгих команд) и на доступ к папкам, когда команда впервые к ним обратится.
+macOS will ask for permission to send notifications (when long commands finish) and to access folders the first time a command touches them.
 
-## Главные клавиши
+## Main shortcuts
 
-| Клавиши | Что делает |
+| Keys | What it does |
 |---|---|
-| <kbd>⌥</kbd><kbd>Space</kbd> | показать или скрыть Hatch (меняется в настройках) |
-| <kbd>Enter</kbd> · <kbd>Tab</kbd> | выполнить команду · дополнить |
-| <kbd>↑</kbd> <kbd>↓</kbd> | листать историю команд |
-| <kbd>⌘F</kbd> | поиск по командам и выводу |
-| <kbd>⌘1</kbd> | дерево папок (меняется в настройках) |
-| <kbd>⌘E</kbd> · <kbd>⌘D</kbd> | избранное · текущая папка в избранное |
-| <kbd>⌘4</kbd> | буфер обмена: скопированное, с поиском |
-| <kbd>⌃L</kbd> | убрать завершённые блоки (можно отменить) |
+| <kbd>⌥</kbd><kbd>Space</kbd> | show or hide Hatch (configurable) |
+| <kbd>Enter</kbd> · <kbd>Tab</kbd> | run the command · complete |
+| <kbd>↑</kbd> <kbd>↓</kbd> | browse command history |
+| <kbd>⌘F</kbd> | search commands and output |
+| <kbd>⌘1</kbd> | folder tree (configurable) |
+| <kbd>⌘E</kbd> · <kbd>⌘D</kbd> | favorites · add the current folder to favorites |
+| <kbd>⌘4</kbd> | clipboard: everything you copied, with search |
+| <kbd>⌃L</kbd> | clear finished blocks (can be undone) |
 
 <details>
-<summary><b>Все сочетания</b></summary>
+<summary><b>All shortcuts</b></summary>
 
-| Клавиши | Где | Что делает |
+| Keys | Where | What it does |
 |---|---|---|
-| ⌥Space (настраивается) | везде | показать или скрыть панель |
-| Enter | поле ввода | выполнить команду; с подписью справа — открыть приложение или скопировать результат |
-| Tab · ⇧Tab | поле ввода | дополнить; при нескольких вариантах — общая часть, затем перебор вперёд и назад |
-| → | поле ввода | принять серую подсказку: из истории или имя приложения (его дописывает и Tab) |
-| ↑ / ↓ | панель | листать историю команд |
-| ⌃C | раскрытый блок | прервать команду |
-| ⌘F | панель | поиск по истории и обратно (в раскрытом выводе — поиск по нему) |
-| ⌘E | панель | избранное: папки и команды |
-| ↑ / ↓ · ⌘↑ / ⌘↓ · Enter | избранное | выбрать · переставить выше или ниже (и перетаскиванием мышью) · перейти или запустить |
-| буквы · Backspace · Esc | списки | фильтр в избранном, дереве папок и выборе приложения · стереть букву · очистить фильтр, вторым Esc — закрыть |
-| ⌘4 | панель | буфер обмена и обратно |
-| ↑ / ↓ · Enter · ⌘Enter · Esc | буфер | по фрагментам · скопировать и скрыть панель · вставить в поле · выйти |
-| Tab · ⇧Tab · ⌘1 | буфер | следующий · предыдущий тип фрагментов · картинка крупно |
-| ⌘S · ⌘⌫ · ⌃L | буфер | закрепить · удалить выбранный фрагмент · очистить буфер (закреплённые останутся); в просмотре картинки ⌘S закрепляет окно поверх остальных |
-| Esc · ⌘W | везде | закрыть верхний слой, по одному за нажатие: всплывающее окно или настройки → перебор вариантов TAB → раскрытый блок → поиск или буфер → строку «Команды нет»; дальше — скрыть панель (набранное остаётся). В живом терминале (vim, ssh) Esc уходит программе, блок сворачивает ⌘W |
-| ⌘1 (настраивается) | панель | дерево папок у текущей папки |
-| ⌘D | панель | текущую папку в избранное или обратно |
-| ⌃L | панель | убрать завершённые блоки (как команда `clear`) |
-| ⌘Q | панель | скрыть панель; выйти — в настройках или через значок в строке меню |
-| ⌘, | панель | настройки и обратно |
-| ↑ / ↓ · Enter · Esc | поиск | по найденным блокам · раскрыть · выйти |
-| ↑ ↓ → ← · Space · буквы | дерево папок | по строкам, раскрыть и войти, выше · свернуть · фильтр (родители совпавших — бледно) |
-| Enter · ⌘← ⌘→ · Esc | дерево папок | перейти, как `cd` · соседняя папка пути · закрыть |
+| ⌥Space (configurable) | anywhere | show or hide the panel |
+| Enter | input field | run the command; with a hint on the right, open the app or copy the result |
+| Tab · ⇧Tab | input field | complete; with several options, the common part first, then cycle forward and back |
+| → | input field | accept the gray suggestion: from history or an app name (Tab completes it too) |
+| ↑ / ↓ | panel | browse command history |
+| ⌃C | expanded block | interrupt the command |
+| ⌘F | panel | search history and back (inside expanded output, search that output) |
+| ⌘E | panel | favorites: folders and commands |
+| ↑ / ↓ · ⌘↑ / ⌘↓ · Enter | favorites | select · move up or down (or drag with the mouse) · go to or run |
+| letters · Backspace · Esc | lists | filter favorites, the folder tree and the app picker · delete a letter · clear the filter, a second Esc closes |
+| ⌘4 | panel | clipboard and back |
+| ↑ / ↓ · Enter · ⌘Enter · Esc | clipboard | move between items · copy and hide the panel · insert into the input field · leave |
+| Tab · ⇧Tab · ⌘1 | clipboard | next · previous item type · open the item full size |
+| ⌘R | clipboard, block | formatted or as is |
+| ⌘S · ⌘⌫ · ⌃L | clipboard | pin · delete the selected item · clear the clipboard (pinned items stay); in a preview, ⌘S keeps the window on top of others |
+| Esc · ⌘W | anywhere | close the top layer, one per press: popup or settings → TAB suggestions → expanded block → search or clipboard → the “No command” line; after that, hide the panel (typed text stays). In a live terminal (vim, ssh) Esc goes to the program, ⌘W collapses the block |
+| ⌘1 (configurable) | panel | folder tree at the current folder |
+| ⌘D | panel | add the current folder to favorites or remove it |
+| ⌃L | panel | clear finished blocks (like the `clear` command) |
+| ⌘Q | panel | hide the panel; quit from settings or the menu bar icon |
+| ⌘, | panel | settings and back |
+| ↑ / ↓ · Enter · Esc | search | move between found blocks · expand · leave |
+| ↑ ↓ → ← · Space · letters | folder tree | move by row, expand and enter, go up · collapse · filter (parents of matches are dimmed) |
+| Enter · ⌘← ⌘→ · Esc | folder tree | go there, like `cd` · neighboring folder of the path · close |
 
 </details>
 
 <details>
-<summary><b>Все возможности</b></summary>
+<summary><b>All features</b></summary>
 
-**Команды**
-- Выполняются в вашем шелле (`$SHELL`) в настоящем псевдотерминале: цвет, прогресс-бары, `less`, `ssh`, <kbd>⌃C</kbd>.
-- `cd` меняет папку Hatch, в том числе в цепочках (`cd sub && ls`). Последняя папка запоминается.
-- Интерактивные программы (`vim`, `top`, `ssh`, `man`, REPL) открываются живым терминалом в блоке.
-- Команда, которая ждёт ввода, раскрывается сама: полноэкранные программы (`claude`, `htop`, `fzf`) — как `vim`, вопросы (`Continue? [y/N]`, пароль `sudo`) — с курсором для ответа. Если панель скрыта, приходит уведомление.
-- Пейджер отключён (`PAGER=cat`): `git log` выводится целиком.
-- Уведомление о завершении долгой команды (от 5 секунд), если панель не в фокусе.
+**Commands**
+- Run in your shell (`$SHELL`) in a real pseudo-terminal: colors, progress bars, `less`, `ssh`, <kbd>⌃C</kbd>.
+- `cd` changes Hatch's folder, including in chains (`cd sub && ls`). The last folder is remembered.
+- Interactive programs (`vim`, `top`, `ssh`, `man`, REPLs) open as a live terminal inside the block.
+- A command waiting for input expands by itself: full-screen programs (`claude`, `htop`, `fzf`) behave like `vim`, questions (`Continue? [y/N]`, a `sudo` password) get a cursor for the answer. If the panel is hidden, you get a notification.
+- The pager is off (`PAGER=cat`): `git log` prints in full.
+- A notification when a long command (5 seconds or more) finishes while the panel is not focused.
 
-**История**
-- Блок показывает команду, папку, время, статус и вывод с цветом. Длинный вывод — началом и концом, середина сворачивается.
-- Клик раскрывает блок: готовый — весь вывод, работающий — живой терминал.
-- Повтор в том же блоке, закрепление, очистка по уровням. `clear` и <kbd>⌃L</kbd> убирают завершённые блоки, 5 секунд можно отменить.
+**History**
+- A block shows the command, folder, time, status and colored output. Long output shows the beginning and the end, the middle is collapsed.
+- Click a block to expand it: a finished one shows all its output, a running one shows the live terminal.
+- Rerun in the same block, pin, clear by levels. `clear` and <kbd>⌃L</kbd> remove finished blocks, with 5 seconds to undo.
 
-**Конвейер**
-- Шаги `grep`, `sort`, `jq` работают с сохранённым выводом — безопасно даже для `rm`, `curl -X POST` и деплоя.
-- Шаги видны плашками, их можно поправить или убрать. Подсказки: недавние шаги, частые фильтры, команды и файлы.
+**Pipeline**
+- `grep`, `sort` and `jq` steps work on the saved output, so it is safe even for `rm`, `curl -X POST` and deploys.
+- Steps show as chips you can edit or remove. Suggestions: recent steps, common filters, commands and files.
 
-**Ввод**
-- Автодополнение команд, алиасов, файлов и папок без запуска шелла на каждое нажатие.
-- Серая подсказка из истории, как zsh-autosuggestions.
-- Над полем — текущая папка. Клик или <kbd>⌘1</kbd> — дерево папок, <kbd>⌘</kbd>-клик — скопировать путь, правый клик — меню папки (избранное, Finder, редакторы, «Поделиться», недавние папки).
-- Латинская раскладка в поле включается сама и возвращается при скрытии.
+**Input**
+- Completion for commands, aliases, files and folders, without starting a shell on every keystroke.
+- A gray suggestion from history, like zsh-autosuggestions.
+- The current folder is shown above the field. Click it or press <kbd>⌘1</kbd> for the folder tree, <kbd>⌘</kbd>-click to copy the path, right-click for the folder menu (favorites, Finder, editors, Share, recent folders).
+- The Latin keyboard layout switches on in the field by itself and is restored when Hatch hides.
 
-**Опечатки**
-- Команда с опечаткой в имени (`gti status`) не остаётся в истории: набранное возвращается в поле, под ним «Команды gti нет. Похоже: git». Tab подставляет похожее.
-- Если внутри скрипта не нашлась другая команда, блок остаётся как обычно.
+**Typos**
+- A command with a typo in its name (`gti status`) does not stay in history: the text returns to the field with “No command gti. Did you mean: git” below it. Tab inserts the suggestion.
+- If a command inside a script is not found, the block stays as usual.
 
-**Буфер обмена**
-- <kbd>⌘4</kbd> показывает скопированное в любых приложениях, пока Hatch запущен: свежее сверху, с приложением и временем. Набор текста фильтрует.
-- Над полем вместо пути — фильтр: всё, текст (и пути к файлам), картинки, закреплённые; <kbd>Tab</kbd> и <kbd>⇧Tab</kbd> переключают.
-- Enter или двойной клик копирует фрагмент и скрывает панель — остаётся <kbd>⌘V</kbd>. <kbd>⌘Enter</kbd> вставляет фрагмент в поле ввода. Клик только выбирает строку; у выбранной и под курсором — кнопки тех же действий.
-- Повторное копирование поднимает фрагмент наверх. Файлы из Finder сохраняются путями.
-- У строки — «закрепить» (<kbd>⌘S</kbd>) и «удалить». Закреплённые стоят группой наверху и не удаляются ни очисткой, ни сроком, ни лимитом.
-- Корзина и <kbd>⌃L</kbd> в режиме буфера очищают буфер (5 секунд можно отменить), а не историю команд.
-- Картинки (скриншоты <kbd>⌘⇧⌃4</kbd>, «Скопировать изображение») — миниатюрой, с размером и приложением. Текст на них распознаётся на этом Mac, без сети, и находится поиском. <kbd>⌘1</kbd> или клик по миниатюре — посмотреть крупно, Enter — снова в буфер, <kbd>⌘Enter</kbd> — путь к файлу картинки в поле. Просмотр — окно над списком: картинка во всё окно, в шапке клавиши, которые сейчас работают. Окно тянется за шапку, меняет размер за углы строго в пропорциях картинки, двойной клик по шапке — исходный размер. Текст на картинке выделяется мышью, как в Просмотре: <kbd>⌘C</kbd> — скопировать выделенное (закрывается только просмотр, Hatch остаётся), <kbd>⌘V</kbd> — вставить его в поле, <kbd>⌘A</kbd> — выделить весь. <kbd>⌘S</kbd> закрепляет окно поверх остальных: оно остаётся, когда Hatch скрыт, видно на всех рабочих столах, таких окон может быть несколько; <kbd>⌘V</kbd> и <kbd>⌘Enter</kbd> из него показывают Hatch и вставляют в поле. Esc, <kbd>⌘W</kbd> (у закреплённого и <kbd>⌘Q</kbd>) закрывают окно, Esc сначала снимает выделение; незакреплённый просмотр закрывает и клик мимо. Правый клик — те же действия меню, там же «Скопировать распознанный текст» и «Закрепить в буфере». Если в буфере и текст, и картинка (ячейки таблицы), сохраняется текст. До 50 картинок, не больше 20 МБ каждая.
-- Не сохраняются пароли (менеджеры паролей помечают их скрытыми) и копирование из приложений-исключений.
-- Хранится локально, до 200 фрагментов и 7 дней (срок меняется в настройках), очищается в настройках.
+**Clipboard**
+- <kbd>⌘4</kbd> shows what you copied in any app while Hatch is running: newest first, with the app and time. Typing filters it.
+- Above the field, instead of the path, a filter: all, text (and file paths), images, pinned; <kbd>Tab</kbd> and <kbd>⇧Tab</kbd> switch it.
+- Enter or a double-click copies the item and hides the panel, leaving you to press <kbd>⌘V</kbd>. <kbd>⌘Enter</kbd> inserts the item into the input field. A click only selects a row; the selected and hovered rows show buttons for the same actions.
+- Copying something again moves it to the top. Files from Finder are saved as paths.
+- Each row has pin (<kbd>⌘S</kbd>) and delete. Pinned items stay grouped at the top and are never removed by clearing, age or the limit.
+- The trash button and <kbd>⌃L</kbd> in clipboard mode clear the clipboard (5 seconds to undo), not the command history.
+- Images (screenshots with <kbd>⌘⇧⌃4</kbd>, Copy Image) appear as thumbnails with their size and app. The text on them is recognized on this Mac, offline, and is searchable. <kbd>⌘1</kbd> or a click on the thumbnail opens it full size, Enter copies it again, <kbd>⌘Enter</kbd> puts the image file path into the field. The preview is a window above the list: the image fills the window, and its header shows the keys that work right now. Drag the window by its header and resize it by its corners, always keeping the image proportions; a double-click on the header restores the original size. Select text on the image with the mouse, like in Preview: <kbd>⌘C</kbd> copies the selection (only the preview closes, Hatch stays), <kbd>⌘V</kbd> inserts it into the field, <kbd>⌘A</kbd> selects all of it. <kbd>⌘S</kbd> keeps the window on top of others: it stays when Hatch hides, shows on every desktop, and you can have several; <kbd>⌘V</kbd> and <kbd>⌘Enter</kbd> from it bring Hatch back and insert into the field. Esc and <kbd>⌘W</kbd> (and <kbd>⌘Q</kbd> for a pinned window) close the window, Esc clears the selection first; an unpinned preview also closes on a click outside it. Right-click shows the same actions as a menu, plus Copy Recognized Text and Pin in Clipboard. If the clipboard holds both text and an image (table cells), the text is saved. Up to 50 images, 20 MB each at most.
+- Passwords (password managers mark them as concealed) and copies from excluded apps are never saved.
+- Stored locally, up to 200 items for 7 days (configurable), and can be cleared in settings.
 
-**Форматирование**
-- Hatch сам узнаёт JSON (и логи из JSON-строк), SQL, YAML и XML. В буфере строка подсвечена, JSON и SQL — в одну строку; в выводе завершённой команды JSON, YAML и XML показаны отформатированными. Цветной вывод самой программы и живой терминал не трогаются.
-- <kbd>⌘1</kbd> в буфере открывает любой текст тем же окном, что и картинки: целиком, с переносом по ширине, выделяется мышью (<kbd>⌘A</kbd>, <kbd>⌘C</kbd> — выделенное, ↩ — весь текст как виден, <kbd>⌘↩</kbd> — в поле), <kbd>⌘S</kbd> закрепляет поверх окон, размер — за углы.
-- Кнопка `{}` у записи, в окне просмотра и у блока команды, и <kbd>⌘R</kbd>, переключают «отформатировано / как есть»; выбор запоминается. Копируется то, что видно.
-- SQL — с переносом по предложениям, ключевые слова по умолчанию ЗАГЛАВНЫМИ (в настройках — строчными или как есть), диалект — обычный, PostgreSQL, MySQL, ClickHouse.
-- «Формат SQL: Hatch · бета» в настройках — свой формат: столбцы с запятой в начале, `JOIN … ON TRUE` и `WHERE TRUE` с условиями `  AND …` по строке, три и больше OR в скобках — `(FALSE` и `OR …` по строке, CASE по строкам. Запрос по смыслу не меняется: результат сверяется с исходным слово в слово, не сошлось или конструкция незнакомая — показывается обычный формат.
-- В настройках: форматировать ли по умолчанию, какие форматы узнавать («Код» — подсветка shell, Go, Python и других, выключена по умолчанию), команды (`cat`, `less`) и приложения, которые показываются как есть. Больше 1 МБ — как есть.
+**Formatting**
+- Hatch recognizes JSON (including logs made of JSON lines), SQL, YAML and XML by itself. In the clipboard the row is highlighted, with JSON and SQL on one line; in the output of a finished command, JSON, YAML and XML are shown formatted. A program's own colored output and the live terminal are left alone.
+- <kbd>⌘1</kbd> in the clipboard opens any text in the same window as images: in full, wrapped to the width, selectable with the mouse (<kbd>⌘A</kbd>, <kbd>⌘C</kbd> for the selection, ↩ for the whole text as shown, <kbd>⌘↩</kbd> into the field), <kbd>⌘S</kbd> keeps it on top of other windows, resize by the corners.
+- The `{}` button on an item, in the preview window and on a command block, and <kbd>⌘R</kbd>, switch between formatted and as is; the choice is remembered. What you see is what gets copied.
+- SQL is broken into clauses, with keywords in UPPER CASE by default (lower case or unchanged in settings); dialects: standard, PostgreSQL, MySQL, ClickHouse.
+- “SQL format: Hatch · beta” in settings is Hatch's own style: columns with a leading comma, `JOIN … ON TRUE` and `WHERE TRUE` with `  AND …` conditions one per line, three or more ORs in parentheses as `(FALSE` with `OR …` one per line, CASE across lines. The query never changes in meaning: the result is checked against the original word for word, and if they do not match or a construct is unfamiliar, the standard format is shown.
+- In settings: whether to format by default, which formats to recognize (“Code” highlights shell, Go, Python and others, off by default), and commands (`cat`, `less`) and apps whose content is shown as is. Anything over 1 MB is shown as is.
 
-**Скриншоты**
-- <kbd>⇧⌘4</kbd> работает и когда Hatch скрыт. Область выделяется системным перекрестием: Пробел — окно целиком, Esc — отмена.
-- Снимок сразу в буфере обмена и в истории Hatch, текст на нём распознаётся. На Рабочий стол файл не кладётся.
-- Справа внизу — миниатюра с полоской таймера (10 секунд, меняется в настройках), первые 2 секунды на ней плашка «✓ В буфере». Курсор над ней останавливает время, клик открывает снимок окном просмотра — без панели Hatch: выделить текст, <kbd>⌘C</kbd>, <kbd>⌘S</kbd> — закрепить поверх окон; клик мимо (и в другом приложении) или Esc закрывает. Смахнуть двумя пальцами вправо — убрать, перетащить — файлом PNG в любое приложение.
-- Несколько снимков подряд — стопкой, новый снизу, видно до трёх.
-- <kbd>⇧⌘4</kbd> занят самой macOS: выключите его в «Настройки → Клавиатура → Сочетания клавиш… → Снимки экрана», Hatch подскажет в своих настройках. Сочетание можно сменить там же.
+**Screenshots**
+- <kbd>⇧⌘4</kbd> works even when Hatch is hidden. Select an area with the system crosshair: Space captures a whole window, Esc cancels.
+- The screenshot goes straight to the clipboard and Hatch history, and its text is recognized. No file is saved to the Desktop.
+- A thumbnail appears in the bottom-right corner with a timer bar (10 seconds, configurable), showing “✓ In clipboard” for the first 2 seconds. Hovering pauses the timer; a click opens the screenshot in a preview window without the Hatch panel: select text, <kbd>⌘C</kbd>, <kbd>⌘S</kbd> to keep it on top; a click outside (even in another app) or Esc closes it. Swipe right with two fingers to dismiss, drag it into any app as a PNG file.
+- Several screenshots in a row stack up, newest at the bottom, up to three visible.
+- macOS itself uses <kbd>⇧⌘4</kbd>: turn it off in System Settings → Keyboard → Keyboard Shortcuts… → Screenshots; Hatch points you there in its settings. The shortcut can be changed there too.
 
-**Приложения и калькулятор**
-- Имя приложения и Enter открывают приложение: `safari`, `калькулятор`, `visual studio code`. Справа в поле заранее видно, что произойдёт; в историю запуск не попадает.
-- По первым буквам — подсказка: `saf` дописывается до `safari` по Tab или →. Если вариант один, его дописывает и Enter, а повторный Enter открывает приложение.
-- Имя и пути открывают пути в приложении: `code .`, `zed ~/proj`. Если аргумент не существующий путь (`docker ps`), это команда.
-- Совпадение с командой решается в пользу приложения. Имена, которые должны оставаться командами, добавляются в исключения в настройках; по умолчанию там `claude`, `ollama` и `opencode`.
-- Алиасы приложений настраиваются; по умолчанию `code` и `vscode` — VS Code.
-- Приложения ищутся в «Программах», системных программах и `~/Applications`, на уровень вглубь.
-- Калькулятор: `+ - * / ^ %` и скобки, `4500*15%` = 675, разряды через пробел: `1 000 000 / 3`. Enter копирует результат и скрывает панель.
-- Дробная часть результата — как набрано: `1.5*2` → точка, `1,5*2` → запятая. Без дробей во вводе (`7/2`) — разделитель из настроек; там же «Всегда так».
+**Apps and calculator**
+- An app name and Enter opens the app: `safari`, `calculator`, `visual studio code`. The right side of the field shows in advance what will happen; launches do not go into history.
+- The first letters get a suggestion: `saf` completes to `safari` with Tab or →. If there is only one option, Enter completes it too, and a second Enter opens the app.
+- A name with paths opens them in the app: `code .`, `zed ~/proj`. If the argument is not an existing path (`docker ps`), it is a command.
+- When a name matches both an app and a command, the app wins. Names that should stay commands go into the exceptions in settings; by default those are `claude`, `ollama` and `opencode`.
+- App aliases are configurable; by default `code` and `vscode` mean VS Code.
+- Apps are found in Applications, system applications and `~/Applications`, one level deep.
+- Calculator: `+ - * / ^ %` and parentheses, `4500*15%` = 675, digit groups separated by spaces: `1 000 000 / 3`. Enter copies the result and hides the panel.
+- The decimal separator follows what you typed: `1.5*2` gives a point, `1,5*2` a comma. Without decimals in the input (`7/2`), the separator comes from settings, along with an “Always” option.
 
-**Панель**
-- Сплошная, без стекла, в стиле системных настроек macOS. Высота — по содержимому, размер и позиция запоминаются.
-- Скрывается по клику в другом приложении (кроме системных запросов разрешений и пароля), при смене рабочего стола, по <kbd>⌘Q</kbd>, а также по <kbd>Esc</kbd> и <kbd>⌘W</kbd>, когда закрывать больше нечего. Хоткей открывает её на текущем столе, в том числе поверх приложения во весь экран.
-- Значок в строке меню можно скрыть: тогда Hatch открывается хоткеем или повторным запуском.
-- Настройки (<kbd>⌘,</kbd> или шестерёнка) — отдельным окном поверх панели, её размер не меняют. Настройки: хоткей, сочетание дерева папок, значок, тема, язык (RU/EN), строк в превью, шелл, тайм-аут, латиница в поле, приложения и калькулятор, алиасы, исключения, буфер обмена.
+**Panel**
+- Solid, without glass, in the style of macOS System Settings. Its height follows the content; size and position are remembered.
+- Hides on a click in another app (except system permission and password prompts), when switching desktops, on <kbd>⌘Q</kbd>, and on <kbd>Esc</kbd> and <kbd>⌘W</kbd> when there is nothing left to close. The hotkey opens it on the current desktop, including over a full-screen app.
+- The menu bar icon can be hidden: Hatch then opens with the hotkey or by launching it again.
+- Settings (<kbd>⌘,</kbd> or the gear) open as a separate layer over the panel without resizing it. Settings: hotkey, folder tree shortcut, icon, theme, language (RU/EN), preview lines, shell, timeout, Latin layout in the field, apps and calculator, aliases, exceptions, clipboard, formatting, screenshots.
 
 </details>
 
-## Для разработчиков
+## For developers
 
-Сборка, тесты, устройство кода и выпуск версий — в [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md).
+Building, tests, code structure and releases are covered in [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) (in Russian).
 
-## Лицензия
+## License
 
-[MIT](LICENSE). Терминал — [SwiftTerm](https://github.com/migueldeicaza/SwiftTerm), тоже MIT. Форматирование SQL — [sql-formatter](https://github.com/sql-formatter-org/sql-formatter) (MIT), подсветка — [highlight.js](https://github.com/highlightjs/highlight.js) (BSD-3-Clause); их лицензии лежат рядом с ними в `Hatch/Syntax`.
+[MIT](LICENSE). The terminal is [SwiftTerm](https://github.com/migueldeicaza/SwiftTerm), also MIT. SQL formatting uses [sql-formatter](https://github.com/sql-formatter-org/sql-formatter) (MIT) and highlighting uses [highlight.js](https://github.com/highlightjs/highlight.js) (BSD-3-Clause); their licenses are next to them in `Hatch/Syntax`.
