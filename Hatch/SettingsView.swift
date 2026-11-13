@@ -181,13 +181,18 @@ struct GlassSegmented: View {
     var details: [String: String] = [:]
     /// Мельче — для строки над полем ввода (фильтр буфера), той же высоты, что путь.
     var compact = false
-    @Namespace private var namespace
+    /// Рамки сегментов в координатах самой полоски — по ним стоит бегунок.
+    @State private var frames: [String: CGRect] = [:]
+    /// Где стоит бегунок. Анимируется отдельно от выбора — см. `.onChange(of: selection)`.
+    @State private var thumb: CGRect?
 
     var body: some View {
         HStack(spacing: 0) {
             ForEach(options, id: \.id) { option in
                 let selected = option.id == selection
-                Button { withAnimation(.spring(response: 0.35, dampingFraction: 0.7)) { selection = option.id } } label: {
+                // без withAnimation: анимируется только бегунок, а не всё, что зависит от выбора
+                // (в буфере — список и высота панели); Tab в буфере выбирает так же
+                Button { selection = option.id } label: {
                     // как в макете: шрифт 13 без жирности, выбранный — белый, бегунок — колпачок
                     HStack(spacing: 4) {
                         Text(option.title)
@@ -199,12 +204,9 @@ struct GlassSegmented: View {
                     .font(.system(size: compact ? 11.5 : 13))
                     .padding(.horizontal, compact ? 8 : 11)
                     .frame(height: compact ? 18 : 26)
-                    .background {
-                        if selected {
-                            Color.clear
-                                .tactileRaised(RoundedRectangle(cornerRadius: compact ? 5 : 7, style: .circular))
-                                .matchedGeometryEffect(id: "segment", in: namespace)
-                        }
+                    .onGeometryChange(for: CGRect.self) { $0.frame(in: .named(Self.space)) } action: {
+                        frames[option.id] = $0
+                        if option.id == selection { thumb = $0 } // ширина сегмента поменялась (число)
                     }
                     .contentShape(Rectangle())
                 }
@@ -212,9 +214,27 @@ struct GlassSegmented: View {
                 .accessibilityAddTraits(selected ? .isSelected : [])
             }
         }
+        .coordinateSpace(.named(Self.space))
+        // Один бегунок позади всех подписей: у фона кнопки он, переезжая, ложился поверх соседних.
+        .background(alignment: .topLeading) {
+            if let thumb {
+                Color.clear
+                    .tactileRaised(RoundedRectangle(cornerRadius: compact ? 5 : 7, style: .circular))
+                    .frame(width: thumb.width, height: thumb.height)
+                    .offset(x: thumb.minX, y: thumb.minY)
+            }
+        }
+        // Анимируется только место бегунка в полоске, своей транзакцией. Если анимировать всё, что
+        // меняет выбор, вместе с ним анимируется и сдвиг самой полоски (в буфере от типа зависит
+        // высота панели), и бегунок едет по диагонали.
+        .onChange(of: selection) { _, new in
+            withAnimation(.spring(response: 0.35, dampingFraction: 0.82)) { thumb = frames[new] }
+        }
         .padding(compact ? 2 : 3)
         .tactileWell(RoundedRectangle(cornerRadius: compact ? 7 : 10))
     }
+
+    private static let space = "GlassSegmented"
 }
 
 /// Счётчик: − значение +, цифра прокручивается при смене.

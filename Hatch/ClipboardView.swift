@@ -164,7 +164,7 @@ private struct ClipRow: View {
                     if clip.isImage { keyButton("⌘1", L.t("clip_preview", lang), perform: onPreview) }
                     keyButton("↩", L.t("clip_copy", lang), perform: onCopy)
                     keyButton("⌘↩", L.t(clip.isImage ? "clip_insert_path" : "clip_insert", lang), perform: onInsert)
-                    action(clip.isPinned ? "pin.slash" : "pin", help: L.t(clip.isPinned ? "clip_unpin" : "clip_pin", lang),
+                    action(clip.isPinned ? "pin.slash" : "pin", help: L.t(clip.isPinned ? "clip_unpin" : "clip_pin", lang) + " (⌘S)",
                            tint: clip.isPinned ? Tactile.clip : nil, perform: onTogglePin)
                     action("xmark", help: L.t("clip_delete", lang) + " (⌘⌫)", tint: nil, perform: onDelete)
                 }
@@ -292,13 +292,22 @@ final class ThumbnailCache {
 struct ClipImagePreview: View {
     let url: URL
     let caption: String
+    var pinned = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text(caption)
-                .font(.system(size: 11.5))
-                .foregroundStyle(.secondary)
-                .padding(.horizontal, 4)
+            HStack(spacing: 5) {
+                // ⌘S в просмотре — видно, что закрепилось
+                if pinned {
+                    Image(systemName: "pin.fill")
+                        .font(.system(size: 10))
+                        .foregroundStyle(Tactile.clip)
+                }
+                Text(caption)
+                    .font(.system(size: 11.5))
+                    .foregroundStyle(.secondary)
+            }
+            .padding(.horizontal, 4)
             if let image = NSImage(contentsOf: url) {
                 Image(nsImage: image)
                     .resizable()

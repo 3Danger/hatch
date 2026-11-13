@@ -59,7 +59,8 @@ final class FocusReturnTests: XCTestCase {
         self.settings = settings
         let store = SessionStore(history: HistoryStore(fileURL: FileManager.default.temporaryDirectory
             .appendingPathComponent("focus-\(UUID().uuidString).json")))
-        let clipboard = ClipboardHistory(fileURL: nil)
+        let clipboard = ClipboardHistory(fileURL: nil, imagesDirectory: FileManager.default.temporaryDirectory
+            .appendingPathComponent("focus-images-\(UUID().uuidString)"))
         self.store = store
         self.clipboard = clipboard
         let runner = ProcessRunner(sessionStore: store, settings: settings)
@@ -317,5 +318,60 @@ final class FocusReturnTests: XCTestCase {
         key(18, "1", .command, to: panel)
         wait { panel.childWindows?.count == 1 }
         XCTAssertEqual(panel.childWindows?.count, 1, "вне буфера ⌘1 — снова дерево папок")
+    }
+
+    /// ⌘S в списке буфера закрепляет выбранный фрагмент, повторно — открепляет.
+    func testCommandSPinsSelectedClip() throws {
+        let panel = try showPanel()
+        clipboard.record(Clip(text: "first", copiedAt: Date().addingTimeInterval(-60)), days: 7)
+        clipboard.record(Clip(text: "second", copiedAt: Date()), days: 7)
+        key(21, "4", .command, to: panel) // ⌘4
+        key(1, "s", .command, to: panel)  // ⌘S
+        XCTAssertEqual(clipboard.clips.first { $0.text == "second" }?.isPinned, true)
+        key(1, "s", .command, to: panel)
+        XCTAssertEqual(clipboard.clips.first { $0.text == "second" }?.isPinned, false, "выбор пошёл за строкой")
+    }
+
+    /// В просмотре картинки: ⌘S закрепляет, не закрывая; ⌘W закрывает только просмотр; ⌘⌫ удаляет её.
+    func testPreviewKeys() throws {
+        let panel = try showPanel()
+        let image = try XCTUnwrap(clipboard.recordImage(png: ClipboardImageTests.png(), width: 240, height: 120,
+                                                        app: nil, bundleID: nil, days: 7))
+        key(21, "4", .command, to: panel) // ⌘4
+        key(18, "1", .command, to: panel) // ⌘1 — просмотр
+        wait { panel.childWindows?.count == 1 }
+        let preview = try XCTUnwrap(panel.childWindows?.first)
+        key(1, "s", .command, to: preview) // ⌘S
+        XCTAssertEqual(clipboard.clips.first?.isPinned, true)
+        XCTAssertEqual(panel.childWindows?.count, 1, "просмотр остался открыт")
+        key(13, "w", .command, to: preview) // ⌘W
+        wait { (panel.childWindows?.count ?? 0) == 0 }
+        XCTAssertEqual(panel.childWindows?.count ?? 0, 0, "⌘W закрыл просмотр")
+        key(18, "1", .command, to: panel) // всё ещё буфер: ⌘1 — снова просмотр, не дерево
+        wait { panel.childWindows?.count == 1 }
+        let again = try XCTUnwrap(panel.childWindows?.first)
+        key(51, "\u{7F}", .command, to: again) // ⌘⌫
+        wait { (panel.childWindows?.count ?? 0) == 0 }
+        XCTAssertFalse(clipboard.clips.contains { $0.id == image.id }, "картинка удалена")
+        XCTAssertEqual(panel.childWindows?.count ?? 0, 0, "просмотр закрылся вместе с ней")
+    }
+
+    /// ⌘4 — режим буфера: курсор остаётся в поле, можно сразу набирать запрос. Ломалось при включённой
+    /// в macOS навигации с клавиатуры: список с прокруткой забирал клавиатуру у поля (нужно 2+ фрагмента
+    /// и активное приложение).
+    func testClipboardModeKeepsInputFocus() throws {
+        let panel = try showPanel()
+        clipboard.record(Clip(text: "first", copiedAt: Date().addingTimeInterval(-5)), days: 7)
+        _ = clipboard.recordImage(png: ClipboardImageTests.png(), width: 240, height: 120, app: nil, bundleID: nil, days: 7)
+        NSApp.activate(ignoringOtherApps: true)
+        addTeardownBlock { NSApp.deactivate() } // остальные тесты — как раньше, в неактивном приложении
+        panel.makeKey()
+        spin(0.5)
+        key(21, "4", .command, to: panel) // ⌘4
+        wait { self.inputHasFocus(panel) }
+        XCTAssertTrue(inputHasFocus(panel), "в буфере фокус у \(String(describing: panel.firstResponder))")
+        key(21, "4", .command, to: panel) // обратно к командам
+        wait { self.inputHasFocus(panel) }
+        XCTAssertTrue(inputHasFocus(panel), "после выхода фокус у \(String(describing: panel.firstResponder))")
     }
 }
