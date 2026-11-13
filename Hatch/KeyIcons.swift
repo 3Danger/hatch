@@ -3,21 +3,21 @@ import SwiftUI
 /// Иконки кнопок-колпачков, нарисованные линией 1.5 на сетке 16×16 — как в макете «Системный».
 /// Символы SF толще и другой формы, поэтому кнопки с ними выглядели иначе, чем в макете.
 enum KeyIcon: Hashable {
-    case rerun, copy, pin, pinOn, trash, stop, gear, star, starOn, braces
+    case rerun, copy, pin, pinOn, trash, stop, gear, star, starOn, braces, bookmarks, bookmarksOn
 
     /// Ширина линии в единицах сетки 16×16.
     var lineWidth: CGFloat {
         switch self {
         case .rerun: return 1.6
-        case .gear, .star, .starOn, .braces: return 1.4
+        case .gear, .star, .starOn, .braces, .bookmarks, .bookmarksOn: return 1.4
         default: return 1.5
         }
     }
 
-    var filled: Bool { self == .stop || self == .pinOn || self == .starOn }
+    var filled: Bool { self == .stop || self == .pinOn || self == .starOn || self == .bookmarksOn }
 
     var lineCap: CGLineCap { self == .rerun || self == .trash || self == .braces ? .round : .butt }
-    var lineJoin: CGLineJoin { [.pin, .pinOn, .star, .starOn, .braces].contains(self) ? .round : .miter }
+    var lineJoin: CGLineJoin { [.pin, .pinOn, .star, .starOn, .braces, .bookmarks, .bookmarksOn].contains(self) ? .round : .miter }
 
     /// Контур в координатах сетки 16×16.
     var path: Path {
@@ -71,12 +71,19 @@ enum KeyIcon: Hashable {
                 p.addQuadCurve(to: CGPoint(x: x(6.5), y: 13.5), control: CGPoint(x: x(4.8), y: 13.5))
             }
         case .gear:
-            p.addEllipse(in: CGRect(x: 8 - 2.2, y: 8 - 2.2, width: 4.4, height: 4.4))
-            let spokes: [(CGFloat, CGFloat, CGFloat, CGFloat)] = [
-                (8, 1.5, 8, 3.5), (8, 12.5, 8, 14.5), (1.5, 8, 3.5, 8), (12.5, 8, 14.5, 8),
-                (3.4, 3.4, 4.8, 4.8), (11.2, 11.2, 12.6, 12.6), (3.4, 12.6, 4.8, 11.2), (11.2, 4.8, 12.6, 3.4),
-            ]
-            for s in spokes { p.addLines([CGPoint(x: s.0, y: s.1), CGPoint(x: s.2, y: s.3)]) }
+            // шестерёнка: кольцо с зубцами и ось — прежние лучи без кольца читались как «солнце» (яркость)
+            p.addEllipse(in: CGRect(x: 8 - 2, y: 8 - 2, width: 4, height: 4))
+            p.addEllipse(in: CGRect(x: 8 - 4.4, y: 8 - 4.4, width: 8.8, height: 8.8))
+            for i in 0..<8 {
+                let a = Double(i) * .pi / 4
+                p.move(to: CGPoint(x: 8 + 4.4 * cos(a), y: 8 + 4.4 * sin(a)))
+                p.addLine(to: CGPoint(x: 8 + 6.4 * cos(a), y: 8 + 6.4 * sin(a)))
+            }
+        case .bookmarks, .bookmarksOn:
+            // закладка — список избранного (звёздочка — «добавить в избранное»)
+            p.addLines([CGPoint(x: 4, y: 2.5), CGPoint(x: 12, y: 2.5), CGPoint(x: 12, y: 13.5),
+                        CGPoint(x: 8, y: 10.9), CGPoint(x: 4, y: 13.5)])
+            p.closeSubpath()
         }
         return p
     }

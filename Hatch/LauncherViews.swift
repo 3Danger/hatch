@@ -129,22 +129,28 @@ struct LauncherRootView: View {
 
     private var panelContent: some View {
         VStack(spacing: LauncherMetrics.padding) {
-            // где мы сейчас: светлые «крошки» над полем, обновляются при cd. В режиме буфера на их
-            // месте — фильтр по типу; оба в одной ячейке, поэтому высота строки не меняется
-            ZStack(alignment: .leading) {
-                DirectoryBreadcrumbsView(path: settings.currentDirectory,
-                                         recent: settings.recentDirectories,
-                                         favorites: settings.favoriteDirectories,
-                                         lang: lang,
-                                         onNavigate: { settings.currentDirectory = $0 },
-                                         onToggleFavorite: toggleFavoriteDirectory,
-                                         treeRequest: folderTreeRequest)
-                    .opacity(clipboardMode ? 0 : 1)
-                    .allowsHitTesting(!clipboardMode)
-                if clipboardMode { clipboardFilterBar }
+            // строка над полем: слева — что важно в режиме (путь, счётчик поиска, фильтр буфера),
+            // справа — переключатель режимов. Всё в одной строке, её высота не меняется
+            HStack(spacing: 10) {
+                ZStack(alignment: .leading) {
+                    DirectoryBreadcrumbsView(path: settings.currentDirectory,
+                                             recent: settings.recentDirectories,
+                                             favorites: settings.favoriteDirectories,
+                                             lang: lang,
+                                             onNavigate: { settings.currentDirectory = $0 },
+                                             onToggleFavorite: toggleFavoriteDirectory,
+                                             treeRequest: folderTreeRequest)
+                        .opacity(clipboardMode || searchMode ? 0 : 1)
+                        .allowsHitTesting(!clipboardMode && !searchMode)
+                    if clipboardMode { clipboardFilterBar }
+                    if searchMode { searchSummary }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                ModeSwitcher(mode: inputMode, lang: lang, onSelect: switchMode)
             }
-                .padding(.horizontal, 14) // по левому краю текста в поле ввода
-                .padding(.bottom, -4)     // ближе к полю, чем к краю панели
+                .padding(.leading, 14) // по левому краю текста в поле ввода
+                .padding(.trailing, 2)
+                .padding(.bottom, -4)  // ближе к полю, чем к краю панели
 
             CommandInputView(text: searchMode ? $searchQuery : clipboardMode ? $clipboardQuery : $text,
                              directory: settings.currentDirectory,
@@ -303,10 +309,41 @@ struct LauncherRootView: View {
     // MARK: - Настройки и кнопки панели
 
     /// Настройки и очистка истории — справа в поле ввода, а не отдельной колонкой.
+    private var inputMode: InputMode { searchMode ? .search : clipboardMode ? .clipboard : .command }
+
+    /// Клик по переключателю режимов: тот же переход, что по ⌘F, ⌘4 или Esc.
+    private func switchMode(_ mode: InputMode) {
+        guard mode != inputMode else { return }
+        switch mode {
+        case .command:
+            if searchMode { exitSearch() }
+            if clipboardMode { exitClipboard() }
+        case .search: toggleSearch()
+        case .clipboard: toggleClipboard()
+        }
+    }
+
+    /// В поиске над полем: сколько нашлось. Пустой запрос — подсказка, где ищем.
+    private var searchSummary: some View {
+        let query = searchQuery.trimmingCharacters(in: .whitespaces)
+        let stats = SearchStats.count(query, in: sessionStore.filteredSessions)
+        return Group {
+            if query.isEmpty {
+                Text(L.t("search_scope", lang))
+            } else {
+                Text(SearchStats.summary(stats, lang: lang)).foregroundStyle(stats.blocks > 0 ? Tactile.search : .secondary)
+            }
+        }
+        .font(.system(size: 12))
+        .foregroundStyle(.secondary)
+        .lineLimit(1)
+    }
+
     private var inputButtons: some View {
         HStack(spacing: 6) {
-            GlassIconButton(icon: favoritesOpen ? .starOn : .star, color: favoritesOpen ? Tactile.star : nil,
-                            size: LauncherMetrics.inputButton, help: L.t("favorites", lang)) { favoritesOpen.toggle() }
+            // список избранного — закладки: звёздочка значит «добавить в избранное» (у пути и у блока)
+            GlassIconButton(icon: favoritesOpen ? .bookmarksOn : .bookmarks, color: favoritesOpen ? Tactile.star : nil,
+                            size: LauncherMetrics.inputButton, help: L.t("favorites", lang) + " (⌘E)") { favoritesOpen.toggle() }
                 // своё всплывающее окно, сплошное: системное в macOS 26 стеклянное
                 .hatchPopup(isPresented: $favoritesOpen) { _ in
                     PopupCard {
@@ -330,13 +367,8 @@ struct LauncherRootView: View {
                                   onMoveCommand: { settings.moveFavoriteCommand(from: $0, to: $1) })
                     }
                 }
-            GlassIconButton(icon: .gear, size: LauncherMetrics.inputButton, help: L.t("settings", lang)) { openSettings() }
-            // в режиме буфера корзина очищает буфер, а не историю команд
-            GlassIconButton(icon: .trash, size: LauncherMetrics.inputButton,
-                            help: clipboardMode ? L.t("clip_clear_help", lang) : L.t("clear", lang)) {
-                if clipboardMode { clearClipboard() } else if sessionStore.clearScope != .nothing { confirmClear = true }
-            }
-            .disabled(clipboardMode ? !clipboard.clips.contains { !$0.isPinned } : sessionStore.clearScope == .nothing)
+            GlassIconButton(icon: .gear, size: LauncherMetrics.inputButton, help: L.t("settings", lang) + " (⌘,)") { openSettings() }
+            // очистка — ⌃L и команда clear, корзины у поля нет: разрушительное действие рядом с настройками
         }
     }
 
@@ -2117,7 +2149,6 @@ struct CommandInputView: View {
         } else if let quick, showsQuickLabel {
             QuickActionLabel(action: quick, lang: lang)
         }
-        if searching { searchBadge }
         if let trailing { trailing }
         }
         .padding(.leading, 14)
@@ -2176,26 +2207,6 @@ struct CommandInputView: View {
         case .search: L.t("search_placeholder", lang)
         case .clipboard: L.t("clip_placeholder", lang)
         }
-    }
-
-    /// Метка режима поиска: клик по ней — выход из поиска.
-    private var searchBadge: some View {
-        Button(action: onExitSearch) {
-            HStack(spacing: 5) {
-                Text(L.t(mode == .clipboard ? "clip_mode" : "search", lang))
-                Text("✕").font(.system(size: 10))
-            }
-            .font(.system(size: 12, weight: .semibold))
-            .foregroundStyle(modeColor)
-            .padding(.horizontal, 9)
-            .frame(height: 22)
-            .background(modeColor.opacity(0.14), in: Capsule())
-            .overlay(Capsule().strokeBorder(modeColor.opacity(0.55), lineWidth: 1))
-            .contentShape(Capsule())
-        }
-        .buttonStyle(.plain)
-        .help(L.t(mode == .clipboard ? "clip_exit" : "search_exit", lang))
-        .transition(.opacity.combined(with: .scale(scale: 0.85)))
     }
 
     private var quick: QuickAction? { searching ? nil : quickAction(text) }

@@ -85,11 +85,56 @@ struct DirectoryBreadcrumbsView: View {
         treeCrumb = index.flatMap { segments.indices.contains($0) ? segments[$0].path : nil }
     }
 
+    /// Какие части пути прячутся за «…»: середина длинного пути (первая и две последние видны).
+    static func hiddenRange(count: Int) -> Range<Int>? {
+        count > 4 ? 1..<(count - 2) : nil
+    }
+
     private var crumbs: some View {
-        // строка пути, как в Finder: папки с синими значками через «›»
+        // строка пути, как в Finder: папки с синими значками через «›». Длинный путь — с «…» посередине,
+        // чтобы рядом поместился переключатель режимов; пока дерево открыто у спрятанной папки, путь виден целиком
         HStack(spacing: 4) {
             let segments = PathBreadcrumbs.segments(for: path)
+            let hidden = Self.hiddenRange(count: segments.count)
+            let collapsed = hidden.map { range in
+                !(openCrumb.map(range.contains) ?? false) && !(menuCrumb.map(range.contains) ?? false)
+            } ?? false
             ForEach(Array(segments.enumerated()), id: \.offset) { index, crumb in
+                if collapsed, let hidden, hidden.contains(index) {
+                    if index == hidden.lowerBound { ellipsis(segments: segments, hidden: hidden) }
+                } else {
+                    crumbView(index: index, crumb: crumb)
+                }
+            }
+            // текущая папка в избранном — звёздочка после пути
+            if favorites.contains(path) {
+                KeyIconView(icon: .starOn, size: 10)
+                    .foregroundStyle(Tactile.star)
+                    .help(L.t("fav_remove", lang) + " (⌘D)")
+                    .onTapGesture { onToggleFavorite(path) }
+            }
+        }
+        .font(font)
+        .truncationMode(.head)
+    }
+
+    /// «…» вместо середины пути: клик — дерево у последней спрятанной папки (путь раскрывается).
+    private func ellipsis(segments: [PathBreadcrumbs.Crumb], hidden: Range<Int>) -> some View {
+        HStack(spacing: 4) {
+            Image(systemName: "chevron.compact.right")
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(.quaternary)
+            Text("…")
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 2)
+                .contentShape(Rectangle())
+                .onTapGesture { openTree(hidden.upperBound - 1) }
+                .help(segments[hidden].map(\.title).joined(separator: " › "))
+        }
+    }
+
+    @ViewBuilder
+    private func crumbView(index: Int, crumb: PathBreadcrumbs.Crumb) -> some View {
                 if index > 0 {
                     Image(systemName: "chevron.compact.right")
                         .font(.system(size: 10, weight: .semibold))
@@ -144,17 +189,6 @@ struct DirectoryBreadcrumbsView: View {
                         MenuCard { menu(for: crumb.path, context: context) }
                     }
                     .help(crumb.path + "\n" + L.t("crumb_hint", lang))
-            }
-            // текущая папка в избранном — звёздочка после пути
-            if favorites.contains(path) {
-                KeyIconView(icon: .starOn, size: 10)
-                    .foregroundStyle(Tactile.star)
-                    .help(L.t("fav_remove", lang) + " (⌘D)")
-                    .onTapGesture { onToggleFavorite(path) }
-            }
-        }
-        .font(font)
-        .truncationMode(.head)
     }
 
     // MARK: - Меню папки
