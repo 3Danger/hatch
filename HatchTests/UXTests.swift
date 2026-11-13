@@ -57,4 +57,17 @@ final class UXTests: XCTestCase {
         XCTAssertGreaterThan(ModeSwitcher.activeWidth("ru"), ModeSwitcher.iconWidth)
         XCTAssertGreaterThan(ModeSwitcher.activeWidth("en"), ModeSwitcher.iconWidth)
     }
+
+    /// Высота панели меняется от верхнего края сразу, без промежуточного кадра.
+    @MainActor
+    func testPanelKeepsTopWhenHeightChanges() {
+        let panel = LauncherPanel(contentRect: NSRect(x: 100, y: 300, width: 400, height: 200),
+                                  styleMask: [.borderless], backing: .buffered, defer: true)
+        panel.pinnedTop = 500
+        panel.setFrame(NSRect(x: 100, y: 300, width: 400, height: 120), display: false) // AppKit — от нижнего края
+        XCTAssertEqual(panel.frame.maxY, 500)
+        XCTAssertEqual(panel.frame.height, 120)
+        panel.setFrameOrigin(NSPoint(x: 150, y: 50)) // перетащили — без смены высоты не трогаем
+        XCTAssertEqual(panel.frame.minY, 50)
+    }
 }

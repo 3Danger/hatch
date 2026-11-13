@@ -13,7 +13,28 @@ extension Notification.Name {
 /// Панель без системной рамки: форму и стекло рисует SwiftUI.
 /// Borderless-окно по умолчанию не принимает клавиатуру — разрешаем явно.
 final class LauncherPanel: NSPanel {
+    /// Где держать верхний край, когда меняется высота (содержимое выросло или сжалось).
+    var pinnedTop: CGFloat?
+
     override var canBecomeKey: Bool { true }
+
+    // Высота меняется сразу от верхнего края, одним шагом. Раньше AppKit сначала менял её от нижнего
+    // края, а верх возвращали после — на долю секунды всё содержимое прыгало по вертикали
+    // (заметно при выходе из буфера: переключатель режимов «скакал»).
+    override func setFrame(_ frameRect: NSRect, display flag: Bool) {
+        super.setFrame(keepingTop(frameRect), display: flag)
+    }
+
+    override func setFrame(_ frameRect: NSRect, display displayFlag: Bool, animate animateFlag: Bool) {
+        super.setFrame(keepingTop(frameRect), display: displayFlag, animate: animateFlag)
+    }
+
+    func keepingTop(_ rect: NSRect) -> NSRect {
+        guard let top = pinnedTop, abs(rect.height - frame.height) > 0.5 else { return rect }
+        var rect = rect
+        rect.origin.y = top - rect.height
+        return rect
+    }
     override var canBecomeMain: Bool { false }
 }
 
@@ -29,7 +50,9 @@ final class FloatingWindowController {
     /// Сдвиг окна самим приложением — не путать с перетаскиванием пользователем.
     private var isPositioning = false
     /// Где держать верхний край, когда окно меняет высоту.
-    private var anchoredTop: CGFloat?
+    private var anchoredTop: CGFloat? {
+        didSet { (panel as? LauncherPanel)?.pinnedTop = anchoredTop }
+    }
     private var outsideClickMonitor: Any?
     private var observers: [NSObjectProtocol] = []
     private var spaceObserver: NSObjectProtocol?
