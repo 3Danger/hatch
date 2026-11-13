@@ -1,5 +1,6 @@
 import XCTest
 import SwiftUI
+import VisionKit
 @testable import Hatch
 
 /// После закрытия всплывающего окна (дерево папок, избранное) клавиатура снова в поле ввода.
@@ -332,7 +333,7 @@ final class FocusReturnTests: XCTestCase {
         XCTAssertEqual(clipboard.clips.first { $0.text == "second" }?.isPinned, false, "выбор пошёл за строкой")
     }
 
-    /// В просмотре картинки: ⌘S закрепляет, не закрывая; ⌘W закрывает только просмотр; ⌘⌫ удаляет её.
+    /// Просмотр картинки — окно над панелью: ⌘W закрывает только его; ⌘⌫ удаляет картинку и закрывает.
     func testPreviewKeys() throws {
         let panel = try showPanel()
         let image = try XCTUnwrap(clipboard.recordImage(png: ClipboardImageTests.png(), width: 240, height: 120,
@@ -340,13 +341,20 @@ final class FocusReturnTests: XCTestCase {
         key(21, "4", .command, to: panel) // ⌘4
         key(18, "1", .command, to: panel) // ⌘1 — просмотр
         wait { panel.childWindows?.count == 1 }
-        let preview = try XCTUnwrap(panel.childWindows?.first)
-        key(1, "s", .command, to: preview) // ⌘S
-        XCTAssertEqual(clipboard.clips.first?.isPinned, true)
-        XCTAssertEqual(panel.childWindows?.count, 1, "просмотр остался открыт")
+        let preview = try XCTUnwrap(panel.childWindows?.first as? ClipPreviewPanel)
+        // картинка во всё окно, сверху шапка
+        XCTAssertEqual(preview.frame.width, 240)
+        XCTAssertEqual(preview.frame.height, 120 + ClipPreviewWindow.headerHeight)
+        // за шапку тянут везде, и по подписи с подсказками, кроме кнопок
+        let content = try XCTUnwrap(preview.contentView)
+        for x: CGFloat in [20, 120] {
+            let hit = content.hitTest(NSPoint(x: x, y: content.bounds.height - 15))
+            XCTAssertTrue(hit is WindowDragArea.DragView, "x \(x): \(String(describing: hit))")
+        }
         key(13, "w", .command, to: preview) // ⌘W
         wait { (panel.childWindows?.count ?? 0) == 0 }
         XCTAssertEqual(panel.childWindows?.count ?? 0, 0, "⌘W закрыл просмотр")
+        XCTAssertTrue(panel.isVisible, "панель осталась")
         key(18, "1", .command, to: panel) // всё ещё буфер: ⌘1 — снова просмотр, не дерево
         wait { panel.childWindows?.count == 1 }
         let again = try XCTUnwrap(panel.childWindows?.first)
@@ -354,6 +362,53 @@ final class FocusReturnTests: XCTestCase {
         wait { (panel.childWindows?.count ?? 0) == 0 }
         XCTAssertFalse(clipboard.clips.contains { $0.id == image.id }, "картинка удалена")
         XCTAssertEqual(panel.childWindows?.count ?? 0, 0, "просмотр закрылся вместе с ней")
+    }
+
+    /// ⌘S в просмотре закрепляет окно поверх остальных: оно остаётся, когда Hatch скрыт, и видно
+    /// на всех рабочих столах; фрагмент в буфере при этом не закрепляется. ⌘Q закрывает окно.
+    func testPinnedPreviewStaysWhenHatchHides() throws {
+        let panel = try showPanel()
+        _ = try XCTUnwrap(clipboard.recordImage(png: ClipboardImageTests.png(), width: 240, height: 120,
+                                                app: nil, bundleID: nil, days: 7))
+        key(21, "4", .command, to: panel) // ⌘4
+        key(18, "1", .command, to: panel) // ⌘1
+        wait { panel.childWindows?.count == 1 }
+        let preview = try XCTUnwrap(panel.childWindows?.first as? ClipPreviewPanel)
+        key(1, "s", .command, to: preview) // ⌘S
+        XCTAssertEqual(panel.childWindows?.count ?? 0, 0, "закреплённое — не дочернее окно панели")
+        XCTAssertTrue(preview.isVisible)
+        XCTAssertTrue(preview.collectionBehavior.contains(.canJoinAllSpaces), "на всех рабочих столах")
+        XCTAssertEqual(clipboard.clips.first?.isPinned, false, "в буфере не закрепилось")
+
+        controller?.hide()
+        spin()
+        XCTAssertFalse(panel.isVisible)
+        XCTAssertTrue(preview.isVisible, "Hatch скрыт — закреплённое окно на месте")
+
+        key(12, "q", .command, to: preview) // ⌘Q
+        wait { !preview.isVisible }
+        XCTAssertFalse(preview.isVisible, "⌘Q закрыл закреплённое окно")
+    }
+
+    /// Клик мимо (в том числе по самой панели, по списку) закрывает просмотр.
+    func testPreviewClosesOnClickInPanel() throws {
+        let panel = try showPanel()
+        _ = try XCTUnwrap(clipboard.recordImage(png: ClipboardImageTests.png(), width: 240, height: 120,
+                                                app: nil, bundleID: nil, days: 7))
+        key(21, "4", .command, to: panel) // ⌘4
+        key(18, "1", .command, to: panel) // ⌘1
+        wait { panel.childWindows?.count == 1 }
+        let point = NSPoint(x: panel.frame.width / 2, y: 20) // низ панели — список
+        for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
+            let event = try XCTUnwrap(NSEvent.mouseEvent(with: type, location: point, modifierFlags: [],
+                                                         timestamp: ProcessInfo.processInfo.systemUptime,
+                                                         windowNumber: panel.windowNumber, context: nil,
+                                                         eventNumber: 0, clickCount: 1, pressure: 1))
+            NSApp.sendEvent(event)
+        }
+        wait { (panel.childWindows?.count ?? 0) == 0 }
+        XCTAssertEqual(panel.childWindows?.count ?? 0, 0, "клик по панели закрыл просмотр")
+        XCTAssertTrue(panel.isVisible)
     }
 
     /// ⌘4 — режим буфера: курсор остаётся в поле, можно сразу набирать запрос. Ломалось при включённой
@@ -373,5 +428,94 @@ final class FocusReturnTests: XCTestCase {
         key(21, "4", .command, to: panel) // обратно к командам
         wait { self.inputHasFocus(panel) }
         XCTAssertTrue(inputHasFocus(panel), "после выхода фокус у \(String(describing: panel.firstResponder))")
+    }
+
+    /// Просмотр картинки: ⌘A выделяет весь текст на ней (Live Text), Esc сначала снимает выделение,
+    /// ⌘V — выделенное в поле ввода. Распознавание — настоящее, на этом Mac.
+    func testPreviewSelectsTextAndInsertsIt() throws {
+        let panel = try showPanel()
+        _ = clipboard.recordImage(png: ClipboardImageTests.png("HATCH 2048", width: 420, height: 120), width: 420, height: 120,
+                                  app: nil, bundleID: nil, days: 7)
+        key(21, "4", .command, to: panel) // ⌘4
+        key(18, "1", .command, to: panel) // ⌘1 — просмотр
+        wait { panel.childWindows?.count == 1 }
+        let preview = try XCTUnwrap(panel.childWindows?.first)
+        let overlay = try XCTUnwrap(Self.find(ImageAnalysisOverlayView.self, in: preview.contentView!))
+        let deadline = Date().addingTimeInterval(8)
+        while overlay.text.isEmpty, Date() < deadline { spin(0.1) } // текст распознаётся не сразу
+        XCTAssertTrue(overlay.text.contains("HATCH"), "распознано: \(overlay.text)")
+
+        key(0, "a", .command, to: preview) // ⌘A
+        XCTAssertTrue(overlay.selectedText.contains("HATCH"), "выделено: \(overlay.selectedText)")
+        key(53, "\u{1b}", [], to: preview) // Esc — снять выделение, просмотр остаётся
+        XCTAssertFalse(overlay.hasActiveTextSelection)
+        XCTAssertEqual(panel.childWindows?.count, 1, "первый Esc не закрыл просмотр")
+
+        key(0, "a", .command, to: preview)
+        key(9, "v", .command, to: preview) // ⌘V — в поле ввода
+        wait { (panel.childWindows?.count ?? 0) == 0 }
+        let field = try XCTUnwrap(textField(in: panel.contentView!))
+        wait { field.stringValue.contains("HATCH") }
+        XCTAssertTrue(field.stringValue.contains("HATCH 2048"), "в поле: \(field.stringValue)")
+        XCTAssertEqual(panel.childWindows?.count ?? 0, 0, "просмотр закрылся")
+    }
+
+    /// Закреплённое окно при скрытом Hatch: ⌘V показывает Hatch и вставляет выделенное в поле.
+    func testPinnedPreviewInsertShowsHatch() throws {
+        let panel = try showPanel()
+        _ = clipboard.recordImage(png: ClipboardImageTests.png("HATCH 2048", width: 420, height: 120), width: 420, height: 120,
+                                  app: nil, bundleID: nil, days: 7)
+        key(21, "4", .command, to: panel) // ⌘4
+        key(18, "1", .command, to: panel) // ⌘1
+        wait { panel.childWindows?.count == 1 }
+        let preview = try XCTUnwrap(panel.childWindows?.first as? ClipPreviewPanel)
+        let overlay = try XCTUnwrap(Self.find(ImageAnalysisOverlayView.self, in: preview.contentView!))
+        let deadline = Date().addingTimeInterval(8)
+        while overlay.text.isEmpty, Date() < deadline { spin(0.1) }
+        key(1, "s", .command, to: preview) // ⌘S — закрепить
+        controller?.hide()
+        spin()
+        XCTAssertFalse(panel.isVisible)
+
+        key(0, "a", .command, to: preview) // ⌘A
+        key(9, "v", .command, to: preview) // ⌘V
+        wait { panel.isVisible }
+        XCTAssertTrue(panel.isVisible, "Hatch показался")
+        let field = try XCTUnwrap(textField(in: panel.contentView!))
+        wait { field.stringValue.contains("HATCH") }
+        XCTAssertTrue(field.stringValue.contains("HATCH 2048"), "в поле: \(field.stringValue)")
+        XCTAssertTrue(preview.isVisible, "закреплённое окно осталось")
+        key(53, "\u{1b}", [], to: preview) // Esc — снять выделение
+        key(53, "\u{1b}", [], to: preview) // Esc — закрыть
+        wait { !preview.isVisible }
+        XCTAssertFalse(preview.isVisible)
+    }
+
+    /// Клик по миниатюре скриншота: снимок открывается окном просмотра, панель Hatch остаётся скрытой.
+    func testOpenClipShowsOnlyPreview() throws {
+        let panel = try showPanel()
+        let image = try XCTUnwrap(clipboard.recordImage(png: ClipboardImageTests.png(), width: 240, height: 120,
+                                                        app: "Screenshot", bundleID: nil, days: 7))
+        controller?.hide()
+        spin()
+        let screen = try XCTUnwrap(NSScreen.main?.visibleFrame)
+        NotificationCenter.default.post(name: .hatchOpenClip, object: image.id, userInfo: ["screen": NSValue(rect: screen)])
+        var preview: ClipPreviewPanel? { NSApp.windows.compactMap { $0 as? ClipPreviewPanel }.first { $0.isVisible } }
+        wait { preview != nil }
+        let window = try XCTUnwrap(preview, "снимок открыт окном просмотра")
+        XCTAssertFalse(panel.isVisible, "панель Hatch не показалась")
+        XCTAssertNil(window.parent)
+        XCTAssertEqual(window.preview?.model.clipID, image.id)
+        XCTAssertEqual(window.frame.midX, screen.midX, accuracy: 1, "по центру экрана")
+        key(53, "\u{1b}", [], to: window) // Esc — закрыть
+        wait { !window.isVisible }
+        XCTAssertFalse(window.isVisible)
+        XCTAssertFalse(panel.isVisible)
+    }
+
+    private static func find<T: NSView>(_ type: T.Type, in view: NSView) -> T? {
+        if let match = view as? T { return match }
+        for sub in view.subviews { if let found = find(type, in: sub) { return found } }
+        return nil
     }
 }

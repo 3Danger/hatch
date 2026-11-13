@@ -22,10 +22,9 @@ enum KeyChordFormatter {
             base = "escape"
         case 51:
             base = "delete"
-        case 18...27:
-            // ANSI-цифры: 18='1' … 26='9', 27='0'
-            let n = Int(keyCode)
-            base = n == 27 ? "0" : "\(n - 18 + 1)"
+        case _ where KeyBindingParser.digitKeyCodes.values.contains(UInt32(keyCode)):
+            // ANSI-цифры: коды идут не по порядку (5 — 23, 6 — 22, 0 — 29)
+            base = KeyBindingParser.digitKeyCodes.first { $0.value == UInt32(keyCode) }.map { "\($0.key)" }
         default:
             // буквы/цифры берём из characters (учитывает раскладку)
             if let ch = characters?.lowercased(), ch.count == 1,

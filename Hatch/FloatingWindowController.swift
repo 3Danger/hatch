@@ -6,6 +6,8 @@ extension Notification.Name {
     static let hatchDidShow = Notification.Name("hatch.didShow")
     /// Скрыть панель: после запуска приложения или копирования результата из поля ввода.
     static let hatchRequestHide = Notification.Name("hatch.requestHide")
+    /// Показать панель: ⌘V и ⌘↩ в закреплённом просмотре картинки, когда Hatch скрыт.
+    static let hatchRequestShow = Notification.Name("hatch.requestShow")
 }
 
 /// Панель без системной рамки: форму и стекло рисует SwiftUI.
@@ -72,6 +74,9 @@ final class FloatingWindowController {
         })
         observers.append(center.addObserver(forName: .hatchRequestHide, object: nil, queue: .main) {
             [weak self] _ in self?.hide()
+        })
+        observers.append(center.addObserver(forName: .hatchRequestShow, object: nil, queue: .main) {
+            [weak self] _ in self?.show()
         })
         // сменили рабочий стол — панель исчезает, как Spotlight; хоткей откроет её уже на новом столе
         spaceObserver = NSWorkspace.shared.notificationCenter.addObserver(

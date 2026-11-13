@@ -21,6 +21,8 @@ enum KeyBindingParser {
     static let returnKeyCode: UInt32 = 36 // kVK_Return
     static let tabKeyCode: UInt32 = 48    // kVK_Tab
     static let escapeKeyCode: UInt32 = 53 // kVK_Escape
+    /// Цифра → код клавиши (kVK_ANSI_0…9): по порядку идут только 1–4.
+    static let digitKeyCodes: [Int: UInt32] = [1: 18, 2: 19, 3: 20, 4: 21, 5: 23, 6: 22, 7: 26, 8: 28, 9: 25, 0: 29]
 
     static func parse(_ spec: String) -> KeyBinding? {
         let parts = spec.lowercased().split(separator: "-").map(String.init)
@@ -63,8 +65,7 @@ enum KeyBindingParser {
                 if (97...122).contains(value) {
                     keyCode = UInt32(value - 97) // kVK_ANSI_A == 0
                 } else if (48...57).contains(value) {
-                    let digit = value - 48
-                    keyCode = digit == 0 ? 27 : UInt32(17 + digit) // 1->18 … 9->26, 0->27
+                    keyCode = digitKeyCodes[value - 48]
                 } else {
                     keyCode = nil
                 }
@@ -83,35 +84,40 @@ protocol HotKeyDelegate: AnyObject {
     func hotKeyPressed()
 }
 
-/// Менеджер глобального хоткей на Carbon (RegisterEventHotKey).
+/// Менеджер глобальных хоткеев на Carbon (RegisterEventHotKey): несколько сочетаний, у каждого свой номер.
+/// Номер 1 — панель (делегат), остальные — свои действия (`handlers`), например снимок экрана.
 final class HotKeyManager {
     fileprivate let signature: OSType = 0x4D554B53 // 'MUKS'
-    private var hotKeyRef: EventHotKeyRef?
+    private var hotKeyRefs: [UInt32: EventHotKeyRef] = [:]
     private var eventHandlerRef: EventHandlerRef?
     private weak var delegate: HotKeyDelegate?
+    /// Действия сочетаний кроме панели: номер → что сделать.
+    var handlers: [UInt32: () -> Void] = [:]
 
     init(delegate: HotKeyDelegate) {
         self.delegate = delegate
     }
 
     deinit {
-        unregister()
+        for id in hotKeyRefs.keys { unregister(identifier: id) }
         removeEventHandler()
     }
 
-    /// Регистрирует хоткей. Возвращает true при успехе.
+    /// Регистрирует хоткей под номером (прежний с тем же номером снимается). Возвращает true при успехе.
     @discardableResult
     func register(_ binding: KeyBinding, identifier: UInt32 = 1) -> Bool {
-        unregister()
+        unregister(identifier: identifier)
 
-        var hotKeyID = EventHotKeyID(signature: signature, id: identifier)
+        var hotKeyRef: EventHotKeyRef?
+        let hotKeyID = EventHotKeyID(signature: signature, id: identifier)
         let status = RegisterEventHotKey(binding.keyCode,
                                          binding.modifiers,
                                          hotKeyID,
                                          GetEventDispatcherTarget(),
                                          0,
                                          &hotKeyRef)
-        guard status == noErr else { return false }
+        guard status == noErr, let hotKeyRef else { return false }
+        hotKeyRefs[identifier] = hotKeyRef
 
         if eventHandlerRef == nil {
             var eventType = EventTypeSpec(eventClass: OSType(kEventClassKeyboard),
@@ -123,17 +129,16 @@ final class HotKeyManager {
                                                     Unmanaged.passUnretained(self).toOpaque(),
                                                     &eventHandlerRef)
             guard installStatus == noErr else {
-                unregister()
+                unregister(identifier: identifier)
                 return false
             }
         }
         return true
     }
 
-    func unregister() {
-        if let hotKeyRef {
+    func unregister(identifier: UInt32 = 1) {
+        if let hotKeyRef = hotKeyRefs.removeValue(forKey: identifier) {
             UnregisterEventHotKey(hotKeyRef)
-            self.hotKeyRef = nil
         }
     }
 
@@ -145,8 +150,7 @@ final class HotKeyManager {
     }
 
     fileprivate func handlePress(id: UInt32) {
-        _ = id
-        delegate?.hotKeyPressed()
+        if let handler = handlers[id] { handler() } else { delegate?.hotKeyPressed() }
     }
 }
 

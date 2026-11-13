@@ -18,4 +18,19 @@ final class HotKeyController {
         currentSpec = spec
         _ = manager.register(binding, identifier: 1)
     }
+
+    private static let screenshotID: UInt32 = 2
+    private var currentScreenshotSpec: String?
+
+    /// Сочетание снимка экрана (работает и когда панель скрыта); nil — выключено.
+    func rebindScreenshot(_ spec: String?, action: @escaping () -> Void) {
+        manager.handlers[Self.screenshotID] = action
+        guard spec != currentScreenshotSpec else { return }
+        currentScreenshotSpec = spec
+        guard let spec, let binding = KeyBindingParser.parse(spec) else {
+            manager.unregister(identifier: Self.screenshotID)
+            return
+        }
+        _ = manager.register(binding, identifier: Self.screenshotID)
+    }
 }

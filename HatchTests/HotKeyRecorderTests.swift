@@ -33,7 +33,10 @@ final class HotKeyRecorderTests: XCTestCase {
     func testDigitKeyWithoutCharacters() {
         // даже если characters пустой — цифра определяется по keyCode
         XCTAssertEqual(KeyChordFormatter.spec(modifiers: .command, keyCode: 19, characters: nil), "cmd-2")
-        XCTAssertEqual(KeyChordFormatter.spec(modifiers: .command, keyCode: 27, characters: nil), "cmd-0")
+        XCTAssertEqual(KeyChordFormatter.spec(modifiers: .command, keyCode: 29, characters: nil), "cmd-0")
+        // коды цифр идут не по порядку: 5 — 23, 6 — 22 (раньше ⇧⌘5 записывался как ⇧⌘6)
+        XCTAssertEqual(KeyChordFormatter.spec(modifiers: [.command, .shift], keyCode: 23, characters: nil), "cmd-shift-5")
+        XCTAssertNil(KeyChordFormatter.spec(modifiers: .command, keyCode: 27, characters: nil), "27 — минус, не цифра")
     }
 
     func testEscapeKey() {

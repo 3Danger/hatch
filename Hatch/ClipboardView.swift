@@ -287,36 +287,3 @@ final class ThumbnailCache {
         return image
     }
 }
-
-/// Картинка из буфера крупно (Space): вписана в 900 × 600, Esc или Space — закрыть.
-struct ClipImagePreview: View {
-    let url: URL
-    let caption: String
-    var pinned = false
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 5) {
-                // ⌘S в просмотре — видно, что закрепилось
-                if pinned {
-                    Image(systemName: "pin.fill")
-                        .font(.system(size: 10))
-                        .foregroundStyle(Tactile.clip)
-                }
-                Text(caption)
-                    .font(.system(size: 11.5))
-                    .foregroundStyle(.secondary)
-            }
-            .padding(.horizontal, 4)
-            if let image = NSImage(contentsOf: url) {
-                Image(nsImage: image)
-                    .resizable()
-                    .interpolation(.high)
-                    .aspectRatio(contentMode: .fit)
-                    .frame(maxWidth: 900, maxHeight: 600)
-                    .clipShape(RoundedRectangle(cornerRadius: 8))
-            }
-        }
-        .padding(10)
-    }
-}

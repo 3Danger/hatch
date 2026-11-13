@@ -12,6 +12,9 @@ struct SettingsView: View {
     @State private var exclusionDraft = ""
     /// Высота групп: на невысоком экране они прокручиваются, кнопки внизу всегда видны.
     @State private var groupsHeight: CGFloat = 0
+    /// Сочетание снимка занято самой macOS (проверяется, пока открыты настройки: его выключают там).
+    @State private var screenshotTaken = false
+    @State private var screenRecordingAllowed = CGPreflightScreenCaptureAccess()
 
     private var lang: String { settings.languageCode }
 
@@ -81,6 +84,14 @@ struct SettingsView: View {
 
             group { appRows }
             group { clipboardRows }
+            group { screenshotRows }
+                .task(id: "\(settings.screenshotsEnabled) \(settings.screenshotShortcut)") {
+                    while !Task.isCancelled {
+                        screenshotTaken = settings.screenshotsEnabled && SystemScreenshotShortcuts.isTaken(settings.screenshotShortcut)
+                        screenRecordingAllowed = CGPreflightScreenCaptureAccess()
+                        try? await Task.sleep(for: .seconds(2))
+                    }
+                }
             }
             .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { groupsHeight = $0 }
             }
@@ -557,6 +568,65 @@ extension SettingsView {
             }
             .buttonStyle(KeyCapButtonStyle(cornerRadius: 8))
             .disabled(clipboard.clips.isEmpty)
+        }
+    }
+}
+
+// MARK: - Скриншоты
+
+extension SettingsView {
+    @ViewBuilder fileprivate var screenshotRows: some View {
+        row(L.t("screenshots", lang), hint: L.t("screenshots_hint", lang), first: true) {
+            Toggle("", isOn: binding(\.screenshotsEnabled)).toggleStyle(GlassSwitchStyle()).labelsHidden()
+        }
+        if settings.screenshotsEnabled {
+            row(L.t("screenshot_shortcut", lang), hint: L.t("screenshot_shortcut_hint", lang)) {
+                HotKeyCapsField(spec: binding(\.screenshotShortcut), lang: lang)
+            }
+            if screenshotTaken {
+                lineRow {
+                    HStack(alignment: .center, spacing: 10) {
+                        Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
+                        Text(String(format: L.t("screenshot_taken", lang), SystemScreenshotShortcuts.display(settings.screenshotShortcut)))
+                            .font(.system(size: 11.5))
+                            .fixedSize(horizontal: false, vertical: true)
+                        Spacer(minLength: 8)
+                        Button { SystemScreenshotShortcuts.openKeyboardSettings() } label: {
+                            Text(L.t("screenshot_open_settings", lang))
+                                .font(.system(size: 12.5, weight: .semibold))
+                                .padding(.horizontal, 12)
+                                .frame(height: 28)
+                        }
+                        .buttonStyle(KeyCapButtonStyle(cornerRadius: 8))
+                        .fixedSize()
+                    }
+                    .padding(.vertical, 9)
+                }
+            }
+            row(L.t("screenshot_seconds", lang)) {
+                GlassStepper(value: binding(\.screenshotThumbnailSeconds), range: SettingsStore.screenshotSecondsRange)
+            }
+            row(L.t("screen_recording", lang), hint: L.t("screen_recording_hint", lang)) {
+                if screenRecordingAllowed {
+                    Label(L.t("screen_recording_ok", lang), systemImage: "checkmark")
+                        .font(.system(size: 12.5))
+                        .foregroundStyle(.green)
+                } else {
+                    Button {
+                        // первый раз macOS спросит сама; если уже отказали — открыть раздел конфиденциальности
+                        if !CGRequestScreenCaptureAccess(),
+                           let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture") {
+                            NSWorkspace.shared.open(url)
+                        }
+                    } label: {
+                        Text(L.t("screen_recording_allow", lang))
+                            .font(.system(size: 12.5, weight: .semibold))
+                            .padding(.horizontal, 12)
+                            .frame(height: 28)
+                    }
+                    .buttonStyle(KeyCapButtonStyle(cornerRadius: 8))
+                }
+            }
         }
     }
 }

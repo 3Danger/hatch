@@ -9,6 +9,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, HotKeyDelegate {
     private lazy var runner = ProcessRunner(sessionStore: sessionStore, settings: settings)
     private lazy var clipboard = ClipboardHistory(fileURL: ClipboardHistory.defaultFileURL)
     private var clipboardWatcher: ClipboardWatcher?
+    private var screenshots: ScreenshotService?
     private var hotKeyController: HotKeyController?
     private var statusItem: NSStatusItem?
     private var panelController: FloatingWindowController?
@@ -44,6 +45,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, HotKeyDelegate {
         let watcher = ClipboardWatcher(history: clipboard, settings: settings)
         watcher.start()
         clipboardWatcher = watcher
+
+        // скриншоты по сочетанию (⇧⌘4): работают и когда панель скрыта
+        let thumbnails = ScreenshotThumbnails(seconds: { [settings] in TimeInterval(settings.screenshotThumbnailSeconds) })
+        thumbnails.onOpen = { id, screen in
+            NotificationCenter.default.post(name: .hatchOpenClip, object: id,
+                                            userInfo: screen.map { ["screen": NSValue(rect: $0)] })
+        }
+        screenshots = ScreenshotService(history: clipboard, settings: settings, thumbnails: thumbnails)
+        observeScreenshotShortcut()
 
         let root = LauncherRootView()
             .environment(sessionStore)
@@ -97,6 +107,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, HotKeyDelegate {
         menu.addItem(withTitle: "Выход", action: #selector(quitApp), keyEquivalent: "q")
         item.menu = menu
         statusItem = item
+    }
+
+    /// Сочетание снимка экрана — по настройкам, сразу после их смены.
+    private func observeScreenshotShortcut() {
+        let spec = withObservationTracking {
+            settings.screenshotsEnabled ? settings.screenshotShortcut : nil
+        } onChange: { [weak self] in
+            DispatchQueue.main.async { self?.observeScreenshotShortcut() }
+        }
+        hotKeyController?.rebindScreenshot(spec) { [weak self] in
+            MainActor.assumeIsolated { self?.screenshots?.capture() }
+        }
     }
 
     /// Переключатель «Значок в строке меню» срабатывает сразу, без перезапуска.

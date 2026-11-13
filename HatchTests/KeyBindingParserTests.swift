@@ -52,6 +52,8 @@ final class KeyBindingParserTests: XCTestCase {
     }
 
     func testParseZero() {
-        XCTAssertEqual(KeyBindingParser.parse("ctrl-0")?.keyCode, 27)
+        XCTAssertEqual(KeyBindingParser.parse("ctrl-0")?.keyCode, 29)
+        XCTAssertEqual(KeyBindingParser.parse("cmd-shift-4")?.keyCode, 21)
+        XCTAssertEqual(KeyBindingParser.parse("cmd-shift-5")?.keyCode, 23)
     }
 }

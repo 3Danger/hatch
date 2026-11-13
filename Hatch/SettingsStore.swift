@@ -70,6 +70,15 @@ final class SettingsStore {
     var clipboardRecognizeText: Bool { didSet { defaults.set(clipboardRecognizeText, forKey: Keys.clipboardOCR) } }
     static let clipboardDaysRange = 1...30
     static let defaultClipboardDays = 7
+    /// Скриншоты Hatch: область экрана по сочетанию — в буфер и в историю, миниатюра справа внизу.
+    var screenshotsEnabled: Bool { didSet { defaults.set(screenshotsEnabled, forKey: Keys.screenshotsEnabled) } }
+    /// Сочетание снимка, работает и когда панель скрыта. По умолчанию ⇧⌘4 — его сначала выключают в macOS.
+    var screenshotShortcut: String { didSet { defaults.set(screenshotShortcut, forKey: Keys.screenshotShortcut) } }
+    /// Сколько секунд миниатюра снимка висит справа внизу.
+    var screenshotThumbnailSeconds: Int { didSet { defaults.set(screenshotThumbnailSeconds, forKey: Keys.screenshotSeconds) } }
+    static let defaultScreenshotShortcut = "cmd-shift-4"
+    static let screenshotSecondsRange = 3...30
+    static let defaultScreenshotSeconds = 10
     /// Приложения (bundle id), из которых скопированное не сохраняется.
     private(set) var clipboardExcludedApps: [String] { didSet { defaults.set(clipboardExcludedApps, forKey: Keys.clipboardExcluded) } }
     /// Менеджеры паролей: их копирование и так помечено скрытым, но бывают старые версии без пометки.
@@ -109,6 +118,9 @@ final class SettingsStore {
         static let clipboardExcluded = "settings.clipboardExcludedApps"
         static let clipboardImages = "settings.clipboardImages"
         static let clipboardOCR = "settings.clipboardRecognizeText"
+        static let screenshotsEnabled = "settings.screenshotsEnabled"
+        static let screenshotShortcut = "settings.screenshotShortcut"
+        static let screenshotSeconds = "settings.screenshotThumbnailSeconds"
     }
 
     init(defaults: UserDefaults = .standard) {
@@ -146,6 +158,11 @@ final class SettingsStore {
         self.clipboardExcludedApps = defaults.stringArray(forKey: Keys.clipboardExcluded) ?? Self.defaultClipboardExcludedApps
         self.clipboardImages = defaults.object(forKey: Keys.clipboardImages) as? Bool ?? true
         self.clipboardRecognizeText = defaults.object(forKey: Keys.clipboardOCR) as? Bool ?? true
+        self.screenshotsEnabled = defaults.object(forKey: Keys.screenshotsEnabled) as? Bool ?? true
+        self.screenshotShortcut = defaults.string(forKey: Keys.screenshotShortcut) ?? Self.defaultScreenshotShortcut
+        let seconds = defaults.object(forKey: Keys.screenshotSeconds) as? Int ?? Self.defaultScreenshotSeconds
+        self.screenshotThumbnailSeconds = min(max(seconds, Self.screenshotSecondsRange.lowerBound),
+                                              Self.screenshotSecondsRange.upperBound)
         let width = defaults.object(forKey: Keys.panelWidth) as? Double
         self.panelWidth = PanelSize.clampWidth(width.map { CGFloat($0) } ?? PanelSize.defaultWidth)
         let height = defaults.object(forKey: Keys.historyMaxHeight) as? Double
@@ -293,6 +310,9 @@ final class SettingsStore {
         calculatorInInput = true
         calculatorSeparator = "."
         calculatorForceSeparator = false
+        screenshotsEnabled = true
+        screenshotShortcut = Self.defaultScreenshotShortcut
+        screenshotThumbnailSeconds = Self.defaultScreenshotSeconds
         clipboardEnabled = true
         clipboardDays = Self.defaultClipboardDays
         clipboardImages = true

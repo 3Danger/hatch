@@ -53,6 +53,8 @@ struct LauncherRootView: View {
     @State private var clipSelection = 0
     /// Картинка из буфера, открытая крупно (Space, ⌘Y).
     @State private var previewClipID: UUID?
+    /// Выделение текста на картинке в просмотре (Live Text).
+    @State private var previews = ClipPreviews()
     /// Тип фрагментов в фильтре над полем (Tab, ⇧Tab, клик).
     @State private var clipKind: ClipKind = .all
     /// ⌘1 (или сочетание из настроек): дерево папок у текущей папки; счётчик — каждое нажатие.
@@ -209,6 +211,8 @@ struct LauncherRootView: View {
         content
         .onAppear {
             inputFocused = true
+            previews.onTransientGone = { previewClipID = nil }
+            previews.menuItems = { previewMenuItems(for: $0) }
             NotificationService().requestPermission()
             installKeyShortcuts()
             AppCatalog.shared.refresh()
@@ -225,6 +229,13 @@ struct LauncherRootView: View {
             guard old?.isActive ?? false, new?.isTerminal ?? true else { return }
             if old == .interactive || expandedID == interruptedID { collapse() }
         }
+        // клик по миниатюре скриншота: снимок окном просмотра, панель остаётся скрытой
+        .onReceive(NotificationCenter.default.publisher(for: .hatchOpenClip)) { note in
+            guard let id = note.object as? UUID else { return }
+            previewDetached(id, screen: (note.userInfo?["screen"] as? NSValue)?.rectValue)
+        }
+        // ⌘1 открыл или закрыл просмотр картинки — окно просмотра следом
+        .onChange(of: previewClipID) { _, id in syncPreview(id) }
         .onReceive(NotificationCenter.default.publisher(for: .hatchDidShow)) { _ in
             // панель открывается заново — в обычном режиме, с набранной командой
             if searchMode { exitSearch() }
@@ -571,38 +582,157 @@ struct LauncherRootView: View {
                           selection: clipSelection, days: settings.clipboardDays, lang: lang,
                           maxHeight: settings.historyMaxHeight, onCopy: { copyClip($0) },
                           onSelect: { clipSelection = $0 }, onInsert: { insertClip($0) },
-                          onPreview: { previewClipID = previewClipID == $0.id ? nil : $0.id },
+                          onPreview: { clip in
+                              // клик по миниатюре открытой картинки: просмотр уже закрыл сам клик мимо
+                              if previews.closedByClickJustNow(clip.id) { return }
+                              previewClipID = previewClipID == clip.id ? nil : clip.id
+                          },
                           onTogglePin: { togglePin($0) }, onDelete: deleteClip,
                           imageURL: { clipboard.imageURL($0) })
-        // ⌘1 — картинка крупно, поверх списка; ⌘1, Esc или ⌘W — закрыть.
-        // Клавиши действий те же, что у строки; правый клик — те же действия меню.
-        .hatchPopup(isPresented: Binding(get: { previewClip != nil }, set: { if !$0 { previewClipID = nil } }),
-                    placement: .overTop) { _ in
-            if let clip = previewClip, let url = clipboard.imageURL(clip), let image = clip.image {
-                PopupCard {
-                    ClipImagePreview(url: url, caption: [image.summary(lang: lang), clip.app].compactMap { $0 }.joined(separator: " · "),
-                                     pinned: clip.isPinned)
-                }
-                .contextMenu { previewMenu(clip) }
-            }
+        // ⌘1 — картинка крупно, окном над списком (см. ClipPreviewWindow); ⌘1, Esc, ⌘W или клик мимо — закрыть
+        .background(ClipPreviewAnchor(previews: previews))
+    }
+
+    /// Меню по правому клику на картинке: с выделением — сначала действия с ним, затем действия с картинкой
+    /// с их клавишами; «Удалить» — в конце, после системных пунктов Live Text.
+    private func previewMenuItems(for preview: ClipPreviewWindow) -> (leading: [NSMenuItem], trailing: [NSMenuItem]) {
+        let live = preview.model.liveText
+        let clip = clip(of: preview)
+        var leading: [NSMenuItem] = []
+        if live.hasSelection {
+            let selected = live.selectedText
+            leading.append(ClosureMenuItem(L.t("clip_menu_copy_selection", lang), key: "c", modifiers: .command) {
+                copyPreviewText(selected, from: preview)
+            })
+            leading.append(ClosureMenuItem(L.t("clip_menu_insert_selection", lang), key: "v", modifiers: .command) {
+                fromPreview(preview) { insertText(selected) }
+            })
+            leading.append(.separator())
+        }
+        leading.append(ClosureMenuItem(L.t("clip_menu_copy", lang), key: "\r") { copyPreviewImage(preview) })
+        let url = preview.model.url
+        leading.append(ClosureMenuItem(L.t("clip_menu_insert_path", lang), key: "\r", modifiers: .command) {
+            fromPreview(preview) { insertPath(url) }
+        })
+        if let text = clip?.image?.text, !text.isEmpty {
+            leading.append(ClosureMenuItem(L.t("clip_menu_copy_text", lang)) { copyPreviewText(text, from: preview) })
+        }
+        leading.append(.separator())
+        leading.append(ClosureMenuItem(L.t(preview.model.isPinned ? "clip_menu_unfloat" : "clip_menu_float", lang),
+                                       key: "s", modifiers: .command) { previews.togglePin(preview) })
+        if let clip {
+            leading.append(ClosureMenuItem(L.t(clip.isPinned ? "clip_menu_unpin" : "clip_menu_pin", lang)) { togglePin(clip) })
+        }
+        let delete = ClosureMenuItem(L.t("clip_menu_delete", lang), key: "\u{8}", modifiers: .command) {
+            deletePreviewClip(preview)
+        }
+        return (leading, [delete])
+    }
+
+    /// Фрагмент окна просмотра (могли уже удалить — тогда окно показывает только картинку).
+    private func clip(of preview: ClipPreviewWindow) -> Clip? {
+        clipboard.clips.first { $0.id == preview.model.clipID }
+    }
+
+    /// Картинку — окном просмотра без панели, по центру `screen` (видимой части экрана).
+    private func previewDetached(_ id: UUID, screen: NSRect?) {
+        guard let clip = clipboard.clips.first(where: { $0.id == id }), let model = previewModel(for: clip),
+              let visible = screen ?? NSScreen.main?.visibleFrame else { return }
+        previews.showDetached(model, lang: lang, in: visible)
+    }
+
+    private func previewModel(for clip: Clip) -> ClipPreviewModel? {
+        guard let image = clip.image, let url = clipboard.imageURL(clip), let picture = NSImage(contentsOf: url) else { return nil }
+        let caption = [image.summary(lang: lang), clip.app].compactMap { $0 }.joined(separator: " · ")
+        return ClipPreviewModel(clipID: clip.id, image: picture, url: url, caption: caption)
+    }
+
+    /// Панель открыла или закрыла просмотр (`previewClipID`) — окно следом.
+    private func syncPreview(_ id: UUID?) {
+        guard let id else { previews.closeTransient(); return }
+        if previews.transient?.model.clipID == id { return }
+        guard let clip = clipboard.clips.first(where: { $0.id == id }), let model = previewModel(for: clip) else {
+            previewClipID = nil
+            return
+        }
+        let parent = previews.anchor?.window ?? NSApp.windows.first { $0 is LauncherPanel && $0.isVisible }
+        previews.show(model, lang: lang, parent: parent)
+    }
+
+    /// Клавиши окна просмотра — и открытого из панели, и закреплённого. true — нажатие обработано.
+    private func handlePreviewKey(_ code: UInt16, _ modifiers: NSEvent.ModifierFlags, _ preview: ClipPreviewWindow) -> Bool {
+        let live = preview.model.liveText
+        let fromPanel = previews.isTransient(preview)
+        switch (code, modifiers) {
+        case (53, []), (13, .command):
+            // Esc и ⌘W: сначала снять выделение, затем закрыть. Сами: до окна Esc не доходит —
+            // его забирает слой выделения текста
+            if live.hasSelection { live.resetSelection() } else { previews.close(preview) }
+        case (12, .command) where !fromPanel:
+            // ⌘Q в закреплённом окне закрывает его (из панели ⌘Q, как везде, скрывает Hatch)
+            if live.hasSelection { live.resetSelection() } else { previews.close(preview) }
+        case (1, .command):
+            // ⌘S — закрепить окно поверх остальных или открепить
+            previews.togglePin(preview)
+        case (8, .command):
+            // ⌘C: выделенный текст, без выделения — картинка (как Enter)
+            if live.hasSelection { copyPreviewText(live.selectedText, from: preview) } else { copyPreviewImage(preview) }
+        case (36, []):
+            copyPreviewImage(preview)
+        case (9, .command):
+            // ⌘V: выделенный текст — в поле ввода
+            guard live.hasSelection else { NSSound.beep(); return true }
+            let selected = live.selectedText
+            fromPreview(preview) { insertText(selected) }
+        case (36, .command):
+            let url = preview.model.url
+            fromPreview(preview) { insertPath(url) }
+        case (0, .command):
+            // ⌘A: весь текст на картинке
+            if !live.selectAll() { NSSound.beep() }
+        case (51, .command):
+            deletePreviewClip(preview)
+        default:
+            return false
+        }
+        return true
+    }
+
+    /// Текст с картинки — в буфер. Из панели: закрывается только просмотр, Hatch остаётся, внизу тост.
+    /// Закреплённое окно остаётся, тост — на нём самом.
+    private func copyPreviewText(_ copied: String, from preview: ClipPreviewWindow) {
+        guard !copied.isEmpty else { NSSound.beep(); return }
+        Clipboard.copy(copied)
+        if previews.isTransient(preview) {
+            previews.close(preview)
+            let line = copied.split(separator: "\n").first.map(String.init) ?? copied
+            showToast(String(format: L.t("clip_text_copied", lang), line))
+        } else {
+            preview.showToast(L.t("preview_text_copied", lang))
         }
     }
 
-    /// Меню по правому клику на просмотре: действия строки с их клавишами.
-    @ViewBuilder
-    private func previewMenu(_ clip: Clip) -> some View {
-        Button(L.t("clip_menu_copy", lang)) { copyClip(clip) }
-            .keyboardShortcut(.return, modifiers: [])
-        Button(L.t("clip_menu_insert_path", lang)) { insertClip(clip) }
-            .keyboardShortcut(.return, modifiers: .command)
-        if let text = clip.image?.text, !text.isEmpty {
-            Button(L.t("clip_menu_copy_text", lang)) { copyRecognizedText(clip) }
+    /// ↩ и ⌘C без выделения: картинку — в буфер. Из панели — как ↩ в списке (Hatch скрывается),
+    /// из закреплённого окна — окно остаётся.
+    private func copyPreviewImage(_ preview: ClipPreviewWindow) {
+        if previews.isTransient(preview) {
+            if let clip = clip(of: preview) { copyClip(clip) } else { NSSound.beep() }
+            return
         }
-        Button(L.t(clip.isPinned ? "clip_menu_unpin" : "clip_menu_pin", lang)) { togglePin(clip) }
-            .keyboardShortcut("s", modifiers: .command)
-        Divider()
-        Button(L.t("clip_menu_delete", lang), role: .destructive) { deleteClip(clip) }
-            .keyboardShortcut(.delete, modifiers: .command)
+        guard Clipboard.copyImage(at: preview.model.url) else { NSSound.beep(); return }
+        preview.showToast(L.t("preview_image_copied", lang))
+    }
+
+    /// ⌘V и ⌘↩ — в поле ввода. Из закреплённого окна при скрытом Hatch — сначала показать Hatch.
+    private func fromPreview(_ preview: ClipPreviewWindow, _ insert: @escaping () -> Void) {
+        if previews.isTransient(preview) { insert(); return }
+        NotificationCenter.default.post(name: .hatchRequestShow, object: nil)
+        // показ сбрасывает режимы панели — вставляем после него
+        DispatchQueue.main.async { insert() }
+    }
+
+    private func deletePreviewClip(_ preview: ClipPreviewWindow) {
+        if let clip = clip(of: preview) { deleteClip(clip) } else { previews.close(preview) }
     }
 
     private var previewClip: Clip? {
@@ -629,6 +759,7 @@ struct LauncherRootView: View {
 
     private func deleteClip(_ clip: Clip) {
         if previewClipID == clip.id { previewClipID = nil }
+        previews.closeAll(clipID: clip.id)
         clipboard.remove(clip)
         clipSelection = min(clipSelection, max(visibleClips.count - 1, 0))
     }
@@ -678,6 +809,7 @@ struct LauncherRootView: View {
 
     private func exitClipboard() {
         guard clipboardMode else { return }
+        previewClipID = nil
         clipboardQuery = ""
         withAnimation(.easeOut(duration: 0.2)) { clipboardMode = false }
         if expandedID == nil {
@@ -701,14 +833,13 @@ struct LauncherRootView: View {
         NotificationCenter.default.post(name: .hatchRequestHide, object: nil)
     }
 
-    /// Текст, распознанный на картинке, — в буфер целиком; панель скрывается, как после «Копировать».
-    private func copyRecognizedText(_ clip: Clip) {
-        guard let text = clip.image?.text, !text.isEmpty else { NSSound.beep(); return }
-        Clipboard.copy(text)
-        let line = text.split(separator: "\n").first.map(String.init) ?? text
-        showToast(String(format: L.t("clip_copied", lang), line))
+    /// ⌘V в просмотре: выделенный на картинке текст — в поле ввода как команда.
+    private func insertText(_ selected: String) {
+        guard !selected.isEmpty else { NSSound.beep(); return }
+        previewClipID = nil
         exitClipboard()
-        NotificationCenter.default.post(name: .hatchRequestHide, object: nil)
+        text = selected.split(whereSeparator: \.isNewline).joined(separator: " ")
+        inputFocused = true
     }
 
     /// ⌘Enter: фрагмент — в поле ввода как команда (переводы строк — пробелами: поле однострочное).
@@ -717,11 +848,18 @@ struct LauncherRootView: View {
         previewClipID = nil
         exitClipboard()
         if clip.isImage, let url = clipboard.imageURL(clip) {
-            // картинка — путём к файлу, готовым для команды: `open …`, `cp … .`, `curl -F file=@…`
-            text = Self.shellEscaped(ShellCompletionEngine.normalizeHomePath(url.path))
-        } else {
-            text = clip.text.split(whereSeparator: \.isNewline).joined(separator: " ")
+            insertPath(url)
+            return
         }
+        text = clip.text.split(whereSeparator: \.isNewline).joined(separator: " ")
+        inputFocused = true
+    }
+
+    /// Картинка — путём к файлу, готовым для команды: `open …`, `cp … .`, `curl -F file=@…`.
+    private func insertPath(_ url: URL) {
+        previewClipID = nil
+        exitClipboard()
+        text = Self.shellEscaped(ShellCompletionEngine.normalizeHomePath(url.path))
         inputFocused = true
     }
 
@@ -843,6 +981,11 @@ struct LauncherRootView: View {
             // идёт запись хоткея в настройках — любое сочетание (⌘W, ⌘Q, Esc) принадлежит записи
             if HotKeyCapsField.isRecording { return event }
             let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+            // окно просмотра картинки: свои клавиши; закреплённое — само по себе, клавиши панели не для него
+            if let preview = previews.window(for: event.window) {
+                if handlePreviewKey(event.keyCode, modifiers, preview) { return nil }
+                if !previews.isTransient(preview) { return event }
+            }
             if Self.arrowKeyCodes.contains(event.keyCode),
                modifiers.subtracting([.function, .numericPad]).isEmpty {
                 return routeArrowToHistory(event) ? nil : event
@@ -865,15 +1008,11 @@ struct LauncherRootView: View {
             case (21, .command) where !showSettings:
                 toggleClipboard()
                 return nil
-            case (36, []) where clipboardMode && !showSettings && previewClip != nil:
-                // ↩ в просмотре — копировать картинку (в списке ↩ обрабатывает поле)
-                copyClip(previewClip)
-                return nil
             case (36, .command) where clipboardMode && !showSettings:
                 insertClip(activeClip)
                 return nil
             case (1, .command) where clipboardMode && !showSettings:
-                // ⌘S — закрепить или открепить: в списке и в просмотре
+                // ⌘S — закрепить или открепить выбранный фрагмент (в окне просмотра ⌘S закрепляет окно)
                 if let clip = activeClip { togglePin(clip) } else { NSSound.beep() }
                 return nil
             case (18, .command) where clipboardMode && !showSettings:

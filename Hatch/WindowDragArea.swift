@@ -6,10 +6,19 @@ import AppKit
 /// системе (`performDrag`) на этой панели срабатывали через раз, а системное «двигать за фон»
 /// (`isMovableByWindowBackground`) с SwiftUI-содержимым не работает вовсе.
 struct WindowDragArea: NSViewRepresentable {
-    func makeNSView(context: Context) -> DragView { DragView() }
-    func updateNSView(_ view: DragView, context: Context) {}
+    /// Двойной клик (окно просмотра: исходный размер картинки).
+    var onDoubleClick: (() -> Void)?
+
+    func makeNSView(context: Context) -> DragView {
+        let view = DragView()
+        view.onDoubleClick = onDoubleClick
+        return view
+    }
+
+    func updateNSView(_ view: DragView, context: Context) { view.onDoubleClick = onDoubleClick }
 
     final class DragView: NSView {
+        var onDoubleClick: (() -> Void)?
         /// Где нажали (в координатах экрана) и где тогда было окно.
         private var start: (mouse: NSPoint, origin: NSPoint)?
 
@@ -18,6 +27,7 @@ struct WindowDragArea: NSViewRepresentable {
 
         override func mouseDown(with event: NSEvent) {
             guard let window else { return }
+            if event.clickCount == 2, let onDoubleClick { onDoubleClick(); return }
             start = (NSEvent.mouseLocation, window.frame.origin)
         }
 
