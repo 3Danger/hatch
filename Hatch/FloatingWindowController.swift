@@ -148,8 +148,45 @@ final class FloatingWindowController {
         outsideClickMonitor = NSEvent.addGlobalMonitorForEvents(
             matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown]
         ) { [weak self] _ in
+            // «Разрешить» в системном запросе — не клик мимо: панель остаётся, команда, ждавшая
+            // разрешения, продолжает работать на виду
+            if Self.clickedSystemPrompt() { return }
             self?.hide()
         }
+    }
+
+    /// Системные окна, клик по которым не «мимо» панели: запросы разрешений (папки, уведомления,
+    /// универсальный доступ), пароль администратора, предупреждения о запуске приложений.
+    static let systemPromptBundleIDs: Set<String> = [
+        "com.apple.UserNotificationCenter",          // разрешения на папки, камеру, контакты…
+        "com.apple.notificationcenterui",            // запрос уведомлений
+        "com.apple.SecurityAgent",                   // пароль администратора
+        "com.apple.coreservices.uiagent",            // «приложение загружено из интернета»
+        "com.apple.accessibility.universalAccessAuthWarn", // универсальный доступ
+        "com.apple.UniversalAccessControl",
+    ]
+
+    /// Чьё окно под курсором — системный запрос? Видно только владельца окна, не его содержимое:
+    /// разрешение на запись экрана для этого не нужно.
+    private static func clickedSystemPrompt() -> Bool {
+        let windows = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID)
+            as? [[String: Any]] ?? []
+        guard let pid = windowOwner(at: NSEvent.mouseLocation, windows: windows,
+                                    primaryScreenHeight: NSScreen.screens.first?.frame.height ?? 0) else { return false }
+        return systemPromptBundleIDs.contains(NSRunningApplication(processIdentifier: pid)?.bundleIdentifier ?? "")
+    }
+
+    /// Процесс верхнего видимого окна в точке экрана. `windows` — как отдаёт CGWindowList (спереди назад,
+    /// начало координат сверху слева), `point` — как у NSEvent (снизу слева).
+    static func windowOwner(at point: NSPoint, windows: [[String: Any]], primaryScreenHeight: CGFloat) -> pid_t? {
+        let flipped = CGPoint(x: point.x, y: primaryScreenHeight - point.y)
+        for info in windows {
+            guard let boundsInfo = info[kCGWindowBounds as String] as? NSDictionary,
+                  let bounds = CGRect(dictionaryRepresentation: boundsInfo), bounds.contains(flipped) else { continue }
+            if let alpha = info[kCGWindowAlpha as String] as? Double, alpha == 0 { continue }
+            return info[kCGWindowOwnerPID as String] as? pid_t
+        }
+        return nil
     }
 
     private func removeOutsideClickMonitor() {
