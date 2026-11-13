@@ -51,6 +51,10 @@ struct LauncherRootView: View {
     @State private var clipboardQuery = ""
     /// Выбранный фрагмент (↑/↓) в отфильтрованном списке.
     @State private var clipSelection = 0
+    /// Картинка из буфера, открытая крупно (Space, ⌘Y).
+    @State private var previewClipID: UUID?
+    /// Тип фрагментов в фильтре над полем (Tab, ⇧Tab, клик).
+    @State private var clipKind: ClipKind = .all
     /// ⌘1 (или сочетание из настроек): дерево папок у текущей папки; счётчик — каждое нажатие.
     @State private var folderTreeRequest = 0
     /// Список «Избранное» (кнопка ★, ⌘E).
@@ -123,14 +127,20 @@ struct LauncherRootView: View {
 
     private var panelContent: some View {
         VStack(spacing: LauncherMetrics.padding) {
-            // где мы сейчас: светлые «крошки» над полем, обновляются при cd
-            DirectoryBreadcrumbsView(path: settings.currentDirectory,
-                                     recent: settings.recentDirectories,
-                                     favorites: settings.favoriteDirectories,
-                                     lang: lang,
-                                     onNavigate: { settings.currentDirectory = $0 },
-                                     onToggleFavorite: toggleFavoriteDirectory,
-                                     treeRequest: folderTreeRequest)
+            // где мы сейчас: светлые «крошки» над полем, обновляются при cd. В режиме буфера на их
+            // месте — фильтр по типу; оба в одной ячейке, поэтому высота строки не меняется
+            ZStack(alignment: .leading) {
+                DirectoryBreadcrumbsView(path: settings.currentDirectory,
+                                         recent: settings.recentDirectories,
+                                         favorites: settings.favoriteDirectories,
+                                         lang: lang,
+                                         onNavigate: { settings.currentDirectory = $0 },
+                                         onToggleFavorite: toggleFavoriteDirectory,
+                                         treeRequest: folderTreeRequest)
+                    .opacity(clipboardMode ? 0 : 1)
+                    .allowsHitTesting(!clipboardMode)
+                if clipboardMode { clipboardFilterBar }
+            }
                 .padding(.horizontal, 14) // по левому краю текста в поле ввода
                 .padding(.bottom, -4)     // ближе к полю, чем к краю панели
 
@@ -530,7 +540,26 @@ struct LauncherRootView: View {
     /// Поле ввода — для команды (не поиск и не буфер): подсказки, приложения, калькулятор.
     private var commandMode: Bool { !searchMode && !clipboardMode }
 
-    private var visibleClips: [Clip] { clipboard.matching(clipboardQuery) }
+    private var visibleClips: [Clip] { clipboard.matching(clipboardQuery, kind: clipKind) }
+
+    /// Над полем в режиме буфера: тип фрагментов с числами (по набранному запросу) и срок хранения.
+    private var clipboardFilterBar: some View {
+        let counts = clipboard.counts(clipboardQuery)
+        let kinds: [(ClipKind, String)] = [(.all, L.t("clip_kind_all", lang)), (.text, L.t("clip_kind_text", lang)),
+                                           (.images, L.t("clip_kind_images", lang)), (.pinned, "📌")]
+        return HStack(spacing: 8) {
+            GlassSegmented(options: kinds.map { (id: $0.0.rawValue, title: $0.1) },
+                           selection: Binding(get: { clipKind.rawValue },
+                                              set: { clipKind = ClipKind(rawValue: $0) ?? .all; clipSelection = 0 }),
+                           details: Dictionary(uniqueKeysWithValues: kinds.map { ($0.0.rawValue, "\(counts[$0.0] ?? 0)") }),
+                           compact: true)
+                .help(L.t("clip_kind_help", lang))
+            Spacer(minLength: 0)
+            Text(String(format: L.t("clip_days", lang), settings.clipboardDays))
+                .font(.system(size: 11))
+                .foregroundStyle(.tertiary)
+        }
+    }
 
     private var selectedClip: Clip? {
         let clips = visibleClips
@@ -541,7 +570,31 @@ struct LauncherRootView: View {
         ClipboardListView(clips: visibleClips, total: clipboard.clips.count, query: clipboardQuery,
                           selection: clipSelection, days: settings.clipboardDays, lang: lang,
                           maxHeight: settings.historyMaxHeight, onCopy: { copyClip($0) },
-                          onTogglePin: { clipboard.togglePin($0) }, onDelete: deleteClip)
+                          onSelect: { clipSelection = $0 }, onInsert: { insertClip($0) },
+                          onPreview: { previewClipID = previewClipID == $0.id ? nil : $0.id },
+                          onTogglePin: { clipboard.togglePin($0) }, onDelete: deleteClip,
+                          imageURL: { clipboard.imageURL($0) })
+        // Space или ⌘Y — картинка крупно, поверх списка; Esc или Space — закрыть
+        .hatchPopup(isPresented: Binding(get: { previewClip != nil }, set: { if !$0 { previewClipID = nil } }),
+                    placement: .overTop) { _ in
+            if let clip = previewClip, let url = clipboard.imageURL(clip), let image = clip.image {
+                PopupCard {
+                    ClipImagePreview(url: url, caption: [image.summary(lang: lang), clip.app].compactMap { $0 }.joined(separator: " · "))
+                }
+            }
+        }
+    }
+
+    private var previewClip: Clip? {
+        previewClipID.flatMap { id in clipboard.clips.first { $0.id == id } }
+    }
+
+    /// ⌘1 в режиме буфера: открыть или закрыть выбранную картинку крупно.
+    private func togglePreview() -> Bool {
+        if previewClipID != nil { previewClipID = nil; return true }
+        guard let clip = selectedClip, clip.isImage else { return false }
+        previewClipID = clip.id
+        return true
     }
 
     private func deleteClip(_ clip: Clip) {
@@ -569,6 +622,7 @@ struct LauncherRootView: View {
         favoritesOpen = false
         clipboardQuery = ""
         clipSelection = 0
+        clipKind = .all
         withAnimation(.easeOut(duration: 0.2)) { clipboardMode = true }
         inputFocused = true
     }
@@ -583,19 +637,35 @@ struct LauncherRootView: View {
     /// Enter или клик: фрагмент снова в буфере, панель скрывается — остаётся ⌘V там, где вы были.
     private func copyClip(_ clip: Clip?) {
         guard let clip = clip ?? selectedClip else { NSSound.beep(); return }
-        Clipboard.copy(clip.text)
-        let line = clip.text.split(separator: "\n").first.map(String.init) ?? clip.text
-        showToast(String(format: L.t("clip_copied", lang), line))
+        if let image = clip.image {
+            guard let url = clipboard.imageURL(clip), Clipboard.copyImage(at: url) else { NSSound.beep(); return }
+            showToast(String(format: L.t("clip_image_copied", lang), "\(image.width) × \(image.height)"))
+        } else {
+            Clipboard.copy(clip.text)
+            let line = clip.text.split(separator: "\n").first.map(String.init) ?? clip.text
+            showToast(String(format: L.t("clip_copied", lang), line))
+        }
         exitClipboard()
         NotificationCenter.default.post(name: .hatchRequestHide, object: nil)
     }
 
     /// ⌘Enter: фрагмент — в поле ввода как команда (переводы строк — пробелами: поле однострочное).
-    private func insertClip() {
-        guard let clip = selectedClip else { NSSound.beep(); return }
+    private func insertClip(_ chosen: Clip? = nil) {
+        guard let clip = chosen ?? selectedClip else { NSSound.beep(); return }
         exitClipboard()
-        text = clip.text.split(whereSeparator: \.isNewline).joined(separator: " ")
+        if clip.isImage, let url = clipboard.imageURL(clip) {
+            // картинка — путём к файлу, готовым для команды: `open …`, `cp … .`, `curl -F file=@…`
+            text = Self.shellEscaped(ShellCompletionEngine.normalizeHomePath(url.path))
+        } else {
+            text = clip.text.split(whereSeparator: \.isNewline).joined(separator: " ")
+        }
         inputFocused = true
+    }
+
+    /// Путь для шелла: пробелы и спецсимволы — через `\`, `~` в начале остаётся (раскрывается шеллом).
+    static func shellEscaped(_ path: String) -> String {
+        let special = Set(" '\"\\()[]{}&;<>|*?$!#`")
+        return String(path.flatMap { special.contains($0) ? ["\\", $0] : [$0] })
     }
 
     // MARK: - Приложения и калькулятор
@@ -715,7 +785,7 @@ struct LauncherRootView: View {
                 return routeArrowToHistory(event) ? nil : event
             }
             // дерево папок — сочетание из настроек (по умолчанию ⌘1), пока открыта панель
-            if !showSettings,
+            if !showSettings, !clipboardMode,
                KeyChordFormatter.matches(settings.folderTreeShortcut, modifiers: modifiers, keyCode: event.keyCode,
                                          characters: event.charactersIgnoringModifiers) {
                 favoritesOpen = false
@@ -734,6 +804,15 @@ struct LauncherRootView: View {
                 return nil
             case (36, .command) where clipboardMode && !showSettings:
                 insertClip()
+                return nil
+            case (18, .command) where clipboardMode && !showSettings:
+                // ⌘1 в буфере — картинка крупно (дерево папок здесь не нужно); не картинка — звук
+                if !togglePreview() { NSSound.beep() }
+                return nil
+            case (48, []) where clipboardMode && !showSettings, (48, .shift) where clipboardMode && !showSettings:
+                // Tab и ⇧Tab в буфере — следующий и предыдущий тип фрагментов
+                clipKind = clipKind.next(modifiers.contains(.shift) ? -1 : 1)
+                clipSelection = 0
                 return nil
             case (14, .command) where !showSettings:
                 // ⌘E в раскрытом выводе — «искать выделенное», его не трогаем

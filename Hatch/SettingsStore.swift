@@ -64,6 +64,10 @@ final class SettingsStore {
     var clipboardEnabled: Bool { didSet { defaults.set(clipboardEnabled, forKey: Keys.clipboardEnabled) } }
     /// Сколько дней хранить скопированное.
     var clipboardDays: Int { didSet { defaults.set(clipboardDays, forKey: Keys.clipboardDays) } }
+    /// Сохранять картинки (скриншоты, «Скопировать изображение»), если в буфере нет текста.
+    var clipboardImages: Bool { didSet { defaults.set(clipboardImages, forKey: Keys.clipboardImages) } }
+    /// Распознавать текст на картинках — для поиска (встроенное распознавание macOS, без сети).
+    var clipboardRecognizeText: Bool { didSet { defaults.set(clipboardRecognizeText, forKey: Keys.clipboardOCR) } }
     static let clipboardDaysRange = 1...30
     static let defaultClipboardDays = 7
     /// Приложения (bundle id), из которых скопированное не сохраняется.
@@ -103,6 +107,8 @@ final class SettingsStore {
         static let clipboardEnabled = "settings.clipboardEnabled"
         static let clipboardDays = "settings.clipboardDays"
         static let clipboardExcluded = "settings.clipboardExcludedApps"
+        static let clipboardImages = "settings.clipboardImages"
+        static let clipboardOCR = "settings.clipboardRecognizeText"
     }
 
     init(defaults: UserDefaults = .standard) {
@@ -138,6 +144,8 @@ final class SettingsStore {
         let days = defaults.object(forKey: Keys.clipboardDays) as? Int ?? Self.defaultClipboardDays
         self.clipboardDays = min(max(days, Self.clipboardDaysRange.lowerBound), Self.clipboardDaysRange.upperBound)
         self.clipboardExcludedApps = defaults.stringArray(forKey: Keys.clipboardExcluded) ?? Self.defaultClipboardExcludedApps
+        self.clipboardImages = defaults.object(forKey: Keys.clipboardImages) as? Bool ?? true
+        self.clipboardRecognizeText = defaults.object(forKey: Keys.clipboardOCR) as? Bool ?? true
         let width = defaults.object(forKey: Keys.panelWidth) as? Double
         self.panelWidth = PanelSize.clampWidth(width.map { CGFloat($0) } ?? PanelSize.defaultWidth)
         let height = defaults.object(forKey: Keys.historyMaxHeight) as? Double
@@ -287,6 +295,8 @@ final class SettingsStore {
         calculatorForceSeparator = false
         clipboardEnabled = true
         clipboardDays = Self.defaultClipboardDays
+        clipboardImages = true
+        clipboardRecognizeText = true
         folderTreeShortcut = Self.defaultFolderTreeShortcut
         panelWidth = PanelSize.defaultWidth
         historyMaxHeight = PanelSize.defaultHistoryHeight

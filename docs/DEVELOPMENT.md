@@ -71,7 +71,8 @@ node docs/demo/record.js
 - **Доступ к папкам** («Рабочий стол», «Документы») — macOS спросит, когда команда или `~/.zshrc`
   впервые обратится к защищённой папке. Пока запрос не подтверждён, команда ждёт.
 - **Буфер обмена** — Hatch раз в полсекунды сверяет счётчик изменений буфера и читает его после
-  копирования. История лежит в `~/Library/Application Support/Hatch/clipboard.json` (права 0600).
+  копирования. История лежит в `~/Library/Application Support/Hatch/clipboard.json`, картинки — PNG
+  в `clipboard-images/` рядом (права 0600). Текст на картинках распознаётся локально (Vision), без сети.
 - Сборка подписана ad-hoc, поэтому после пересборки macOS может спросить разрешения заново.
 
 ## Перенос с MacUtils
@@ -97,7 +98,7 @@ node docs/demo/record.js
 | `HistoryNavigator.swift`, `HistorySuggestion.swift` | ↑/↓ по истории, серая подсказка |
 | `QuickActions.swift`, `QuickActionLabel.swift`, `Calculator.swift` | приложения и калькулятор в поле ввода: список приложений, разбор строки, подпись справа |
 | `CommandNotFound.swift` | опечатка в имени команды: распознать «command not found», похожие имена |
-| `ClipboardHistory.swift`, `ClipboardView.swift` | буфер обмена (⌘4): слежение за копированием, хранение, список |
+| `ClipboardHistory.swift`, `ClipboardView.swift`, `TextRecognizer.swift` | буфер обмена (⌘4): слежение за копированием, хранение текста и картинок, список, распознавание текста на картинках (Vision) |
 | `DirectoryBreadcrumbsView.swift`, `FolderTreeView.swift`, `FolderTree.swift` | путь над полем ввода и дерево папок |
 | `KeyboardLayoutSwitcher.swift`, `HotKeyRecorder.swift` | латиница в поле ввода, запись сочетаний |
 | `SessionStore.swift`, `HistoryStore.swift`, `SettingsStore.swift` | состояние и хранение |

@@ -177,6 +177,10 @@ struct SettingsView: View {
 struct GlassSegmented: View {
     let options: [(id: String, title: String)]
     @Binding var selection: String
+    /// Приглушённая подпись после названия (число фрагментов в фильтре буфера).
+    var details: [String: String] = [:]
+    /// Мельче — для строки над полем ввода (фильтр буфера), той же высоты, что путь.
+    var compact = false
     @Namespace private var namespace
 
     var body: some View {
@@ -185,26 +189,31 @@ struct GlassSegmented: View {
                 let selected = option.id == selection
                 Button { withAnimation(.spring(response: 0.35, dampingFraction: 0.7)) { selection = option.id } } label: {
                     // как в макете: шрифт 13 без жирности, выбранный — белый, бегунок — колпачок
-                    Text(option.title)
-                        .font(.system(size: 13))
-                        .foregroundStyle(selected ? Tactile.keyTextHover : .secondary)
-                        .padding(.horizontal, 11)
-                        .frame(height: 26)
-                        .background {
-                            if selected {
-                                Color.clear
-                                    .tactileRaised(RoundedRectangle(cornerRadius: 7, style: .circular))
-                                    .matchedGeometryEffect(id: "segment", in: namespace)
-                            }
+                    HStack(spacing: 4) {
+                        Text(option.title)
+                            .foregroundStyle(selected ? Tactile.keyTextHover : .secondary)
+                        if let detail = details[option.id] {
+                            Text(detail).foregroundStyle(.tertiary).monospacedDigit()
                         }
-                        .contentShape(Rectangle())
+                    }
+                    .font(.system(size: compact ? 11.5 : 13))
+                    .padding(.horizontal, compact ? 8 : 11)
+                    .frame(height: compact ? 18 : 26)
+                    .background {
+                        if selected {
+                            Color.clear
+                                .tactileRaised(RoundedRectangle(cornerRadius: compact ? 5 : 7, style: .circular))
+                                .matchedGeometryEffect(id: "segment", in: namespace)
+                        }
+                    }
+                    .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .accessibilityAddTraits(selected ? .isSelected : [])
             }
         }
-        .padding(3)
-        .tactileWell(RoundedRectangle(cornerRadius: 10))
+        .padding(compact ? 2 : 3)
+        .tactileWell(RoundedRectangle(cornerRadius: compact ? 7 : 10))
     }
 }
 
@@ -498,6 +507,14 @@ extension SettingsView {
         }
         row(L.t("clipboard_days", lang), hint: L.t("clipboard_days_hint", lang)) {
             GlassStepper(value: binding(\.clipboardDays), range: SettingsStore.clipboardDaysRange)
+        }
+        row(L.t("clipboard_images", lang), hint: L.t("clipboard_images_hint", lang)) {
+            Toggle("", isOn: binding(\.clipboardImages)).toggleStyle(GlassSwitchStyle()).labelsHidden()
+        }
+        if settings.clipboardImages {
+            row(L.t("clipboard_ocr", lang), hint: L.t("clipboard_ocr_hint", lang)) {
+                Toggle("", isOn: binding(\.clipboardRecognizeText)).toggleStyle(GlassSwitchStyle()).labelsHidden()
+            }
         }
         row(L.t("clipboard_excluded", lang), hint: L.t("clipboard_excluded_hint", lang)) {
             AppPickerButton(title: L.t("clipboard_add_app", lang),

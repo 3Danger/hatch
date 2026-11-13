@@ -40,6 +40,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, HotKeyDelegate {
 
         // история буфера (⌘4): старое удаляется при запуске, дальше — при каждом копировании
         clipboard.prune(days: settings.clipboardDays)
+        clipboard.removeUnusedImageFiles() // картинки, оставшиеся от удалённых фрагментов
         let watcher = ClipboardWatcher(history: clipboard, settings: settings)
         watcher.start()
         clipboardWatcher = watcher

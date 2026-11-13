@@ -305,4 +305,17 @@ final class FocusReturnTests: XCTestCase {
         wait { self.settings.currentDirectory == "/usr" }
         XCTAssertEqual(settings.currentDirectory, "/usr", "Delete стёр «x», и Enter открыл /usr")
     }
+
+    /// ⌘1 в режиме буфера — просмотр картинки, а не дерево папок.
+    func testCommandOneInClipboardDoesNotOpenTree() throws {
+        let panel = try showPanel()
+        key(21, "4", .command, to: panel) // ⌘4
+        key(18, "1", .command, to: panel) // ⌘1: картинки не выбрано — звук, дерево не открывается
+        spin()
+        XCTAssertEqual(panel.childWindows?.count ?? 0, 0, "дерево папок не открылось")
+        key(21, "4", .command, to: panel) // обратно к командам
+        key(18, "1", .command, to: panel)
+        wait { panel.childWindows?.count == 1 }
+        XCTAssertEqual(panel.childWindows?.count, 1, "вне буфера ⌘1 — снова дерево папок")
+    }
 }
