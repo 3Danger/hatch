@@ -188,6 +188,7 @@ private struct PopupAnchor: NSViewRepresentable {
 
     func updateNSView(_ view: AnchorView, context: Context) {
         let coordinator = context.coordinator
+        let placement = placement
         view.onSecondaryClick = secondaryClickHandler(coordinator)
         coordinator.controller.onDismiss = { if isPresented { isPresented = false } }
         coordinator.controller.anchorView = view
@@ -205,7 +206,6 @@ private struct PopupAnchor: NSViewRepresentable {
         let scheme = context.environment.colorScheme
         let popupContext = PopupContext(anchorView: view, dismiss: { [weak coordinator] in coordinator?.controller.dismiss() })
         let build = content
-        let placement = placement
         let show = { [weak view] in
             guard let view, let window = view.window else { return }
             let anchor = window.convertToScreen(view.convert(view.bounds, to: nil))
