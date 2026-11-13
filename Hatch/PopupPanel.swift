@@ -180,23 +180,31 @@ private struct PopupAnchor: NSViewRepresentable {
         coordinator.controller.onDismiss = { if isPresented { isPresented = false } }
         coordinator.controller.anchorView = view
         coordinator.controller.wantsShown = isPresented
-        guard isPresented, let window = view.window else {
+        view.onAttach = nil
+        guard isPresented else {
             if coordinator.controller.isShown { coordinator.controller.dismiss() }
             return
         }
-        let anchor = window.convertToScreen(view.convert(view.bounds, to: nil))
         let scheme = context.environment.colorScheme
         let popupContext = PopupContext(anchorView: view, dismiss: { [weak coordinator] in coordinator?.controller.dismiss() })
         let build = content
-        // показываем после текущего прохода раскладки: окно меряет SwiftUI-содержимое.
-        // К тому времени элемент мог пропасть (путь стал короче) — тогда окно осталось бы без хозяина.
-        DispatchQueue.main.async { [weak view] in
-            guard coordinator.controller.wantsShown, view?.window != nil else { return }
-            coordinator.controller.present(anchor: anchor, placement: placement, mouse: coordinator.mouse,
-                                           parent: window) {
-                AnyView(build(popupContext).environment(\.colorScheme, scheme))
+        let placement = placement
+        let show = { [weak view] in
+            guard let view, let window = view.window else { return }
+            let anchor = window.convertToScreen(view.convert(view.bounds, to: nil))
+            // показываем после текущего прохода раскладки: окно меряет SwiftUI-содержимое.
+            // К тому времени элемент мог пропасть (путь стал короче) — тогда окно осталось бы без хозяина.
+            DispatchQueue.main.async { [weak view] in
+                guard coordinator.controller.wantsShown, view?.window != nil else { return }
+                coordinator.controller.present(anchor: anchor, placement: placement, mouse: coordinator.mouse,
+                                               parent: window) {
+                    AnyView(build(popupContext).environment(\.colorScheme, scheme))
+                }
             }
         }
+        // элемент только что появился и ещё не в окне (папка из-за «…», путь раскрывается) — покажем,
+        // когда встанет: иначе окно не открылось бы, пока что-нибудь ещё не обновит якорь
+        if view.window == nil { view.onAttach = show } else { show() }
     }
 
     static func dismantleNSView(_ view: AnchorView, coordinator: Coordinator) {
@@ -217,6 +225,8 @@ private struct PopupAnchor: NSViewRepresentable {
 /// открывает своё меню вместо системного.
 final class PopupAnchorView: NSView {
     var onSecondaryClick: ((NSPoint) -> Void)?
+    /// Окно надо показать, а якорь ещё не в окне — показать, как только встанет.
+    var onAttach: (() -> Void)?
     private var monitor: Any?
 
     // клики проходят насквозь: якорь только знает рамку элемента
@@ -227,6 +237,7 @@ final class PopupAnchorView: NSView {
         monitor.map(NSEvent.removeMonitor)
         monitor = nil
         guard window != nil else { return }
+        if let attach = onAttach { onAttach = nil; attach() }
         monitor = NSEvent.addLocalMonitorForEvents(matching: [.rightMouseDown, .leftMouseDown]) { [weak self] event in
             guard let self, self.handlesSecondaryClick(event) else { return event }
             self.onSecondaryClick?(NSEvent.mouseLocation)

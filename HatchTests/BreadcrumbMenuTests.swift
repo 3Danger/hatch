@@ -183,4 +183,31 @@ final class BreadcrumbMenuTests: XCTestCase {
         XCTAssertEqual(window.childWindows?.first?.frame.midX ?? 0, centers[1], accuracy: 1, "окно у usr")
         XCTAssertEqual(window.childWindows?.count, 1, "окно одно, старое закрылось")
     }
+
+    /// Длинный путь с «…»: ← раз за разом ведёт дерево по всем папкам пути, и по спрятанным за «…» тоже
+    /// (путь раскрывается). Окно у спрятанной папки не открывалось: её элемент только появлялся.
+    func testLeftArrowWalksThroughCollapsedCrumbs() throws {
+        let model = Model()
+        model.path = "/System/Library/Frameworks/AppKit.framework/Versions" // / › … › AppKit.framework › Versions
+        let host = NSHostingView(rootView: Host(model: model))
+        let window = NSPanel(contentRect: NSRect(x: 300, y: 500, width: 640, height: 60),
+                             styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+        window.contentView = host
+        window.orderFront(nil)
+        spin()
+        model.request += 1 // ⌘T — дерево у Versions
+        wait { window.childWindows?.count == 1 }
+        // AppKit.framework (путь ещё свёрнут: «/», AppKit.framework, Versions), затем спрятанные — путь целиком
+        for (step, crumb) in [(1, 1), (2, 3), (3, 2), (4, 1)] {
+            press(try XCTUnwrap(window.childWindows?.first, "шаг \(step): дерево открыто"), 123)
+            let target = { () -> CGFloat? in
+                let centers = self.crumbCenters(host, window)
+                return centers.indices.contains(crumb) ? centers[crumb] : nil
+            }
+            wait { abs((window.childWindows?.first?.frame.midX ?? 0) - (target() ?? -1)) < 1 }
+            let tree = try XCTUnwrap(window.childWindows?.first, "шаг \(step): дерево открыто")
+            XCTAssertEqual(tree.frame.midX, try XCTUnwrap(target()), accuracy: 1, "шаг \(step): дерево у своей папки")
+            XCTAssertEqual(window.childWindows?.count, 1, "шаг \(step): окно одно")
+        }
+    }
 }
