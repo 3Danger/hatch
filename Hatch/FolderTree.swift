@@ -3,7 +3,8 @@ import Foundation
 /// Дерево папок у папки пути над полем ввода — как хлебные крошки VS Code, только папки.
 /// Показывает соседей папки (содержимое её родителя), сама она выделена.
 /// Клавиши — как в дереве VS Code, кроме двух мест: Enter переходит в папку (как `cd`),
-/// а ← на верхнем уровне поднимает дерево на уровень выше.
+/// а ← на верхнем уровне поднимает дерево на уровень выше. Набор букв фильтрует видимые строки:
+/// остаются совпавшие папки и (бледно) их родители.
 struct FolderTree: Equatable {
     /// Чьи вложенные папки — верхний уровень дерева.
     private(set) var root: String
@@ -12,12 +13,8 @@ struct FolderTree: Equatable {
     private(set) var focus: String?
     /// Папка пути, к которой сейчас относится дерево (подсвечивается в пути).
     private(set) var crumb: String
-    /// Набранные буквы (переход по имени) и когда набрана последняя.
-    private(set) var typed = ""
-    private var typedAt = Date.distantPast
-
-    /// Через сколько без нажатий набор букв начинается заново.
-    static let typingPause: TimeInterval = 0.8
+    /// Набранный фильтр: в дереве остаются совпавшие папки и их родители.
+    private(set) var filter = ""
 
     struct Row: Equatable {
         let path: String
@@ -27,7 +24,16 @@ struct FolderTree: Equatable {
 
     enum Key: Equatable {
         case up, down, right, left, space
+        /// Буква в фильтр.
         case character(Character)
+        /// Стереть букву фильтра (`all` — весь фильтр).
+        case backspace(all: Bool)
+    }
+
+    /// Строка с фильтром: совпала сама или показана как родитель совпавшей (бледно).
+    struct VisibleRow: Equatable {
+        let row: Row
+        let isContext: Bool
     }
 
     /// Что сделать снаружи: перейти в папку или ничего (дерево поменялось само).
@@ -68,17 +74,52 @@ struct FolderTree: Equatable {
 
     func isExpanded(_ path: String) -> Bool { expanded.contains(path) }
 
+    /// Строки с учётом фильтра: совпавшие и родители совпавших (для понимания, где они лежат).
+    func visibleRows(_ children: Children) -> [VisibleRow] {
+        let all = rows(children)
+        guard !filter.isEmpty else { return all.map { VisibleRow(row: $0, isContext: false) } }
+        let matches = Set(all.filter { ListFilter.rank(filter, name: $0.name) != nil }.map(\.path))
+        return all.compactMap { row in
+            if matches.contains(row.path) { return VisibleRow(row: row, isContext: false) }
+            let isAncestor = matches.contains { $0.hasPrefix(row.path == "/" ? "/" : row.path + "/") }
+            return isAncestor ? VisibleRow(row: row, isContext: true) : nil
+        }
+    }
+
     // MARK: - Клавиши
 
     @discardableResult
-    mutating func handle(_ key: Key, children: Children, now: Date = Date()) -> Action {
+    mutating func handle(_ key: Key, children: Children) -> Action {
         let list = rows(children)
         guard !list.isEmpty else {
             if key == .left { liftUp() }
             return .none
         }
+        // фильтр: буквы и Backspace меняют его; стрелки ↑/↓ ходят по совпавшим;
+        // → ← и Space снимают фильтр и работают как обычно с выделенной папкой
+        switch key {
+        case .character(let character):
+            filter.append(Character(character.lowercased()))
+            focusBestMatch(list)
+            return .none
+        case .backspace(let all):
+            guard !filter.isEmpty else { return .none }
+            if all { filter = "" } else { filter.removeLast() }
+            if !filter.isEmpty { focusBestMatch(list) }
+            return .none
+        case .up, .down:
+            if !filter.isEmpty {
+                let matches = visibleRows(children).filter { !$0.isContext }.map(\.row.path)
+                guard !matches.isEmpty else { return .none }
+                let current = focus.flatMap { matches.firstIndex(of: $0) }
+                let next = key == .down ? min((current ?? -1) + 1, matches.count - 1) : max((current ?? matches.count) - 1, 0)
+                focus = matches[next]
+                return .none
+            }
+        case .right, .left, .space:
+            filter = ""
+        }
         let index = focus.flatMap { f in list.firstIndex { $0.path == f } }
-        if case .character = key {} else { typed = "" }
 
         switch key {
         case .down:
@@ -108,8 +149,8 @@ struct FolderTree: Equatable {
             guard let index else { break }
             let path = list[index].path
             if expanded.contains(path) { collapse(path) } else { expanded.insert(path) }
-        case .character(let character):
-            typeAhead(character, list: list, from: index, now: now)
+        case .character, .backspace:
+            break
         }
         return .none
     }
@@ -147,29 +188,17 @@ struct FolderTree: Equatable {
         if let focus, focus.hasPrefix(path + "/") { self.focus = path }
     }
 
-    /// Набор букв: к первой папке, имя которой начинается с набранного (дальше по списку),
-    /// иначе — где эти буквы идут по порядку (только от двух букв, как в VS Code).
-    private mutating func typeAhead(_ character: Character, list: [Row], from index: Int?, now: Date) {
-        let fresh = now.timeIntervalSince(typedAt) > Self.typingPause
-        typed = (fresh ? "" : typed) + String(character).lowercased()
-        typedAt = now
-        // первая буква ищет со следующей строки: повторное нажатие листает папки на эту букву
-        let start = (index ?? -1) + (typed.count == 1 ? 1 : 0)
-        let ordered = (0..<list.count).map { list[(max(start, 0) + $0) % list.count] }
-        let query = typed
-        if let hit = ordered.first(where: { $0.name.lowercased().hasPrefix(query) })
-            ?? (query.count > 1 ? ordered.first(where: { Self.isSubsequence(query, of: $0.name.lowercased()) }) : nil) {
-            focus = hit.path
-        }
+    /// Выделение — на лучшее совпадение фильтра (с начала имени выше), при равных — выше в дереве.
+    private mutating func focusBestMatch(_ list: [Row]) {
+        let best = ListFilter.filter(list, query: filter, name: \.name).first
+        if let best { focus = best.path }
     }
 
-    static func isSubsequence(_ query: String, of text: String) -> Bool {
-        var remaining = Substring(query)
-        for character in text where character == remaining.first {
-            remaining = remaining.dropFirst()
-            if remaining.isEmpty { return true }
-        }
-        return remaining.isEmpty
+    /// Esc: есть фильтр — очистить (true), нет — нечего (false, список закрывается).
+    mutating func clearFilter() -> Bool {
+        guard !filter.isEmpty else { return false }
+        filter = ""
+        return true
     }
 
     static func parent(of path: String) -> String {

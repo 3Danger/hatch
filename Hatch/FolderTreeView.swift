@@ -3,7 +3,7 @@ import AppKit
 
 /// Дерево папок у папки пути (клик по ней или ⌘1): соседи папки, она выделена.
 /// ↑/↓ — по строкам, → — раскрыть и войти, ← — свернуть, к родителю, на верху — уровнем выше,
-/// Space — свернуть/развернуть, буквы — к папке по имени, Enter — перейти (как `cd`),
+/// Space — свернуть/развернуть, буквы — фильтр (Backspace стирает, Esc очищает), Enter — перейти (как `cd`),
 /// ⌘←/⌘→ — дерево соседней папки пути, Esc — закрыть. Клик по имени — перейти, по шеврону — раскрыть,
 /// ⌘-клик — скопировать путь, правый клик — меню папки (те же действия, что в меню пути, FolderActions).
 struct FolderTreeView: View {
@@ -19,8 +19,6 @@ struct FolderTreeView: View {
 
     @State private var tree: FolderTree
     @State private var listing = Listing()
-    @State private var showTyped = false
-    @State private var typedToken = 0
     /// Строка под курсором: по ней правый клик открывает меню.
     @State private var hoveredRow: String?
     /// Папка, для которой открыто меню.
@@ -61,7 +59,7 @@ struct FolderTreeView: View {
         }
     }
 
-    private var rows: [FolderTree.Row] { tree.rows(listing.children) }
+    private var rows: [FolderTree.VisibleRow] { tree.visibleRows(listing.children) }
 
     /// По числу строк, дальше — прокрутка; без явной высоты окно схлопывается в полоску.
     private var listHeight: CGFloat {
@@ -94,14 +92,15 @@ struct FolderTreeView: View {
                 .lineLimit(1)
                 .truncationMode(.head)
             Spacer(minLength: 8)
-            // набранные буквы — чтобы было видно, что ищется
-            if showTyped, !tree.typed.isEmpty {
-                Text(tree.typed)
-                    .font(.system(size: 11, weight: .medium, design: .monospaced))
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 6)
-                    .background(Tactile.accent.opacity(0.35), in: RoundedRectangle(cornerRadius: 5, style: .circular))
-                    .overlay(RoundedRectangle(cornerRadius: 5, style: .circular).strokeBorder(Tactile.accent.opacity(0.7)))
+            // набранный фильтр и сколько папок совпало
+            if !tree.filter.isEmpty {
+                FilterChip(text: tree.filter)
+                Text(String(format: L.t("filter_count", lang), rows.filter { !$0.isContext }.count,
+                            tree.rows(listing.children).count))
+                    .font(.system(size: 11))
+                    .foregroundStyle(.tertiary)
+                    .monospacedDigit()
+                    .fixedSize()
             }
         }
         .padding(.horizontal, 12)
@@ -113,8 +112,17 @@ struct FolderTreeView: View {
         ScrollViewReader { proxy in
             ScrollView {
                 VStack(alignment: .leading, spacing: Self.rowSpacing) {
-                    ForEach(rows, id: \.path) { row in
-                        rowView(row).id(row.path)
+                    ForEach(rows, id: \.row.path) { visible in
+                        rowView(visible.row)
+                            .opacity(visible.isContext ? 0.45 : 1)
+                            .id(visible.row.path)
+                    }
+                    if rows.isEmpty, !tree.filter.isEmpty {
+                        Text(L.t("search_empty", lang))
+                            .font(.system(size: 12.5))
+                            .foregroundStyle(.secondary)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 8)
                     }
                 }
                 .padding(Self.padding)
@@ -199,7 +207,7 @@ struct FolderTreeView: View {
                 .contentShape(Rectangle())
                 .onTapGesture { withAnimation(.easeOut(duration: 0.12)) { tree.toggle(row.path) } }
             FolderGlyph(width: 15, height: 11)
-            Text(row.name)
+            Text(FilterChip.highlighted(row.name, tree.filter))
                 .font(.system(size: 13))
                 .lineLimit(1)
                 .truncationMode(.middle)
@@ -248,6 +256,14 @@ struct FolderTreeView: View {
     private func handle(_ press: KeyPress) -> KeyPress.Result {
         let modifiers = press.modifiers.subtracting([.numericPad, .function, .capsLock])
         let isRepeat = press.phase == .repeat
+        // Esc: сначала очистить фильтр, потом — закрыть дерево (обычный Esc окна)
+        if press.key == .escape, modifiers.isEmpty, !isRepeat {
+            return tree.clearFilter() ? .handled : .ignored
+        }
+        if FilterChip.isErase(press.key), !tree.filter.isEmpty {
+            _ = tree.handle(.backspace(all: modifiers.contains(.command)), children: listing.children)
+            return .handled
+        }
         // повтор не той клавиши поглощаем: иначе он ушёл бы панели (Enter — дважды в папку)
         if isRepeat, !Self.repeats(press.key, modifiers: modifiers) { return .handled }
         if modifiers == .command, press.key == .leftArrow || press.key == .rightArrow {
@@ -268,22 +284,11 @@ struct FolderTreeView: View {
             return .handled
         default:
             guard let character = press.characters.first, press.characters.count == 1,
-                  character.isLetter || character.isNumber || "-_.".contains(character) else { return .ignored }
+                  ListFilter.accepts(character, space: false) else { return .ignored }
             key = .character(character)
         }
         // при удержании без анимации: повторы идут чаще, чем она успевает доиграть
         withAnimation(isRepeat ? nil : .easeOut(duration: 0.12)) { _ = tree.handle(key, children: listing.children) }
-        if case .character = key { flashTyped() }
         return .handled
-    }
-
-    /// Набранные буквы видны, пока набор не сброшен паузой.
-    private func flashTyped() {
-        showTyped = true
-        typedToken += 1
-        let token = typedToken
-        DispatchQueue.main.asyncAfter(deadline: .now() + FolderTree.typingPause) {
-            if typedToken == token { showTyped = false }
-        }
     }
 }

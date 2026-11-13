@@ -723,7 +723,8 @@ struct LauncherRootView: View {
                 return nil
             }
             switch (event.keyCode, modifiers) {
-            case (53, []) where showSettings && !HotKeyCapsField.isRecording:
+            // Esc в самих настройках; во вложенном окне (выбор приложения) — сначала его фильтр и само окно
+            case (53, []) where showSettings && !HotKeyCapsField.isRecording && !(event.window?.parent is PopupPanel):
                 closeSettings()
                 return nil
             case (53, []) where !showSettings && event.window is LauncherPanel:

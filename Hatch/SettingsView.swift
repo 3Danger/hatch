@@ -455,19 +455,11 @@ extension SettingsView {
     private var newAliasControls: some View {
         HStack(spacing: 6) {
             GlassField(text: $aliasDraft, placeholder: L.t("alias_placeholder", lang), width: 90)
-            Menu {
-                ForEach(AppCatalog.shared.apps, id: \.self) { app in
-                    Button(app.title) {
-                        settings.setAlias(aliasDraft, for: app.identifier)
-                        aliasDraft = ""
-                    }
-                }
-            } label: {
-                Text(L.t("alias_pick_app", lang)).font(.system(size: 12.5))
+            AppPickerButton(title: L.t("alias_pick_app", lang), apps: AppCatalog.shared.apps,
+                            enabled: !aliasDraft.trimmingCharacters(in: .whitespaces).isEmpty, lang: lang) { app in
+                settings.setAlias(aliasDraft, for: app.identifier)
+                aliasDraft = ""
             }
-            .menuStyle(.borderlessButton)
-            .fixedSize()
-            .disabled(aliasDraft.trimmingCharacters(in: .whitespaces).isEmpty)
         }
     }
 
@@ -500,15 +492,10 @@ extension SettingsView {
             GlassStepper(value: binding(\.clipboardDays), range: SettingsStore.clipboardDaysRange)
         }
         row(L.t("clipboard_excluded", lang), hint: L.t("clipboard_excluded_hint", lang)) {
-            Menu {
-                ForEach(AppCatalog.shared.apps.filter { $0.bundleID != nil }, id: \.self) { app in
-                    Button(app.title) { settings.addClipboardExclusion(app.bundleID ?? "") }
-                }
-            } label: {
-                Text(L.t("clipboard_add_app", lang)).font(.system(size: 12.5))
+            AppPickerButton(title: L.t("clipboard_add_app", lang),
+                            apps: AppCatalog.shared.apps.filter { $0.bundleID != nil }, lang: lang) { app in
+                settings.addClipboardExclusion(app.bundleID ?? "")
             }
-            .menuStyle(.borderlessButton)
-            .fixedSize()
         }
         if !settings.clipboardExcludedApps.isEmpty {
             lineRow {

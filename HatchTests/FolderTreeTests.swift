@@ -97,26 +97,45 @@ final class FolderTreeTests: XCTestCase {
         XCTAssertEqual(tree.enter(), .navigate("/Users/me/git/go-wallets/internal"))
     }
 
-    /// Буквы: по началу имени со следующей строки; повтор листает; от двух букв — вразбивку; пауза сбрасывает.
-    func testTypeAhead() {
-        var tree = FolderTree(crumb: "/Users/me/git/hatch")
-        let t0 = Date(timeIntervalSince1970: 1000)
-        tree.handle(.character("k"), children: children, now: t0)
-        XCTAssertEqual(tree.focus, "/Users/me/git/kafka-tools")
-        tree.handle(.character("t"), children: children, now: t0.addingTimeInterval(0.3)) // «kt» — вразбивку
-        XCTAssertEqual(tree.focus, "/Users/me/git/kafka-tools")
-        XCTAssertEqual(tree.typed, "kt")
-        tree.handle(.character("g"), children: children, now: t0.addingTimeInterval(2)) // после паузы — заново
-        XCTAssertEqual(tree.typed, "g")
-        XCTAssertEqual(tree.focus, "/Users/me/git/go-wallets")
+    /// Буквы фильтруют видимые строки: совпавшие и (бледно) их родители; выделение — на лучшее совпадение.
+    func testFilterKeepsMatchesAndTheirParents() {
+        var tree = FolderTree(crumb: "/Users/me/git/go-wallets")
+        tree.handle(.right, children: children) // раскрыть go-wallets
+        tree.handle(.right, children: children) // войти в cmd
         tree.handle(.down, children: children)
-        XCTAssertEqual(tree.typed, "", "другая клавиша сбрасывает набор")
+        tree.handle(.down, children: children) // wallet
+        tree.handle(.right, children: children) // раскрыть wallet
+        tree.handle(.character("i"), children: children)
+        tree.handle(.character("n"), children: children)
+        let visible = tree.visibleRows(children)
+        XCTAssertEqual(visible.filter { !$0.isContext }.map(\.row.name), ["internal", "internal"])
+        XCTAssertEqual(visible.filter(\.isContext).map(\.row.name), ["go-wallets", "wallet"])
+        XCTAssertEqual(tree.focus, "/Users/me/git/go-wallets/internal")
+        tree.handle(.down, children: children) // ↓ — по совпавшим, мимо родителей
+        XCTAssertEqual(tree.focus, "/Users/me/git/go-wallets/wallet/internal")
     }
 
-    func testSingleLetterDoesNotMatchInsideName() {
+    func testFilterRanksNamePrefixFirstAndClears() {
         var tree = FolderTree(crumb: "/Users/me/git/hatch")
-        tree.handle(.character("w"), children: children) // «go-wallets» начинается не с w
-        XCTAssertEqual(tree.focus, "/Users/me/git/hatch")
+        tree.handle(.character("t"), children: children) // «kafka-tools» — с начала слова, «hatch» — внутри
+        XCTAssertEqual(tree.focus, "/Users/me/git/kafka-tools")
+        XCTAssertEqual(tree.filter, "t")
+        tree.handle(.backspace(all: false), children: children)
+        XCTAssertEqual(tree.filter, "")
+        tree.handle(.character("з"), children: children) // русская раскладка: «з» — это «p»
+        XCTAssertEqual(tree.filter, "з")
+        XCTAssertTrue(tree.clearFilter())
+        XCTAssertFalse(tree.clearFilter(), "второй Esc — фильтра уже нет: закрыть дерево")
+    }
+
+    /// → снимает фильтр и раскрывает выделенную папку, как без фильтра.
+    func testArrowRightLeavesFilter() {
+        var tree = FolderTree(crumb: "/Users/me/git/hatch")
+        tree.handle(.character("g"), children: children)
+        XCTAssertEqual(tree.focus, "/Users/me/git/go-wallets")
+        tree.handle(.right, children: children)
+        XCTAssertEqual(tree.filter, "")
+        XCTAssertTrue(tree.isExpanded("/Users/me/git/go-wallets"))
     }
 
     /// Где в пути папка дерева: в пути — её место; выше начала пути (выше ~) — «левее первой».

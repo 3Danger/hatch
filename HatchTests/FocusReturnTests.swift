@@ -263,4 +263,46 @@ final class FocusReturnTests: XCTestCase {
         key(125, down, [.command, .function, .numericPad], to: favorites) // уже внизу — стоп
         XCTAssertEqual(settings.favoriteDirectories, ["/tmp", "/usr"])
     }
+
+    // MARK: - Фильтр набором
+
+    /// В «Избранном» буквы фильтруют, Enter открывает найденное; Esc сначала очищает фильтр, затем закрывает.
+    func testTypingFiltersFavorites() throws {
+        let panel = try showPanel()
+        key(14, "e", .command, to: panel) // ⌘E
+        wait { panel.childWindows?.count == 1 }
+        let favorites = try XCTUnwrap(panel.childWindows?.first)
+        key(17, "t", to: favorites) // «t» — /tmp
+        key(36, "\r", to: favorites) // Enter
+        wait { self.settings.currentDirectory == "/tmp" }
+        XCTAssertEqual(settings.currentDirectory, "/tmp", "Enter открыл найденную папку, а не первую в списке")
+
+    }
+
+    func testEscapeClearsFavoritesFilterFirst() throws {
+        let panel = try showPanel()
+        key(14, "e", .command, to: panel)
+        wait { panel.childWindows?.count == 1 }
+        let favorites = try XCTUnwrap(panel.childWindows?.first)
+        key(32, "u", to: favorites)
+        key(53, "\u{1b}", to: favorites) // Esc — очистить фильтр
+        XCTAssertEqual(panel.childWindows?.count, 1, "первый Esc только очистил фильтр")
+        key(53, "\u{1b}", to: favorites) // Esc — закрыть
+        wait { (panel.childWindows?.count ?? 0) == 0 }
+        XCTAssertEqual(panel.childWindows?.count ?? 0, 0, "второй Esc закрыл избранное")
+    }
+
+    /// Delete (Backspace) стирает фильтр посимвольно: «ux» → «u» — снова находится /usr.
+    func testDeleteErasesFilterCharacter() throws {
+        let panel = try showPanel()
+        key(14, "e", .command, to: panel) // ⌘E
+        wait { panel.childWindows?.count == 1 }
+        let favorites = try XCTUnwrap(panel.childWindows?.first)
+        key(32, "u", to: favorites)
+        key(7, "x", to: favorites) // «ux» — ничего не найдено
+        key(51, "\u{7F}", to: favorites) // Delete
+        key(36, "\r", to: favorites) // Enter — /usr
+        wait { self.settings.currentDirectory == "/usr" }
+        XCTAssertEqual(settings.currentDirectory, "/usr", "Delete стёр «x», и Enter открыл /usr")
+    }
 }

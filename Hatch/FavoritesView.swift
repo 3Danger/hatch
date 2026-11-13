@@ -4,6 +4,7 @@ import SwiftUI
 /// Клик по папке — перейти в неё, как `cd`; по команде — запустить в текущей папке.
 /// ↑/↓ — выбор, Enter — применить, Esc — закрыть, ★ в строке — убрать из избранного.
 /// Порядок меняется перетаскиванием мышью и ⌘↑/⌘↓ — внутри своего раздела (папки или команды).
+/// Набор букв фильтрует оба раздела (имя папки, путь, текст команды); Esc сначала очищает фильтр.
 struct FavoritesView: View {
     let directories: [String]
     let commands: [String]
@@ -23,6 +24,8 @@ struct FavoritesView: View {
     @State private var drag: Drag?
     /// Высота строки с промежутком: на столько соседи расступаются при перетаскивании.
     @State private var rowStep: CGFloat = 46
+    /// Набранный фильтр; пока он есть, порядок не меняется (соседи в нём не настоящие).
+    @State private var filter = ""
 
     private enum Item: Hashable {
         case directory(String)
@@ -39,28 +42,56 @@ struct FavoritesView: View {
 
     private static let rowSpacing: CGFloat = 2
 
-    private var items: [Item] { directories.map(Item.directory) + commands.map(Item.command) }
+    /// Видимые строки: всё или совпавшее с фильтром, лучшие совпадения выше. `offset` — место в разделе.
+    private var shownDirectories: [(offset: Int, element: String)] {
+        ListFilter.filter(Array(directories.enumerated()), query: filter,
+                          name: { PathBreadcrumbs.folderName(for: $0.element) },
+                          extra: { ShellCompletionEngine.normalizeHomePath($0.element) })
+            .map { (offset: $0.offset, element: $0.element) }
+    }
+
+    private var shownCommands: [(offset: Int, element: String)] {
+        ListFilter.filter(Array(commands.enumerated()), query: filter, name: { $0.element })
+            .map { (offset: $0.offset, element: $0.element) }
+    }
+
+    private var items: [Item] {
+        shownDirectories.map { Item.directory($0.element) } + shownCommands.map { Item.command($0.element) }
+    }
+
+    private var filtering: Bool { !filter.isEmpty }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: Self.rowSpacing) {
-            section(L.t("fav_dirs", lang), hint: L.t("fav_dirs_hint", lang))
+        let dirs = shownDirectories
+        let cmds = shownCommands
+        return VStack(alignment: .leading, spacing: Self.rowSpacing) {
+            if filtering { filterBar(found: dirs.count + cmds.count) }
+            if !filtering || !dirs.isEmpty {
+                section(L.t("fav_dirs", lang), hint: L.t("fav_dirs_hint", lang))
+            }
             if directories.isEmpty { empty(L.t("fav_dirs_empty", lang)) }
-            ForEach(Array(directories.enumerated()), id: \.element) { index, path in
-                row(selected: selection == index, remove: { onRemoveDirectory(path) }) {
+            ForEach(Array(dirs.enumerated()), id: \.element.element) { shownIndex, entry in
+                let index = entry.offset
+                let path = entry.element
+                row(selected: selection == shownIndex, remove: { onRemoveDirectory(path) }) {
                     FolderGlyph()
                     labels(title: PathBreadcrumbs.folderName(for: path),
                            subtitle: ShellCompletionEngine.normalizeHomePath(path), mono: false)
                 }
                 .reorderable(drag: drag(for: .directories, at: index, count: directories.count),
-                             gesture: dragGesture(.directories, index: index, count: directories.count))
+                             gesture: dragGesture(.directories, index: index, count: directories.count), enabled: !filtering)
                 .onTapGesture { onGo(path) }
             }
 
-            divider
-            section(L.t("fav_cmds", lang), hint: L.t("fav_cmds_hint", lang))
+            if !filtering { divider }
+            if !filtering || !cmds.isEmpty {
+                section(L.t("fav_cmds", lang), hint: L.t("fav_cmds_hint", lang))
+            }
             if commands.isEmpty { empty(L.t("fav_cmds_empty", lang)) }
-            ForEach(Array(commands.enumerated()), id: \.element) { offset, command in
-                let index = directories.count + offset
+            ForEach(Array(cmds.enumerated()), id: \.element.element) { shownOffset, entry in
+                let offset = entry.offset
+                let command = entry.element
+                let index = dirs.count + shownOffset
                 row(selected: selection == index, remove: { onRemoveCommand(command) }) {
                     Text("›")
                         .font(.system(size: 15, weight: .medium))
@@ -71,8 +102,15 @@ struct FavoritesView: View {
                            mono: true)
                 }
                 .reorderable(drag: drag(for: .commands, at: offset, count: commands.count),
-                             gesture: dragGesture(.commands, index: offset, count: commands.count))
+                             gesture: dragGesture(.commands, index: offset, count: commands.count), enabled: !filtering)
                 .onTapGesture { onRun(command) }
+            }
+            if filtering, dirs.isEmpty, cmds.isEmpty {
+                Text(L.t("search_empty", lang))
+                    .font(.system(size: 12.5))
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 14)
             }
 
             divider
@@ -102,6 +140,9 @@ struct FavoritesView: View {
             return press.modifiers.contains(.command) ? reorder(delta) : move(delta)
         }
         .onKeyPress(.return) { apply() }
+        // набор букв фильтрует; Backspace стирает, Esc сначала очищает фильтр (затем — закрыть список)
+        .onKeyPress(phases: [.down, .repeat]) { press in type(press) }
+        .onChange(of: filter) { _, _ in selection = 0 }
         .onChange(of: items.count) { _, count in selection = min(selection, max(count - 1, 0)) }
     }
 
@@ -146,7 +187,8 @@ struct FavoritesView: View {
 
     /// ⌘↑/⌘↓: выбранная строка на одно место выше или ниже, внутри своего раздела.
     private func reorder(_ delta: Int) -> KeyPress.Result {
-        guard items.indices.contains(selection) else { return .handled }
+        // в отфильтрованном списке соседи не настоящие — порядок не трогаем
+        guard !filtering, items.indices.contains(selection) else { return .handled }
         let (section, index, count) = selection < directories.count
             ? (Section.directories, selection, directories.count)
             : (Section.commands, selection - directories.count, commands.count)
@@ -166,6 +208,41 @@ struct FavoritesView: View {
             onMoveCommand(from, to)
             selection = directories.count + to
         }
+    }
+
+    // MARK: - Фильтр
+
+    private func type(_ press: KeyPress) -> KeyPress.Result {
+        let modifiers = press.modifiers.subtracting([.shift, .capsLock, .numericPad, .function])
+        if press.key == .escape, modifiers.isEmpty {
+            guard filtering else { return .ignored } // фильтра нет — Esc закрывает список
+            filter = ""
+            return .handled
+        }
+        if FilterChip.isErase(press.key) {
+            guard filtering else { return .ignored }
+            if modifiers.contains(.command) { filter = "" } else { filter.removeLast() }
+            return .handled
+        }
+        guard modifiers.isEmpty, press.characters.count == 1, let character = press.characters.first,
+              ListFilter.accepts(character, space: true) else { return .ignored }
+        filter.append(character)
+        return .handled
+    }
+
+    /// Над списком: набранное плашкой и сколько нашлось.
+    private func filterBar(found: Int) -> some View {
+        HStack(spacing: 8) {
+            FilterChip(text: filter)
+            Spacer()
+            Text(String(format: L.t("filter_count", lang), found, directories.count + commands.count))
+                .font(.system(size: 11))
+                .foregroundStyle(.tertiary)
+                .monospacedDigit()
+        }
+        .padding(.horizontal, 10)
+        .padding(.top, 6)
+        .padding(.bottom, 2)
     }
 
     // MARK: - Вид
@@ -213,11 +290,11 @@ struct FavoritesView: View {
 
     private func labels(title: String, subtitle: String, mono: Bool) -> some View {
         VStack(alignment: .leading, spacing: 1) {
-            Text(title)
+            Text(FilterChip.highlighted(title, filter))
                 .font(mono ? .system(size: 12, weight: .medium, design: .monospaced) : .system(size: 13, weight: .semibold))
                 .lineLimit(1)
                 .truncationMode(.middle)
-            Text(subtitle)
+            Text(FilterChip.highlighted(subtitle, filter))
                 .font(.system(size: 11))
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
@@ -268,7 +345,7 @@ struct FavoritesView: View {
 private extension View {
     /// Строка, которую можно перетащить: за мышью она приподнята (тень, поверх соседей),
     /// соседи плавно расступаются.
-    func reorderable<G: Gesture>(drag: (offset: CGFloat, lifted: Bool), gesture: G) -> some View {
+    func reorderable<G: Gesture>(drag: (offset: CGFloat, lifted: Bool), gesture: G, enabled: Bool) -> some View {
         self
             .background(drag.lifted ? Tactile.menu : .clear, in: RoundedRectangle(cornerRadius: 8))
             .shadow(color: .black.opacity(drag.lifted ? 0.45 : 0), radius: 10, y: 6)
@@ -276,7 +353,7 @@ private extension View {
             .offset(y: drag.offset)
             .zIndex(drag.lifted ? 1 : 0)
             .animation(drag.lifted ? nil : .easeOut(duration: 0.15), value: drag.offset)
-            .gesture(gesture)
+            .gesture(gesture, including: enabled ? .all : .subviews)
     }
 }
 
@@ -331,5 +408,37 @@ struct PanelToastView: View {
                 .padding(.bottom, 3)
         }
         .onAppear { withAnimation(.linear(duration: PanelToast.duration)) { drained = true } }
+    }
+}
+
+/// Набранный фильтр плашкой (как набранные буквы в дереве папок) и подсветка совпадения.
+struct FilterChip: View {
+    let text: String
+
+    var body: some View {
+        Text(text)
+            .font(.system(size: 11, weight: .medium, design: .monospaced))
+            .foregroundStyle(.white)
+            .padding(.horizontal, 6)
+            .background(Tactile.accent.opacity(0.35), in: RoundedRectangle(cornerRadius: 5, style: .circular))
+            .overlay(RoundedRectangle(cornerRadius: 5, style: .circular).strokeBorder(Tactile.accent.opacity(0.7)))
+            .lineLimit(1)
+    }
+
+    /// Клавиша Delete стирает букву фильтра. На Mac она приходит символом U+007F (DEL), а не
+    /// `.delete` SwiftUI (U+0008) — сравнение только с `.delete` её не ловит. Fn+Delete тоже стирает.
+    static func isErase(_ key: KeyEquivalent) -> Bool {
+        key == .delete || key == .deleteForward || key.character == "\u{7F}"
+    }
+
+    /// Текст с подсвеченным совпадением фильтра.
+    static func highlighted(_ text: String, _ query: String) -> AttributedString {
+        var result = AttributedString(text)
+        guard let range = ListFilter.matchRange(query, in: text),
+              let lower = AttributedString.Index(range.lowerBound, within: result),
+              let upper = AttributedString.Index(range.upperBound, within: result) else { return result }
+        result[lower..<upper].backgroundColor = Tactile.accent.opacity(0.45)
+        result[lower..<upper].foregroundColor = .white
+        return result
     }
 }
