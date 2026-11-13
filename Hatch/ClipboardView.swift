@@ -2,6 +2,24 @@ import SwiftUI
 import AppKit
 import ImageIO
 
+/// Формат записи в строке списка: метка (JSON, SQL…), включено ли форматирование и строка с подсветкой.
+struct ClipSyntax {
+    /// Длиннее — в строке без подсветки (в окне просмотра — с ней).
+    static let rowLimit = 20_000
+    let label: String
+    let on: Bool
+    /// Подсветка готова (считается в фоне); nil — пока текст как есть.
+    let text: AttributedString?
+}
+
+/// Формат вывода блока команды: метка, включено ли, вывод цветами ANSI и как текст (для копирования).
+struct BlockSyntax {
+    let label: String
+    let on: Bool
+    let ansi: String?
+    let text: String?
+}
+
 /// Буфер обмена (⌘4) на месте истории команд: закреплённые группой наверху, затем недавние,
 /// выбранный — фиолетовым. Клик — выбрать, двойной клик — скопировать (как Enter), клик по миниатюре —
 /// картинка крупно. У выбранной и под курсором строки — кнопки тех же действий, что и клавиши.
@@ -24,6 +42,9 @@ struct ClipboardListView: View {
     var onDelete: (Clip) -> Void = { _ in }
     /// Файл картинки фрагмента (для миниатюры).
     var imageURL: (Clip) -> URL? = { _ in nil }
+    /// Формат текста записи (nil — обычный текст) и {} — форматировать или как есть.
+    var syntax: (Clip) -> ClipSyntax? = { _ in nil }
+    var onToggleFormat: (Clip) -> Void = { _ in }
     @State private var hovered: UUID?
 
     private var hasGroups: Bool { clips.contains(where: \.isPinned) }
@@ -46,8 +67,9 @@ struct ClipboardListView: View {
                             groupTitle(L.t("clip_recent", lang), pin: false)
                         }
                         ClipRow(clip: clip, selected: index == selection, showsActions: index == selection || hovered == clip.id,
-                                lang: lang, query: query, imageURL: imageURL(clip),
+                                lang: lang, query: query, imageURL: imageURL(clip), syntax: syntax(clip),
                                 onCopy: { onCopy(clip) }, onInsert: { onInsert(clip) },
+                                onToggleFormat: { onToggleFormat(clip) },
                                 onPreview: { onSelect(index); onPreview(clip) },
                                 onTogglePin: { onTogglePin(clip) }, onDelete: { onDelete(clip) })
                             .id(clip.id)
@@ -112,8 +134,10 @@ private struct ClipRow: View {
     let lang: String
     var query = ""
     var imageURL: URL?
+    var syntax: ClipSyntax?
     var onCopy: () -> Void = {}
     var onInsert: () -> Void = {}
+    var onToggleFormat: () -> Void = {}
     var onPreview: () -> Void = {}
     var onTogglePin: () -> Void = {}
     var onDelete: () -> Void = {}
@@ -134,6 +158,12 @@ private struct ClipRow: View {
                         .font(.system(size: 12.5, weight: .medium))
                         .lineLimit(1)
                         .truncationMode(.tail)
+                } else if let syntax, syntax.on, let text = syntax.text, query.isEmpty {
+                    // формат узнан: подсвечено, JSON и SQL — в одну строку
+                    Text(text)
+                        .font(.system(size: 12.5, design: .monospaced))
+                        .lineLimit(clip.lineCount > 1 ? 2 : 1)
+                        .truncationMode(.tail)
                 } else {
                     Text(preview)
                         .font(.system(size: 12.5, design: .monospaced))
@@ -143,6 +173,7 @@ private struct ClipRow: View {
                         .foregroundStyle(.primary)
                 }
                 HStack(spacing: 5) {
+                    if let syntax { formatLabel(syntax.label) }
                     if let app = clip.app { Text(app) }
                     if clip.app != nil { Text("·") }
                     Text(Self.relative(clip.copiedAt, lang: lang))
@@ -161,7 +192,8 @@ private struct ClipRow: View {
             if showsActions {
                 // кнопки повторяют клавиши: то же действие мышью
                 HStack(spacing: 4) {
-                    if clip.isImage { keyButton("⌘1", L.t("clip_preview", lang), perform: onPreview) }
+                    keyButton("⌘1", L.t("clip_preview", lang), perform: onPreview)
+                    if let syntax { formatButton(on: syntax.on) }
                     keyButton("↩", L.t("clip_copy", lang), perform: onCopy)
                     keyButton("⌘↩", L.t(clip.isImage ? "clip_insert_path" : "clip_insert", lang), perform: onInsert)
                     action(clip.isPinned ? "pin.slash" : "pin", help: L.t(clip.isPinned ? "clip_unpin" : "clip_pin", lang) + " (⌘S)",
@@ -174,6 +206,30 @@ private struct ClipRow: View {
         .padding(.vertical, 6)
         .background(selected ? Tactile.clip.opacity(0.18) : .clear, in: RoundedRectangle(cornerRadius: 8))
         .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(selected ? Tactile.clip.opacity(0.55) : .clear))
+    }
+
+    /// Метка формата у строки: JSON, SQL, YAML…
+    private func formatLabel(_ label: String) -> some View {
+        Text(label)
+            .font(.system(size: 9.5, weight: .semibold))
+            .foregroundStyle(Tactile.keyText)
+            .padding(.horizontal, 5)
+            .frame(height: 15)
+            .background(Tactile.keyText.opacity(0.12), in: RoundedRectangle(cornerRadius: 4))
+    }
+
+    /// {} — форматировать запись или показывать как есть (⌘R).
+    private func formatButton(on: Bool) -> some View {
+        Button(action: onToggleFormat) {
+            Text("{}")
+                .font(.system(size: 11, weight: .bold, design: .monospaced))
+                .foregroundStyle(on ? Tactile.clip : Tactile.keyText)
+                .frame(width: 26, height: 24)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(KeyCapButtonStyle(cornerRadius: 7))
+        .overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(on ? Tactile.clip.opacity(0.55) : .clear))
+        .help(L.t("format_toggle_help", lang))
     }
 
     /// Кнопка-колпачок «клавиша + подпись»: то же, что сочетание клавиш.

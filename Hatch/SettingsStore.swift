@@ -79,6 +79,22 @@ final class SettingsStore {
     static let defaultScreenshotShortcut = "cmd-shift-4"
     static let screenshotSecondsRange = 3...30
     static let defaultScreenshotSeconds = 10
+    /// Форматирование и подсветка (JSON, SQL, YAML, XML, код) в буфере и в выводе команд: новые записи и блоки
+    /// сразу отформатированы; у каждой кнопка {} (⌘R) меняет для неё.
+    var formatByDefault: Bool { didSet { defaults.set(formatByDefault, forKey: Keys.formatByDefault) } }
+    /// Какие форматы узнавать: "json", "sql", "yaml", "xml", "code" (код — только подсветка).
+    var formatKinds: [String] { didSet { defaults.set(formatKinds, forKey: Keys.formatKinds) } }
+    /// Регистр ключевых слов SQL: "upper", "lower", "preserve".
+    var sqlKeywordCase: String { didSet { defaults.set(sqlKeywordCase, forKey: Keys.sqlKeywordCase) } }
+    /// Диалект SQL для форматирования: "sql", "postgresql", "mysql", "clickhouse".
+    var sqlDialect: String { didSet { defaults.set(sqlDialect, forKey: Keys.sqlDialect) } }
+    /// Команды, вывод которых показывается как есть (`cat`, `less`).
+    private(set) var formatExcludedCommands: [String] { didSet { defaults.set(formatExcludedCommands, forKey: Keys.formatExcludedCommands) } }
+    /// Приложения (bundle id), скопированное из которых в буфере не форматируется.
+    private(set) var formatExcludedApps: [String] { didSet { defaults.set(formatExcludedApps, forKey: Keys.formatExcludedApps) } }
+    static let defaultFormatKinds = ["json", "sql", "yaml", "xml"]
+    static let defaultFormatExcludedCommands = ["cat", "less"]
+    static let sqlDialects = ["sql", "postgresql", "mysql", "clickhouse"]
     /// Приложения (bundle id), из которых скопированное не сохраняется.
     private(set) var clipboardExcludedApps: [String] { didSet { defaults.set(clipboardExcludedApps, forKey: Keys.clipboardExcluded) } }
     /// Менеджеры паролей: их копирование и так помечено скрытым, но бывают старые версии без пометки.
@@ -119,6 +135,12 @@ final class SettingsStore {
         static let clipboardImages = "settings.clipboardImages"
         static let clipboardOCR = "settings.clipboardRecognizeText"
         static let screenshotsEnabled = "settings.screenshotsEnabled"
+        static let formatByDefault = "settings.formatByDefault"
+        static let formatKinds = "settings.formatKinds"
+        static let sqlKeywordCase = "settings.sqlKeywordCase"
+        static let sqlDialect = "settings.sqlDialect"
+        static let formatExcludedCommands = "settings.formatExcludedCommands"
+        static let formatExcludedApps = "settings.formatExcludedApps"
         static let screenshotShortcut = "settings.screenshotShortcut"
         static let screenshotSeconds = "settings.screenshotThumbnailSeconds"
     }
@@ -159,6 +181,14 @@ final class SettingsStore {
         self.clipboardImages = defaults.object(forKey: Keys.clipboardImages) as? Bool ?? true
         self.clipboardRecognizeText = defaults.object(forKey: Keys.clipboardOCR) as? Bool ?? true
         self.screenshotsEnabled = defaults.object(forKey: Keys.screenshotsEnabled) as? Bool ?? true
+        self.formatByDefault = defaults.object(forKey: Keys.formatByDefault) as? Bool ?? true
+        self.formatKinds = defaults.stringArray(forKey: Keys.formatKinds) ?? Self.defaultFormatKinds
+        let keywordCase = defaults.string(forKey: Keys.sqlKeywordCase) ?? "upper"
+        self.sqlKeywordCase = ["upper", "lower", "preserve"].contains(keywordCase) ? keywordCase : "upper"
+        let dialect = defaults.string(forKey: Keys.sqlDialect) ?? "sql"
+        self.sqlDialect = Self.sqlDialects.contains(dialect) ? dialect : "sql"
+        self.formatExcludedCommands = defaults.stringArray(forKey: Keys.formatExcludedCommands) ?? Self.defaultFormatExcludedCommands
+        self.formatExcludedApps = defaults.stringArray(forKey: Keys.formatExcludedApps) ?? []
         self.screenshotShortcut = defaults.string(forKey: Keys.screenshotShortcut) ?? Self.defaultScreenshotShortcut
         let seconds = defaults.object(forKey: Keys.screenshotSeconds) as? Int ?? Self.defaultScreenshotSeconds
         self.screenshotThumbnailSeconds = min(max(seconds, Self.screenshotSecondsRange.lowerBound),
@@ -296,6 +326,45 @@ final class SettingsStore {
 
     var theme: ThemePreference? { ThemePreference(rawValue: themeRaw) }
 
+    // MARK: - Форматирование
+
+    /// Что узнавать и как форматировать. Логи из JSON-строк идут вместе с JSON.
+    var syntaxOptions: SyntaxOptions {
+        var allowed = Set(formatKinds.compactMap(SyntaxKind.init(rawValue:)))
+        if allowed.contains(.json) { allowed.insert(.jsonLines) }
+        return SyntaxOptions(allowed: allowed, sqlCase: sqlKeywordCase, sqlDialect: sqlDialect)
+    }
+
+    func toggleFormatKind(_ kind: String) {
+        if formatKinds.contains(kind) { formatKinds.removeAll { $0 == kind } } else { formatKinds.append(kind) }
+    }
+
+    /// Форматировать ли скопированное из приложения, пока у записи не нажимали {}.
+    func formatsByDefault(bundleID: String?) -> Bool {
+        formatByDefault && !(bundleID.map(formatExcludedApps.contains) ?? false)
+    }
+
+    /// Форматировать ли вывод команды, пока у блока не нажимали {}: по первому слову (`cat file.json` — нет).
+    func formatsByDefault(command: String) -> Bool {
+        let word = command.split(whereSeparator: \.isWhitespace).first.map { String($0).split(separator: "/").last.map(String.init) ?? "" } ?? ""
+        return formatByDefault && !formatExcludedCommands.contains(word)
+    }
+
+    func addFormatExcludedCommand(_ name: String) {
+        let word = name.trimmingCharacters(in: .whitespaces)
+        guard !word.isEmpty, !formatExcludedCommands.contains(word) else { return }
+        formatExcludedCommands.append(word)
+    }
+
+    func removeFormatExcludedCommand(_ name: String) { formatExcludedCommands.removeAll { $0 == name } }
+
+    func addFormatExcludedApp(_ bundleID: String) {
+        guard !bundleID.isEmpty, !formatExcludedApps.contains(bundleID) else { return }
+        formatExcludedApps.append(bundleID)
+    }
+
+    func removeFormatExcludedApp(_ bundleID: String) { formatExcludedApps.removeAll { $0 == bundleID } }
+
     func resetToDefaults() {
         hotkeyString = Self.defaultHotkey
         themeRaw = "system"
@@ -311,6 +380,12 @@ final class SettingsStore {
         calculatorSeparator = "."
         calculatorForceSeparator = false
         screenshotsEnabled = true
+        formatByDefault = true
+        formatKinds = Self.defaultFormatKinds
+        sqlKeywordCase = "upper"
+        sqlDialect = "sql"
+        formatExcludedCommands = Self.defaultFormatExcludedCommands
+        formatExcludedApps = []
         screenshotShortcut = Self.defaultScreenshotShortcut
         screenshotThumbnailSeconds = Self.defaultScreenshotSeconds
         clipboardEnabled = true

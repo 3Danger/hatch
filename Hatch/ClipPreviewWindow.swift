@@ -10,25 +10,97 @@ final class ClipPreviewPanel: NSPanel {
     override var canBecomeMain: Bool { false }
 }
 
-/// Что показывает одно окно просмотра.
+/// Что показывает одно окно просмотра: картинку или текст.
 @MainActor @Observable
 final class ClipPreviewModel {
     let clipID: UUID
-    let image: NSImage
-    /// Файл картинки: копировать её и вставлять путь.
-    let url: URL
-    /// «1440 × 900 · Терминал».
+    /// Картинка и её файл (копировать её и вставлять путь); у текста — nil.
+    let image: NSImage?
+    let url: URL?
+    /// Текст записи как есть; у картинки — nil.
+    let text: String?
+    /// «1440 × 900 · Терминал», «SQL · DBeaver».
     let caption: String
     var isPinned = false
     /// Короткое уведомление прямо на окне («Текст скопирован»): у закреплённого окна панели может не быть.
     var toast: String?
     let liveText = LiveTextController()
 
+    // MARK: текст
+    /// Узнанный формат (JSON, SQL…); nil — обычный текст, кнопки {} нет.
+    let syntaxKind: SyntaxKind?
+    let codeLanguage: String?
+    let options: SyntaxOptions
+    /// Показывать отформатированным ({} и ⌘R).
+    private(set) var formatted: Bool
+    /// Отформатированный текст с подсветкой (считается при открытии и при переключении).
+    private(set) var rendered: Highlighted?
+    /// Есть выделение в тексте — подсказки в шапке меняются.
+    var textSelectionShown = false
+    @ObservationIgnored weak var textView: NSTextView?
+
     init(clipID: UUID, image: NSImage, url: URL, caption: String) {
         self.clipID = clipID
         self.image = image
         self.url = url
+        self.text = nil
         self.caption = caption
+        self.syntaxKind = nil
+        self.codeLanguage = nil
+        self.options = SyntaxOptions(allowed: [])
+        self.formatted = false
+    }
+
+    init(clipID: UUID, text: String, caption: String, kind: SyntaxKind?, codeLanguage: String? = nil,
+         formatted: Bool, options: SyntaxOptions) {
+        self.clipID = clipID
+        self.image = nil
+        self.url = nil
+        self.text = text
+        self.caption = caption
+        self.syntaxKind = kind
+        self.codeLanguage = codeLanguage
+        self.options = options
+        self.formatted = false
+        setFormatted(formatted)
+    }
+
+    var isText: Bool { text != nil }
+
+    /// Что видно: отформатированное или как есть — это и копируется.
+    var shownText: String {
+        if formatted, let rendered { return rendered.text }
+        return text ?? ""
+    }
+
+    func setFormatted(_ on: Bool) {
+        formatted = on && syntaxKind != nil
+        if formatted, rendered == nil, let text, let syntaxKind {
+            rendered = SyntaxService.compute(text, kind: syntaxKind, mode: .full, options: options, language: codeLanguage)
+        }
+    }
+
+    /// Выделенный в окне текст.
+    var selectedText: String {
+        guard let textView else { return "" }
+        let range = textView.selectedRange()
+        guard range.length > 0 else { return "" }
+        return (textView.string as NSString).substring(with: range)
+    }
+
+    var hasTextSelection: Bool { !selectedText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+
+    func clearTextSelection() {
+        guard let textView else { return }
+        textView.setSelectedRange(NSRange(location: textView.selectedRange().location, length: 0))
+        textSelectionShown = false
+    }
+
+    func selectAllText() -> Bool {
+        guard let textView, !textView.string.isEmpty else { return false }
+        textView.selectAll(nil)
+        textSelectionShown = true
+        return true
     }
 }
 
@@ -52,14 +124,20 @@ final class ClipPreviewWindow {
 
     let model: ClipPreviewModel
     let panel: ClipPreviewPanel
-    /// Ширина к высоте картинки.
-    let ratio: CGFloat
+    /// Ширина к высоте картинки; у текста — nil (размер меняется свободно).
+    let ratio: CGFloat?
+    /// Текст: самое маленькое окно.
+    static let minTextSize = CGSize(width: 260, height: 120)
     private var toastTask: Task<Void, Never>?
 
-    init(model: ClipPreviewModel, lang: String, onTogglePin: @escaping () -> Void, onClose: @escaping () -> Void) {
+    init(model: ClipPreviewModel, lang: String, onTogglePin: @escaping () -> Void, onClose: @escaping () -> Void,
+         onToggleFormat: @escaping () -> Void = {}) {
         self.model = model
-        let size = model.image.size
-        ratio = size.width > 0 && size.height > 0 ? size.width / size.height : 16 / 10
+        if let size = model.image?.size {
+            ratio = size.width > 0 && size.height > 0 ? size.width / size.height : 16 / 10
+        } else {
+            ratio = nil
+        }
         panel = ClipPreviewPanel(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel],
                                  backing: .buffered, defer: false)
         panel.isOpaque = false
@@ -76,7 +154,7 @@ final class ClipPreviewWindow {
 
         let container = NSView()
         let hosting = NSHostingView(rootView: ClipPreviewContent(
-            model: model, lang: lang, onTogglePin: onTogglePin, onClose: onClose,
+            model: model, lang: lang, onTogglePin: onTogglePin, onClose: onClose, onToggleFormat: onToggleFormat,
             onResetSize: { [weak self] in self?.resetSize() }))
         // размер окна задаёт само окно (по картинке), а не SwiftUI
         hosting.sizingOptions = []
@@ -93,10 +171,29 @@ final class ClipPreviewWindow {
 
     /// Размер окна при открытии и по двойному клику на шапке.
     var openingSize: CGSize {
-        let fitted = LiveTextImage.fittedSize(model.image.size, in: Self.openSize)
         let visible = (panel.screen ?? NSScreen.main)?.visibleFrame.size ?? CGSize(width: 1600, height: 1000)
+        guard let ratio, let image = model.image else {
+            return Self.textSize(model.shownText, font: PreviewTextView.font(for: model), bounds: visible)
+        }
+        let fitted = LiveTextImage.fittedSize(image.size, in: Self.openSize)
         let width = Self.clampedWidth(fitted.width, ratio: ratio, bounds: visible)
         return CGSize(width: width, height: (width / ratio).rounded() + Self.headerHeight)
+    }
+
+    /// Окно текста — по тексту: по самой длинной строке (не шире 760) и по высоте (не выше 560).
+    static func textSize(_ text: String, font: NSFont, bounds: CGSize) -> CGSize {
+        let inset = PreviewTextView.inset
+        let longest = text.split(separator: "\n", omittingEmptySubsequences: false).prefix(400)
+            .map { ($0 as Substring).count }.max() ?? 0
+        let charWidth = ("M" as NSString).size(withAttributes: [.font: font]).width
+        let maxWidth = min(760, bounds.width - 40)
+        // при открытии не уже 460: в шапке видны подсказки клавиш
+        let width = min(max(CGFloat(longest) * charWidth + inset.width * 2 + 8, 460), maxWidth)
+        let attributed = NSAttributedString(string: text.count > 20_000 ? String(text.prefix(20_000)) : text,
+                                            attributes: [.font: font])
+        let textHeight = TextHeightMeasurer().height(of: attributed, width: width - inset.width * 2)
+        let height = min(max(textHeight + inset.height * 2 + headerHeight, minTextSize.height), min(560, bounds.height - 40))
+        return CGSize(width: width.rounded(), height: height.rounded())
     }
 
     /// Показать над `anchor` (рамка списка буфера на экране): по центру, верхние края вровень.
@@ -158,8 +255,23 @@ final class ClipPreviewWindow {
 
     private func resize(from start: NSRect, edges: PreviewEdges, delta: CGSize) {
         let bounds = (panel.screen ?? NSScreen.main)?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1600, height: 1000)
+        guard let ratio else {
+            panel.setFrame(Self.resizedFree(start, edges: edges, delta: delta, bounds: bounds.size), display: true)
+            return
+        }
         panel.setFrame(Self.resized(start, edges: edges, delta: delta, ratio: ratio, header: Self.headerHeight,
                                     bounds: bounds.size), display: true)
+    }
+
+    /// Текст: ширина и высота — каждая сама по себе (текст переносится по ширине); противоположный угол на месте.
+    nonisolated static func resizedFree(_ start: NSRect, edges: PreviewEdges, delta: CGSize, bounds: CGSize) -> NSRect {
+        let dx = edges.contains(.left) ? -delta.width : edges.contains(.right) ? delta.width : 0
+        let dy = edges.contains(.bottom) ? -delta.height : edges.contains(.top) ? delta.height : 0
+        let width = min(max(start.width + dx, minTextSize.width), bounds.width).rounded()
+        let height = min(max(start.height + dy, minTextSize.height), bounds.height).rounded()
+        let x = edges.contains(.left) ? start.maxX - width : start.minX
+        let y = edges.contains(.top) && !edges.contains(.bottom) ? start.minY : start.maxY - height
+        return NSRect(x: x, y: y, width: width, height: height)
     }
 
     /// Ширина картинки в пределах: не уже `minWidth`, не больше экрана ни по ширине, ни по высоте.
@@ -199,6 +311,8 @@ final class ClipPreviews {
     weak var anchor: NSView?
     /// Окно из панели закрылось само (клик мимо, скрытие панели, закрепление) — панели забыть его.
     var onTransientGone: () -> Void = {}
+    /// {} и ⌘R в окне текста: форматировать или показывать как есть.
+    var onToggleFormat: (ClipPreviewWindow) -> Void = { _ in }
     /// Меню правого клика по картинке этого окна.
     var menuItems: (ClipPreviewWindow) -> (leading: [NSMenuItem], trailing: [NSMenuItem]) = { _ in ([], []) }
     private var mouseMonitor: Any?
@@ -239,7 +353,11 @@ final class ClipPreviews {
     private func makeWindow(_ model: ClipPreviewModel, lang: String) -> ClipPreviewWindow {
         let preview = ClipPreviewWindow(model: model, lang: lang,
                                         onTogglePin: { [weak self] in self?.togglePinOfModel(model) },
-                                        onClose: { [weak self] in self?.closeModel(model) })
+                                        onClose: { [weak self] in self?.closeModel(model) },
+                                        onToggleFormat: { [weak self] in
+                                            guard let self, let preview = self.all.first(where: { $0.model === model }) else { return }
+                                            self.onToggleFormat(preview)
+                                        })
         model.liveText.menuItems = { [weak self, weak preview] in
             guard let self, let preview else { return ([], []) }
             return self.menuItems(preview)
@@ -359,13 +477,20 @@ private struct ClipPreviewContent: View {
     let lang: String
     var onTogglePin: () -> Void
     var onClose: () -> Void
+    var onToggleFormat: () -> Void = {}
     var onResetSize: () -> Void
 
     var body: some View {
         let shape = RoundedRectangle(cornerRadius: ClipPreviewWindow.cornerRadius, style: .continuous)
         VStack(spacing: 0) {
             header
-            LiveTextImage(image: model.image, controller: model.liveText)
+            Group {
+                if let image = model.image {
+                    LiveTextImage(image: image, controller: model.liveText)
+                } else {
+                    PreviewTextView(model: model)
+                }
+            }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .overlay(alignment: .bottom) {
                     if let toast = model.toast {
@@ -404,6 +529,18 @@ private struct ClipPreviewContent: View {
                 Spacer(minLength: 0)
             }
             .overlay { WindowDragArea(onDoubleClick: onResetSize) }
+            if model.syntaxKind != nil {
+                Button(action: onToggleFormat) {
+                    Text("{}")
+                        .font(.system(size: 11, weight: .bold, design: .monospaced))
+                        .foregroundStyle(model.formatted ? Tactile.clip : Color.secondary)
+                        .frame(width: 26, height: 22)
+                        .background(model.formatted ? Tactile.clip.opacity(0.16) : .clear, in: RoundedRectangle(cornerRadius: 6))
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help(L.t("format_toggle_help", lang))
+            }
             button(model.isPinned ? "pin.fill" : "pin",
                    help: L.t(model.isPinned ? "preview_unpin_help" : "preview_pin_help", lang),
                    tint: model.isPinned ? Tactile.clip : nil, perform: onTogglePin)
@@ -420,7 +557,17 @@ private struct ClipPreviewContent: View {
     /// Клавиши, которые работают прямо сейчас: с выделением — действия с текстом.
     private var hints: some View {
         let items: [(String, String)]
-        if model.liveText.selectionShown {
+        if model.isText {
+            if model.textSelectionShown {
+                items = [("⌘C", "preview_hint_copy_text"), ("⌘V", "clip_insert"), ("Esc", "preview_hint_deselect")]
+            } else {
+                var list = [("↩", "clip_copy"), ("⌘↩", "clip_insert")]
+                if model.syntaxKind != nil { list.append(("⌘R", model.formatted ? "preview_hint_raw" : "preview_hint_format")) }
+                list.append(model.isPinned ? ("⌘S", "preview_hint_unpin") : ("⌘S", "preview_hint_pin"))
+                list.append((model.isPinned ? "⌘W" : "Esc", "preview_hint_close"))
+                items = list
+            }
+        } else if model.liveText.selectionShown {
             items = [("⌘C", "preview_hint_copy_text"), ("⌘V", "clip_insert"), ("Esc", "preview_hint_deselect")]
         } else if model.isPinned {
             items = [("↩", "clip_copy"), ("⌘S", "preview_hint_unpin"), ("⌘W", "preview_hint_close")]
@@ -449,6 +596,69 @@ private struct ClipPreviewContent: View {
         }
         .buttonStyle(.plain)
         .help(help)
+    }
+}
+
+/// Текст в окне просмотра: выделяется мышью, прокручивается, переносится по ширине окна.
+/// Код — моноширинным, отформатированный — с подсветкой.
+struct PreviewTextView: NSViewRepresentable {
+    let model: ClipPreviewModel
+    static let inset = CGSize(width: 14, height: 12)
+
+    static func font(for model: ClipPreviewModel) -> NSFont {
+        model.syntaxKind == nil ? .systemFont(ofSize: 13) : .monospacedSystemFont(ofSize: 12.5, weight: .regular)
+    }
+
+    final class Coordinator: NSObject, NSTextViewDelegate {
+        var model: ClipPreviewModel?
+        var shown: (formatted: Bool, text: String)?
+
+        func textViewDidChangeSelection(_ notification: Notification) {
+            guard let model else { return }
+            MainActor.assumeIsolated {
+                let shown = model.hasTextSelection
+                if model.textSelectionShown != shown { model.textSelectionShown = shown }
+            }
+        }
+    }
+
+    func makeCoordinator() -> Coordinator { Coordinator() }
+
+    func makeNSView(context: Context) -> NSScrollView {
+        let scrollView = NSTextView.scrollableTextView()
+        scrollView.drawsBackground = false
+        scrollView.hasVerticalScroller = true
+        scrollView.autohidesScrollers = true
+        scrollView.scrollerStyle = .overlay
+        if let textView = scrollView.documentView as? NSTextView {
+            textView.isEditable = false
+            textView.isSelectable = true
+            textView.isRichText = true
+            textView.drawsBackground = false
+            textView.textContainerInset = Self.inset
+            textView.textContainer?.lineFragmentPadding = 0
+            textView.delegate = context.coordinator
+            model.textView = textView
+        }
+        context.coordinator.model = model
+        return scrollView
+    }
+
+    func updateNSView(_ scrollView: NSScrollView, context: Context) {
+        guard let textView = scrollView.documentView as? NSTextView else { return }
+        model.textView = textView
+        let text = model.shownText
+        if let shown = context.coordinator.shown, shown.formatted == model.formatted, shown.text == text { return }
+        context.coordinator.shown = (model.formatted, text)
+        let font = Self.font(for: model)
+        let attributed: NSAttributedString
+        if model.formatted, let rendered = model.rendered {
+            attributed = SyntaxRender.attributed(rendered, font: font)
+        } else {
+            attributed = NSAttributedString(string: text, attributes: [.font: font, .foregroundColor: NSColor.labelColor])
+        }
+        textView.textStorage?.setAttributedString(attributed)
+        model.textSelectionShown = false
     }
 }
 

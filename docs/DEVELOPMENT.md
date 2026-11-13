@@ -99,6 +99,7 @@ node docs/demo/record.js
 | `QuickActions.swift`, `QuickActionLabel.swift`, `Calculator.swift` | приложения и калькулятор в поле ввода: список приложений, разбор строки, подпись справа |
 | `CommandNotFound.swift` | опечатка в имени команды: распознать «command not found», похожие имена |
 | `ClipboardHistory.swift`, `ClipboardView.swift`, `TextRecognizer.swift` | буфер обмена (⌘4): слежение за копированием, хранение текста и картинок, список, распознавание текста на картинках (Vision) |
+| `Syntax/Syntax.swift`, `Syntax/SyntaxService.swift` | форматирование и подсветка: какой формат, JSON своим кодом, SQL — sql-formatter, подсветка — highlight.js (оба в JavaScriptCore, файлы `.js` рядом), запоминание результатов |
 | `Screenshots.swift` | скриншоты по сочетанию: `screencapture -i`, стопка миниатюр справа внизу, занятость сочетания в macOS |
 | `ClipPreviewWindow.swift` | окно просмотра картинки из буфера: шапка с подсказками, размер в пропорциях, закрепление поверх окон |
 | `LiveTextImage.swift` | картинка с выделением текста на ней (Live Text, VisionKit) и меню правого клика |

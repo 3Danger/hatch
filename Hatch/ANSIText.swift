@@ -6,6 +6,19 @@ import AppKit
 /// Результат кешируется по самому тексту: перерисовка того же вывода не разбирает его заново,
 /// а новый вывод — это новый текст и новый разбор, поэтому реальное время не страдает.
 enum ANSIText {
+    /// Есть ли в тексте цвета самой программы (SGR 30–38, 90–97): такой вывод Hatch не перекрашивает.
+    static func hasColor(_ text: String) -> Bool {
+        guard text.contains("\u{1B}[") else { return false }
+        let regex = try! NSRegularExpression(pattern: "\u{1B}\\[([0-9;]*)m")
+        for match in regex.matches(in: text, range: NSRange(text.startIndex..., in: text)) {
+            guard let range = Range(match.range(at: 1), in: text) else { continue }
+            if text[range].split(separator: ";").contains(where: { Int($0).map { (30...38).contains($0) || (90...97).contains($0) } ?? false }) {
+                return true
+            }
+        }
+        return false
+    }
+
     private static let escape: Character = "\u{1B}"
 
     static func strip(_ text: String) -> String {

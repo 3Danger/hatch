@@ -213,6 +213,7 @@ struct LauncherRootView: View {
             inputFocused = true
             previews.onTransientGone = { previewClipID = nil }
             previews.menuItems = { previewMenuItems(for: $0) }
+            previews.onToggleFormat = { togglePreviewFormat($0) }
             NotificationService().requestPermission()
             installKeyShortcuts()
             AppCatalog.shared.refresh()
@@ -431,7 +432,9 @@ struct LauncherRootView: View {
                 }
             },
             // шаг применили Enter-ом или отменили Esc у свёрнутого блока — печатать дальше в поле ввода
-            onStageEditEnded: { if expandedID == nil { inputFocused = true } }
+            onStageEditEnded: { if expandedID == nil { inputFocused = true } },
+            blockSyntax: { blockSyntax($0) },
+            onToggleFormat: { toggleBlockFormat($0) }
         )
     }
 
@@ -588,7 +591,8 @@ struct LauncherRootView: View {
                               previewClipID = previewClipID == clip.id ? nil : clip.id
                           },
                           onTogglePin: { togglePin($0) }, onDelete: deleteClip,
-                          imageURL: { clipboard.imageURL($0) })
+                          imageURL: { clipboard.imageURL($0) },
+                          syntax: { clipSyntax($0) }, onToggleFormat: { toggleClipFormat($0) })
         // ⌘1 — картинка крупно, окном над списком (см. ClipPreviewWindow); ⌘1, Esc, ⌘W или клик мимо — закрыть
         .background(ClipPreviewAnchor(previews: previews))
     }
@@ -596,6 +600,8 @@ struct LauncherRootView: View {
     /// Меню по правому клику на картинке: с выделением — сначала действия с ним, затем действия с картинкой
     /// с их клавишами; «Удалить» — в конце, после системных пунктов Live Text.
     private func previewMenuItems(for preview: ClipPreviewWindow) -> (leading: [NSMenuItem], trailing: [NSMenuItem]) {
+        // у текста своё меню — системное меню текстового поля
+        guard let url = preview.model.url else { return ([], []) }
         let live = preview.model.liveText
         let clip = clip(of: preview)
         var leading: [NSMenuItem] = []
@@ -610,7 +616,6 @@ struct LauncherRootView: View {
             leading.append(.separator())
         }
         leading.append(ClosureMenuItem(L.t("clip_menu_copy", lang), key: "\r") { copyPreviewImage(preview) })
-        let url = preview.model.url
         leading.append(ClosureMenuItem(L.t("clip_menu_insert_path", lang), key: "\r", modifiers: .command) {
             fromPreview(preview) { insertPath(url) }
         })
@@ -642,6 +647,19 @@ struct LauncherRootView: View {
     }
 
     private func previewModel(for clip: Clip) -> ClipPreviewModel? {
+        if !clip.isImage {
+            // текст: формат узнан — отформатирован (как в настройках или по {} у записи)
+            let options = settings.syntaxOptions
+            let syntax = SyntaxService.shared
+            let kind = syntax.kind(of: clip.text, options: options)
+            let language = kind == .code ? syntax.codeLanguage(of: clip.text) : nil
+            let what = kind.map { $0.label(code: language) }
+                ?? L.t("preview_text", lang) + " · " + String(format: L.t("clip_lines", lang), clip.lineCount)
+            let caption = [what, clip.app].compactMap { $0 }.joined(separator: " · ")
+            return ClipPreviewModel(clipID: clip.id, text: clip.text, caption: caption, kind: kind, codeLanguage: language,
+                                    formatted: clip.formatted ?? settings.formatsByDefault(bundleID: clip.bundleID),
+                                    options: options)
+        }
         guard let image = clip.image, let url = clipboard.imageURL(clip), let picture = NSImage(contentsOf: url) else { return nil }
         let caption = [image.summary(lang: lang), clip.app].compactMap { $0 }.joined(separator: " · ")
         return ClipPreviewModel(clipID: clip.id, image: picture, url: url, caption: caption)
@@ -661,6 +679,7 @@ struct LauncherRootView: View {
 
     /// Клавиши окна просмотра — и открытого из панели, и закреплённого. true — нажатие обработано.
     private func handlePreviewKey(_ code: UInt16, _ modifiers: NSEvent.ModifierFlags, _ preview: ClipPreviewWindow) -> Bool {
+        if preview.model.isText { return handleTextPreviewKey(code, modifiers, preview) }
         let live = preview.model.liveText
         let fromPanel = previews.isTransient(preview)
         switch (code, modifiers) {
@@ -685,7 +704,7 @@ struct LauncherRootView: View {
             let selected = live.selectedText
             fromPreview(preview) { insertText(selected) }
         case (36, .command):
-            let url = preview.model.url
+            guard let url = preview.model.url else { NSSound.beep(); return true }
             fromPreview(preview) { insertPath(url) }
         case (0, .command):
             // ⌘A: весь текст на картинке
@@ -696,6 +715,89 @@ struct LauncherRootView: View {
             return false
         }
         return true
+    }
+
+    /// Клавиши окна текста: то же, что у картинки; ↩ и ⌘C без выделения — то, что видно, ⌘R — {}.
+    private func handleTextPreviewKey(_ code: UInt16, _ modifiers: NSEvent.ModifierFlags, _ preview: ClipPreviewWindow) -> Bool {
+        let model = preview.model
+        let fromPanel = previews.isTransient(preview)
+        switch (code, modifiers) {
+        case (53, []), (13, .command):
+            if model.hasTextSelection { model.clearTextSelection() } else { previews.close(preview) }
+        case (12, .command) where !fromPanel:
+            if model.hasTextSelection { model.clearTextSelection() } else { previews.close(preview) }
+        case (1, .command):
+            previews.togglePin(preview)
+        case (8, .command):
+            // ⌘C: выделенное; без выделения — весь текст, как он виден
+            copyPreviewText(model.hasTextSelection ? model.selectedText : model.shownText, from: preview)
+        case (36, []):
+            copyShownText(preview)
+        case (9, .command):
+            guard model.hasTextSelection else { NSSound.beep(); return true }
+            let selected = model.selectedText
+            fromPreview(preview) { insertText(selected) }
+        case (36, .command):
+            let text = model.text ?? ""
+            fromPreview(preview) { insertText(text) }
+        case (0, .command):
+            if !model.selectAllText() { NSSound.beep() }
+        case (15, .command):
+            // ⌘R — форматировать или как есть
+            if model.syntaxKind == nil { NSSound.beep() } else { togglePreviewFormat(preview) }
+        case (51, .command):
+            deletePreviewClip(preview)
+        default:
+            return false
+        }
+        return true
+    }
+
+    /// ↩ в окне текста: весь текст, как он виден. Из панели — как ↩ в списке (Hatch скрывается).
+    private func copyShownText(_ preview: ClipPreviewWindow) {
+        let text = preview.model.shownText
+        guard !text.isEmpty else { NSSound.beep(); return }
+        guard previews.isTransient(preview) else {
+            Clipboard.copy(text)
+            preview.showToast(L.t("preview_text_copied", lang))
+            return
+        }
+        previews.close(preview)
+        Clipboard.copy(text)
+        let line = text.split(separator: "\n").first.map(String.init) ?? text
+        showToast(String(format: L.t("clip_copied", lang), line))
+        exitClipboard()
+        hidePanel()
+    }
+
+    /// {} и ⌘R: у записи — форматировать или как есть (запоминается в записи).
+    private func togglePreviewFormat(_ preview: ClipPreviewWindow) {
+        let on = !preview.model.formatted
+        preview.model.setFormatted(on)
+        clipboard.setFormatted(on, for: preview.model.clipID)
+    }
+
+    /// {} у строки списка и ⌘R в буфере.
+    private func toggleClipFormat(_ clip: Clip) {
+        let on = !clipFormatted(clip)
+        clipboard.setFormatted(on, for: clip.id)
+        previews.all.filter { $0.model.clipID == clip.id && $0.model.isText }.forEach { $0.model.setFormatted(on) }
+    }
+
+    private func clipFormatted(_ clip: Clip) -> Bool {
+        clip.formatted ?? settings.formatsByDefault(bundleID: clip.bundleID)
+    }
+
+    /// Формат строки списка: метка, включено ли, и строка с подсветкой (когда готова).
+    private func clipSyntax(_ clip: Clip) -> ClipSyntax? {
+        guard !clip.isImage, clip.text.utf8.count <= ClipSyntax.rowLimit else { return nil }
+        let options = settings.syntaxOptions
+        let syntax = SyntaxService.shared
+        guard let kind = syntax.kind(of: clip.text, options: options) else { return nil }
+        let language = kind == .code ? syntax.codeLanguage(of: clip.text) : nil
+        let on = clipFormatted(clip)
+        let compact = on ? syntax.rendered(clip.text, kind: kind, mode: .compact, options: options).map(SyntaxRender.swiftUI) : nil
+        return ClipSyntax(label: kind.label(code: language), on: on, text: compact)
     }
 
     /// Текст с картинки — в буфер. Из панели: закрывается только просмотр, Hatch остаётся, внизу тост.
@@ -719,7 +821,7 @@ struct LauncherRootView: View {
             if let clip = clip(of: preview) { copyClip(clip) } else { NSSound.beep() }
             return
         }
-        guard Clipboard.copyImage(at: preview.model.url) else { NSSound.beep(); return }
+        guard let url = preview.model.url, Clipboard.copyImage(at: url) else { NSSound.beep(); return }
         preview.showToast(L.t("preview_image_copied", lang))
     }
 
@@ -739,10 +841,10 @@ struct LauncherRootView: View {
         previewClipID.flatMap { id in clipboard.clips.first { $0.id == id } }
     }
 
-    /// ⌘1 в режиме буфера: открыть или закрыть выбранную картинку крупно.
+    /// ⌘1 в режиме буфера: открыть или закрыть выбранную запись крупно — картинку или текст.
     private func togglePreview() -> Bool {
         if previewClipID != nil { previewClipID = nil; return true }
-        guard let clip = selectedClip, clip.isImage else { return false }
+        guard let clip = selectedClip else { return false }
         previewClipID = clip.id
         return true
     }
@@ -983,6 +1085,8 @@ struct LauncherRootView: View {
             let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
             // окно просмотра картинки: свои клавиши; закреплённое — само по себе, клавиши панели не для него
             if let preview = previews.window(for: event.window) {
+                // стрелки — окну (прокрутка текста), а не списку под ним
+                if Self.arrowKeyCodes.contains(event.keyCode) { return event }
                 if handlePreviewKey(event.keyCode, modifiers, preview) { return nil }
                 if !previews.isTransient(preview) { return event }
             }
@@ -1034,6 +1138,19 @@ struct LauncherRootView: View {
                 return nil
             case (37, .control) where clipboardMode && !showSettings:
                 clearClipboard()
+                return nil
+            case (15, .command) where clipboardMode && !showSettings:
+                // ⌘R — у выбранной записи: форматировать или как есть
+                if let clip = selectedClip, clipSyntax(clip) != nil { toggleClipFormat(clip) } else { NSSound.beep() }
+                return nil
+            case (15, .command) where !showSettings && !searchMode:
+                // ⌘R — у раскрытого, выбранного стрелками или последнего блока
+                let id = expandedID ?? navigator.selectedID ?? sessionStore.filteredSessions.first?.id
+                if let session = sessionStore.filteredSessions.first(where: { $0.id == id }), blockSyntax(session) != nil {
+                    toggleBlockFormat(session)
+                } else {
+                    NSSound.beep()
+                }
                 return nil
             case (51, .command) where clipboardMode && !showSettings:
                 // ⌘⌫ в буфере — удалить выбранный фрагмент (или открытый крупно)
@@ -1206,8 +1323,34 @@ struct LauncherRootView: View {
         }
     }
 
+    /// Формат вывода завершённой команды: JSON, YAML, XML (вывод с цветами самой программы — как есть).
+    private func blockSyntax(_ session: Session) -> BlockSyntax? {
+        guard session.state.isTerminal, session.outputDropped == nil, !session.output.isEmpty,
+              !(session.outputANSI.map(ANSIText.hasColor) ?? false) else { return nil }
+        var options = settings.syntaxOptions
+        options.allowed.formIntersection([.json, .jsonLines, .yaml, .xml])
+        let syntax = SyntaxService.shared
+        guard let kind = syntax.kind(of: session.output, options: options) else { return nil }
+        let on = session.formatted ?? settings.formatsByDefault(command: session.command)
+        guard on else { return BlockSyntax(label: kind.label(code: nil), on: false, ansi: nil, text: nil) }
+        return BlockSyntax(label: kind.label(code: nil), on: true,
+                           ansi: syntax.renderedANSI(session.output, kind: kind, options: options),
+                           text: syntax.rendered(session.output, kind: kind, mode: .full, options: options)?.text)
+    }
+
+    /// {} у блока и ⌘R: форматировать вывод или показывать как есть (запоминается в блоке).
+    private func toggleBlockFormat(_ session: Session) {
+        let on = !(session.formatted ?? settings.formatsByDefault(command: session.command))
+        sessionStore.update(id: session.id) { $0.formatted = on }
+    }
+
     /// Без цвета; у работающей команды — весь экран, а не превью.
     private func copyOutput(_ session: Session) {
+        // отформатированный вывод копируется таким, каким виден
+        if let syntax = blockSyntax(session), syntax.on, let shown = syntax.text {
+            Clipboard.copy(shown)
+            return
+        }
         let text = runner.terminal(for: session.id)?.snapshot().plain ?? session.output
         Clipboard.copy(text)
     }
@@ -1253,6 +1396,9 @@ struct HistoryListView: View {
     var onOpenDirectory: (String) -> Void = { _ in }
     var onPipeChange: (Session, PipeChange) -> Void = { _, _ in }
     var onStageEditEnded: () -> Void = {}
+    /// Формат вывода блока (JSON, YAML, XML) и {} — форматировать или как есть.
+    var blockSyntax: (Session) -> BlockSyntax? = { _ in nil }
+    var onToggleFormat: (Session) -> Void = { _ in }
 
     var body: some View {
         if sessionStore.filteredSessions.isEmpty {
@@ -1289,7 +1435,9 @@ struct HistoryListView: View {
                                          onOpenDirectory: onOpenDirectory,
                                          onPipeChange: { onPipeChange(session, $0) },
                                          onStageEditEnded: onStageEditEnded,
-                                         stageHistory: stageHistory)
+                                         stageHistory: stageHistory,
+                                         syntax: blockSyntax(session),
+                                         onToggleFormat: { onToggleFormat(session) })
                         .id(session.id)
                         .zIndex(session.id == expandedID ? 1 : 0)
                         .transition(.layersBlock)
@@ -1393,6 +1541,9 @@ struct SessionBlockView: View {
     var onStageEditEnded: () -> Void = {}
     /// Применявшиеся шаги конвейера (по всем блокам) — первые в подсказках.
     var stageHistory: [String] = []
+    /// Вывод — JSON, YAML или XML: отформатирован и подсвечен (кнопка {} — как есть).
+    var syntax: BlockSyntax?
+    var onToggleFormat: () -> Void = {}
     /// Какой шаг конвейера редактируется: индекс, `pipeline.count` — новый шаг, nil — никакой.
     @State private var editingStage: Int?
     @State private var stageDraft = ""
@@ -1533,8 +1684,21 @@ struct SessionBlockView: View {
         let run: () -> Void
     }
 
+    /// Что показывать: отформатированный вывод (цветами ANSI) или как есть.
+    private var shownOutput: String {
+        if let syntax, syntax.on, let ansi = syntax.ansi { return ansi }
+        return session.outputANSI ?? session.output
+    }
+
+    private var shownIsANSI: Bool { session.outputANSI != nil || (syntax?.on == true && syntax?.ansi != nil) }
+
     private var blockActions: [BlockAction] {
-        var list = [
+        var list: [BlockAction] = []
+        if let syntax {
+            list.append(BlockAction(icon: .braces, color: syntax.on ? Tactile.clip : nil,
+                                    help: "\(syntax.label) · " + L.t("format_toggle_help", lang), run: onToggleFormat))
+        }
+        list += [
             BlockAction(icon: .rerun, help: L.t("rerun", lang), run: onRerun),
             BlockAction(icon: .copy, help: L.t("copy", lang), run: onCopy),
             BlockAction(icon: isFavorite ? .starOn : .star, color: isFavorite ? Tactile.star : nil,
@@ -1746,7 +1910,7 @@ struct SessionBlockView: View {
     /// Весь вывод — в нативном текстовом поле: любой объём, выделение, поиск ⌘F.
     private var fullOutput: some View {
         OutputTextView(text: ANSIText.nsAttributed(
-            session.outputANSI ?? session.output,
+            shownOutput,
             font: NSFont.monospacedSystemFont(ofSize: LauncherMetrics.outputFontSize, weight: .regular)))
             .padding(.horizontal, 10)
             .padding(.vertical, 8)
@@ -1756,7 +1920,7 @@ struct SessionBlockView: View {
     /// Свёрнутый вывод: начало, «скрыто N строк» с кнопкой раскрыть, конец.
     /// Длинные строки переносятся по словам; лимит — в экранных строках.
     private var outputPreview: some View {
-        let source = session.outputANSI ?? session.output
+        let source = shownOutput
         let columns = previewColumns
         let limit = outputLines + 1
         let layout = OutputPreview.layout(lines: source.components(separatedBy: "\n"),
@@ -1776,7 +1940,7 @@ struct SessionBlockView: View {
 
     /// Экранные строки строки вывода: перенос по словам по видимому тексту (без ANSI-кодов).
     private func wrappedRows(_ line: String, columns: Int, limit: Int) -> [AttributedSubstring] {
-        let text = session.outputANSI == nil ? AttributedString(line) : ANSIText.attributed(line)
+        let text = shownIsANSI ? ANSIText.attributed(line) : AttributedString(line)
         let chars = text.characters
         return OutputWrap.rows(String(chars), columns: columns, limit: limit).map { range in
             let from = chars.index(chars.startIndex, offsetBy: range.lowerBound)
@@ -1798,7 +1962,7 @@ struct SessionBlockView: View {
                 outputRow(clipped && index == shown - 1 ? Self.ellipsized(row, columns: columns) : row)
             }
         } else {
-            outputRow(session.outputANSI == nil ? AttributedString(line) : ANSIText.attributed(line))
+            outputRow(shownIsANSI ? ANSIText.attributed(line) : AttributedString(line))
         }
     }
 

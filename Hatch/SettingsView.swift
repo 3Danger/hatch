@@ -10,6 +10,7 @@ struct SettingsView: View {
     var onClose: () -> Void = {}
     @State private var aliasDraft = ""
     @State private var exclusionDraft = ""
+    @State private var formatCommandDraft = ""
     /// Высота групп: на невысоком экране они прокручиваются, кнопки внизу всегда видны.
     @State private var groupsHeight: CGFloat = 0
     /// Сочетание снимка занято самой macOS (проверяется, пока открыты настройки: его выключают там).
@@ -84,6 +85,7 @@ struct SettingsView: View {
 
             group { appRows }
             group { clipboardRows }
+            group { formatRows }
             group { screenshotRows }
                 .task(id: "\(settings.screenshotsEnabled) \(settings.screenshotShortcut)") {
                     while !Task.isCancelled {
@@ -569,6 +571,82 @@ extension SettingsView {
             .buttonStyle(KeyCapButtonStyle(cornerRadius: 8))
             .disabled(clipboard.clips.isEmpty)
         }
+    }
+}
+
+// MARK: - Форматирование
+
+extension SettingsView {
+    @ViewBuilder fileprivate var formatRows: some View {
+        row(L.t("format_default", lang), hint: L.t("format_default_hint", lang), first: true) {
+            Toggle("", isOn: binding(\.formatByDefault)).toggleStyle(GlassSwitchStyle()).labelsHidden()
+        }
+        row(L.t("format_kinds", lang), hint: L.t("format_kinds_hint", lang)) {
+            HStack(spacing: 5) {
+                ForEach([("json", "JSON"), ("sql", "SQL"), ("yaml", "YAML"), ("xml", "XML"), ("code", L.t("format_code", lang))],
+                        id: \.0) { kind, title in
+                    formatKindToggle(kind, title: title)
+                }
+            }
+        }
+        if settings.formatKinds.contains("sql") {
+            row(L.t("sql_case", lang), hint: "SELECT, FROM, WHERE…") {
+                GlassSegmented(options: [("upper", "UPPER"), ("lower", "lower"), ("preserve", L.t("sql_case_keep", lang))],
+                               selection: binding(\.sqlKeywordCase))
+            }
+            row(L.t("sql_dialect", lang)) {
+                GlassSegmented(options: [("sql", L.t("sql_dialect_standard", lang)), ("postgresql", "PostgreSQL"),
+                                         ("mysql", "MySQL"), ("clickhouse", "ClickHouse")],
+                               selection: binding(\.sqlDialect))
+            }
+        }
+        row(L.t("format_commands", lang), hint: L.t("format_commands_hint", lang)) {
+            GlassField(text: $formatCommandDraft, placeholder: "cat", width: 120)
+                .onSubmit {
+                    settings.addFormatExcludedCommand(formatCommandDraft)
+                    formatCommandDraft = ""
+                }
+        }
+        if !settings.formatExcludedCommands.isEmpty {
+            lineRow {
+                HStack(spacing: 6) {
+                    ForEach(settings.formatExcludedCommands, id: \.self) { name in
+                        chip(name) { settings.removeFormatExcludedCommand(name) }
+                    }
+                    Spacer(minLength: 0)
+                }
+            }
+        }
+        row(L.t("format_apps", lang), hint: L.t("format_apps_hint", lang)) {
+            AppPickerButton(title: L.t("clipboard_add_app", lang),
+                            apps: AppCatalog.shared.apps.filter { $0.bundleID != nil }, lang: lang) { app in
+                settings.addFormatExcludedApp(app.bundleID ?? "")
+            }
+        }
+        if !settings.formatExcludedApps.isEmpty {
+            lineRow {
+                ExcludedAppsFlow(ids: settings.formatExcludedApps, lang: lang) { settings.removeFormatExcludedApp($0) }
+            }
+        }
+    }
+
+    /// Формат вкл/выкл — колпачок с галочкой.
+    private func formatKindToggle(_ kind: String, title: String) -> some View {
+        let on = settings.formatKinds.contains(kind)
+        return Button { settings.toggleFormatKind(kind) } label: {
+            HStack(spacing: 4) {
+                Image(systemName: on ? "checkmark" : "square")
+                    .font(.system(size: on ? 9 : 10, weight: .bold))
+                    .foregroundStyle(on ? Tactile.clip : .secondary)
+                Text(title).font(.system(size: 12))
+                    .foregroundStyle(on ? Tactile.keyText : .secondary)
+            }
+            .padding(.horizontal, 8)
+            .frame(height: 24)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(KeyCapButtonStyle(cornerRadius: 7))
+        .fixedSize()
     }
 }
 

@@ -20,6 +20,9 @@ struct Clip: Codable, Identifiable, Equatable, Hashable {
     /// файлы буфера до картинок читаются как раньше.
     var image: ClipImage?
 
+    /// Форматирование включили или выключили кнопкой {} (⌘R); nil — как в настройках.
+    var formatted: Bool?
+
     var isPinned: Bool {
         get { pinned == true }
         set { pinned = newValue ? true : nil }
@@ -136,6 +139,7 @@ final class ClipboardHistory {
             entry.bundleID = existing.bundleID ?? clip.bundleID
             entry.isPath = existing.isPath || clip.isPath
             entry.pinned = existing.pinned
+            entry.formatted = existing.formatted
         }
         clips.insert(entry, at: 0)
         prune(days: days, now: clip.copiedAt)
@@ -208,6 +212,13 @@ final class ClipboardHistory {
         prune(days: days, now: date)
         scheduleSave()
         return clip
+    }
+
+    /// {} у записи: форматировать или показывать как есть.
+    func setFormatted(_ value: Bool?, for clipID: UUID) {
+        guard let index = clips.firstIndex(where: { $0.id == clipID }) else { return }
+        clips[index].formatted = value
+        scheduleSave()
     }
 
     /// Распознанный текст картинки (в фоне, после сохранения).

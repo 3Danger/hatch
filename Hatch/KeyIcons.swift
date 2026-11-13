@@ -3,21 +3,21 @@ import SwiftUI
 /// Иконки кнопок-колпачков, нарисованные линией 1.5 на сетке 16×16 — как в макете «Системный».
 /// Символы SF толще и другой формы, поэтому кнопки с ними выглядели иначе, чем в макете.
 enum KeyIcon: Hashable {
-    case rerun, copy, pin, pinOn, trash, stop, gear, star, starOn
+    case rerun, copy, pin, pinOn, trash, stop, gear, star, starOn, braces
 
     /// Ширина линии в единицах сетки 16×16.
     var lineWidth: CGFloat {
         switch self {
         case .rerun: return 1.6
-        case .gear, .star, .starOn: return 1.4
+        case .gear, .star, .starOn, .braces: return 1.4
         default: return 1.5
         }
     }
 
     var filled: Bool { self == .stop || self == .pinOn || self == .starOn }
 
-    var lineCap: CGLineCap { self == .rerun || self == .trash ? .round : .butt }
-    var lineJoin: CGLineJoin { [.pin, .pinOn, .star, .starOn].contains(self) ? .round : .miter }
+    var lineCap: CGLineCap { self == .rerun || self == .trash || self == .braces ? .round : .butt }
+    var lineJoin: CGLineJoin { [.pin, .pinOn, .star, .starOn, .braces].contains(self) ? .round : .miter }
 
     /// Контур в координатах сетки 16×16.
     var path: Path {
@@ -58,6 +58,18 @@ enum KeyIcon: Hashable {
                         CGPoint(x: 11.7, y: 13.4), CGPoint(x: 8, y: 11.45), CGPoint(x: 4.3, y: 13.4), CGPoint(x: 5, y: 9.25),
                         CGPoint(x: 2, y: 6.3), CGPoint(x: 6.15, y: 5.7)])
             p.closeSubpath()
+        case .braces:
+            // «{}» — форматирование вывода
+            for mirror in [false, true] {
+                let x = { (v: CGFloat) in mirror ? 16 - v : v }
+                p.move(to: CGPoint(x: x(6.5), y: 2.5))
+                p.addQuadCurve(to: CGPoint(x: x(4.8), y: 4), control: CGPoint(x: x(4.8), y: 2.5))
+                p.addLine(to: CGPoint(x: x(4.8), y: 6.6))
+                p.addQuadCurve(to: CGPoint(x: x(3), y: 8), control: CGPoint(x: x(4.8), y: 8))
+                p.addQuadCurve(to: CGPoint(x: x(4.8), y: 9.4), control: CGPoint(x: x(4.8), y: 8))
+                p.addLine(to: CGPoint(x: x(4.8), y: 12))
+                p.addQuadCurve(to: CGPoint(x: x(6.5), y: 13.5), control: CGPoint(x: x(4.8), y: 13.5))
+            }
         case .gear:
             p.addEllipse(in: CGRect(x: 8 - 2.2, y: 8 - 2.2, width: 4.4, height: 4.4))
             let spokes: [(CGFloat, CGFloat, CGFloat, CGFloat)] = [

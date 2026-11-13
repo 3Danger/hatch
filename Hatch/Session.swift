@@ -63,6 +63,8 @@ struct Session: Identifiable, Codable, Equatable, Hashable {
     var rawOutputANSI: String?
     /// Незнакомая шеллу команда, пока он не ответил: блок не показывается (опечатка не мелькает).
     var isProvisional: Bool?
+    /// Форматирование вывода включили или выключили кнопкой {} (⌘R); nil — как в настройках.
+    var formatted: Bool?
 
     var pipeline: [String] { pipeStages ?? [] }
 

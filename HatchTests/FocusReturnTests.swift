@@ -513,6 +513,48 @@ final class FocusReturnTests: XCTestCase {
         XCTAssertFalse(panel.isVisible)
     }
 
+    /// ⌘1 у текста: то же окно просмотра, JSON — отформатирован; ⌘R — как есть (запоминается в записи).
+    func testTextPreviewFormatsAndToggles() throws {
+        let panel = try showPanel()
+        clipboard.record(Clip(text: #"{"b":1,"a":[2,3]}"#, copiedAt: Date()), days: 7)
+        key(21, "4", .command, to: panel) // ⌘4
+        key(18, "1", .command, to: panel) // ⌘1
+        wait { panel.childWindows?.first is ClipPreviewPanel }
+        let preview = try XCTUnwrap(panel.childWindows?.first as? ClipPreviewPanel)
+        let textView = try XCTUnwrap(Self.find(NSTextView.self, in: preview.contentView!))
+        wait { textView.string.contains("\n") }
+        XCTAssertEqual(textView.string, "{\n  \"b\": 1,\n  \"a\": [\n    2,\n    3\n  ]\n}", "порядок ключей как в исходнике")
+        XCTAssertEqual(preview.preview?.model.caption.hasPrefix("JSON"), true)
+
+        key(15, "r", .command, to: preview) // ⌘R — как есть
+        wait { !textView.string.contains("\n") }
+        XCTAssertEqual(textView.string, #"{"b":1,"a":[2,3]}"#)
+        XCTAssertEqual(clipboard.clips.first?.formatted, false, "выбор запомнился в записи")
+
+        key(0, "a", .command, to: preview) // ⌘A
+        XCTAssertEqual(preview.preview?.model.hasTextSelection, true)
+        key(53, "\u{1b}", [], to: preview) // Esc — снять выделение
+        XCTAssertTrue(preview.isVisible)
+        key(53, "\u{1b}", [], to: preview) // Esc — закрыть
+        wait { !preview.isVisible }
+        XCTAssertFalse(preview.isVisible)
+    }
+
+    /// ⌘R в списке команд: вывод последнего блока — как есть (и обратно).
+    func testCommandRTogglesBlockFormatting() throws {
+        let panel = try showPanel()
+        let runner = try XCTUnwrap(runner)
+        runner.run(command: #"printf '{"id":1,"tags":["a"]}'"#)
+        let deadline = Date().addingTimeInterval(5)
+        while store.sessions.first?.state.isTerminal != true, Date() < deadline { spin(0.05) }
+        spin(0.3)
+        XCTAssertNil(store.sessions.first?.formatted)
+        key(15, "r", .command, to: panel) // ⌘R
+        XCTAssertEqual(store.sessions.first?.formatted, false, "отформатированный по умолчанию — теперь как есть")
+        key(15, "r", .command, to: panel)
+        XCTAssertEqual(store.sessions.first?.formatted, true)
+    }
+
     private static func find<T: NSView>(_ type: T.Type, in view: NSView) -> T? {
         if let match = view as? T { return match }
         for sub in view.subviews { if let found = find(type, in: sub) { return found } }
