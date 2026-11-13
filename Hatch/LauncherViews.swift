@@ -1129,6 +1129,11 @@ struct LauncherRootView: View {
             if HotKeyCapsField.isRecording { return event }
             let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
             // окно просмотра картинки: свои клавиши; закреплённое — само по себе, клавиши панели не для него
+            // ⌃Tab / ⌃⇧Tab в настройках — соседний раздел
+            if showSettings, event.keyCode == 48, modifiers == .control || modifiers == [.control, .shift] {
+                NotificationCenter.default.post(name: .hatchSettingsStep, object: modifiers.contains(.shift) ? -1 : 1)
+                return nil
+            }
             if let preview = previews.window(for: event.window) {
                 // стрелки — окну (прокрутка текста), а не списку под ним
                 if Self.arrowKeyCodes.contains(event.keyCode) { return event }

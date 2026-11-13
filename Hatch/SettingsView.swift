@@ -11,13 +11,16 @@ struct SettingsView: View {
     @State private var aliasDraft = ""
     @State private var exclusionDraft = ""
     @State private var formatCommandDraft = ""
-    /// Высота групп: на невысоком экране они прокручиваются, кнопки внизу всегда видны.
-    @State private var groupsHeight: CGFloat = 0
     /// Сочетание снимка занято самой macOS (проверяется, пока открыты настройки: его выключают там).
     @State private var screenshotTaken = false
     @State private var screenRecordingAllowed = CGPreflightScreenCaptureAccess()
 
     private var lang: String { settings.languageCode }
+    /// Открытый раздел настроек.
+    @State private var section: SettingsSection = .general
+
+    /// Высота области раздела: самый длинный раздел помещается целиком, короткий не дёргает окно.
+    static let contentHeight: CGFloat = 470
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -33,6 +36,8 @@ struct SettingsView: View {
                         .contentShape(Circle())
                 }
                 .buttonStyle(KeyCapButtonStyle(cornerRadius: 14, under: 1))
+                // без рамки фокуса при открытии: ✕ — не то, с чего начинают
+                .focusEffectDisabled()
                 .help(L.t("close", lang))
                 .accessibilityLabel(L.t("close", lang))
             }
@@ -40,66 +45,30 @@ struct SettingsView: View {
             .padding(.top, 14)
             .padding(.bottom, 6)
 
-            ScrollView {
-            VStack(spacing: 0) {
-            group(L.t("set_general", lang)) {
-                row(L.t("hotkey", lang), first: true) { HotKeyCapsField(spec: binding(\.hotkeyString), lang: lang).fixedSize() }
-                row(L.t("folder_tree", lang), hint: L.t("folder_tree_hint", lang)) {
-                    HotKeyCapsField(spec: binding(\.folderTreeShortcut), lang: lang).fixedSize()
+            // разделы слева, содержимое раздела справа — без длинной прокрутки всех настроек подряд
+            HStack(alignment: .top, spacing: 10) {
+                sidebar
+                ScrollView {
+                    sectionContent(section)
+                        .padding(.bottom, 6)
                 }
-                row(L.t("status_icon", lang), hint: L.t("status_icon_hint", lang)) {
-                    Toggle("", isOn: binding(\.showStatusIcon))
-                        .toggleStyle(GlassSwitchStyle())
-                        .labelsHidden()
-                }
-                row(L.t("theme", lang)) {
-                    GlassSegmented(options: ThemePreference.allCases.map { ($0.rawValue, L.t("theme_\($0.rawValue)", lang)) },
-                                   selection: binding(\.themeRaw))
-                }
-                row(L.t("language", lang)) {
-                    GlassSegmented(options: [("ru", "Русский"), ("en", "English")], selection: binding(\.languageCode))
+                .scrollIndicators(.automatic)
+                .scrollBounceBehavior(.basedOnSize)
+                .frame(height: min(Self.contentHeight, Self.maxGroupsHeight))
+            }
+            .padding(.horizontal, 12)
+            .padding(.top, 4)
+            .task(id: "\(settings.screenshotsEnabled) \(settings.screenshotShortcut)") {
+                while !Task.isCancelled {
+                    screenshotTaken = settings.screenshotsEnabled && SystemScreenshotShortcuts.isTaken(settings.screenshotShortcut)
+                    screenRecordingAllowed = CGPreflightScreenCaptureAccess()
+                    try? await Task.sleep(for: .seconds(2))
                 }
             }
-
-            group(L.t("set_commands", lang)) {
-                row(L.t("history_limit", lang), first: true) { GlassStepper(value: binding(\.historyLimit), range: 10...500, step: 10) }
-                row(L.t("preview_lines", lang)) {
-                    GlassStepper(value: binding(\.previewLines), range: SettingsStore.previewLinesRange)
-                }
-                row(L.t("shell", lang)) {
-                    GlassField(text: binding(\.shellPath), width: 160)
-                }
-                row(L.t("timeout", lang)) {
-                    GlassField(text: Binding(
-                        get: { settings.timeoutSeconds == 0 ? "" : String(Int(settings.timeoutSeconds)) },
-                        set: { settings.timeoutSeconds = TimeInterval(Int($0.filter(\.isNumber)) ?? 0) }),
-                               placeholder: L.t("timeout_none", lang), width: 80)
-                }
-                row(L.t("latin_layout", lang)) {
-                    Toggle("", isOn: binding(\.latinLayoutInInput))
-                        .toggleStyle(GlassSwitchStyle())
-                        .labelsHidden()
-                        .help(L.t("latin_layout_hint", lang))
-                }
+            // ⌃Tab и ⌃⇧Tab — следующий и предыдущий раздел, как вкладки (клавиши ловит монитор панели)
+            .onReceive(NotificationCenter.default.publisher(for: .hatchSettingsStep)) { note in
+                step(note.object as? Int ?? 1)
             }
-
-            group(L.t("set_apps", lang)) { appRows }
-            group(L.t("set_clipboard", lang)) { clipboardRows }
-            group(L.t("set_format", lang)) { formatRows }
-            group(L.t("set_screenshots", lang)) { screenshotRows }
-                .task(id: "\(settings.screenshotsEnabled) \(settings.screenshotShortcut)") {
-                    while !Task.isCancelled {
-                        screenshotTaken = settings.screenshotsEnabled && SystemScreenshotShortcuts.isTaken(settings.screenshotShortcut)
-                        screenRecordingAllowed = CGPreflightScreenCaptureAccess()
-                        try? await Task.sleep(for: .seconds(2))
-                    }
-                }
-            }
-            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { groupsHeight = $0 }
-            }
-            .scrollIndicators(.automatic)
-            .scrollBounceBehavior(.basedOnSize)
-            .frame(height: min(groupsHeight, Self.maxGroupsHeight))
 
             HStack(spacing: 8) {
                 Text("Hatch \(version) ·").font(.caption).foregroundStyle(.tertiary)
@@ -127,7 +96,7 @@ struct SettingsView: View {
             .padding(.top, 6)
             .padding(.bottom, 14)
         }
-        .frame(width: 440)
+        .frame(width: 740)
         // тени — только у подложки карточки, не у текста внутри
         .background {
             RoundedRectangle(cornerRadius: 22).fill(Tactile.surface)
@@ -151,8 +120,7 @@ struct SettingsView: View {
                 .background(Tactile.group, in: RoundedRectangle(cornerRadius: 14))
                 .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(Tactile.groupEdge))
         }
-        .padding(.horizontal, 12)
-        .padding(.top, 8)
+        .padding(.top, 2)
         .padding(.bottom, 2)
     }
 
@@ -590,7 +558,15 @@ extension SettingsView {
         row(L.t("format_default", lang), hint: L.t("format_default_hint", lang), first: true) {
             Toggle("", isOn: binding(\.formatByDefault)).toggleStyle(GlassSwitchStyle()).labelsHidden()
         }
-        row(L.t("format_kinds", lang), hint: L.t("format_kinds_hint", lang)) {
+        // форматы — строкой под названием: рядом с пятью кнопками название и пояснение сжимались в столбик
+        VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(L.t("format_kinds", lang)).font(.system(size: 14))
+                Text(L.t("format_kinds_hint", lang))
+                    .font(.system(size: 11.5))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
             HStack(spacing: 5) {
                 ForEach([("json", "JSON"), ("sql", "SQL"), ("yaml", "YAML"), ("xml", "XML"), ("code", L.t("format_code", lang))],
                         id: \.0) { kind, title in
@@ -598,6 +574,10 @@ extension SettingsView {
                 }
             }
         }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 9)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .overlay(alignment: .top) { Rectangle().fill(Tactile.groupEdge).frame(height: 1) }
         if settings.formatKinds.contains("sql") {
             row(L.t("sql_style", lang), hint: L.t("sql_style_hint", lang)) {
                 GlassSegmented(options: [("standard", L.t("sql_dialect_standard", lang)), ("hatch", L.t("sql_style_hatch", lang))],
@@ -811,5 +791,137 @@ struct FlowLayout: Layout {
         }
         if !row.items.isEmpty { rows.append(row) }
         return rows
+    }
+}
+
+// MARK: - Разделы
+
+extension Notification.Name {
+    /// ⌃Tab / ⌃⇧Tab в настройках: `object` — шаг (+1 или −1).
+    static let hatchSettingsStep = Notification.Name("hatch.settingsStep")
+}
+
+enum SettingsSection: String, CaseIterable, Identifiable {
+    case general, commands, apps, clipboard, format, screenshots
+    var id: String { rawValue }
+
+    var titleKey: String {
+        switch self {
+        case .general: "set_general"
+        case .commands: "set_commands"
+        case .apps: "set_apps"
+        case .clipboard: "set_clipboard"
+        case .format: "set_format"
+        case .screenshots: "set_screenshots"
+        }
+    }
+
+    var icon: String {
+        switch self {
+        case .general: "gearshape"
+        case .commands: "terminal"
+        case .apps: "square.grid.2x2"
+        case .clipboard: "doc.on.clipboard"
+        case .format: "curlybraces"
+        case .screenshots: "camera.viewfinder"
+        }
+    }
+}
+
+extension SettingsView {
+    /// Список разделов слева: выбранный подсвечен, клик — открыть.
+    fileprivate var sidebar: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            ForEach(SettingsSection.allCases) { item in
+                let on = item == section
+                Button { section = item } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: item.icon)
+                            .font(.system(size: 12, weight: .medium))
+                            .frame(width: 18)
+                            .foregroundStyle(on ? Color.primary : Color.secondary)
+                        Text(L.t(item.titleKey + "_short", lang))
+                            .font(.system(size: 13))
+                            .foregroundStyle(on ? Color.primary : Color.secondary)
+                            .lineLimit(1)
+                        Spacer(minLength: 0)
+                    }
+                    .padding(.horizontal, 9)
+                    .frame(height: 30)
+                    .background(on ? Tactile.accent.opacity(0.22) : .clear, in: RoundedRectangle(cornerRadius: 8))
+                    .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(on ? Tactile.accent.opacity(0.5) : .clear))
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
+            Spacer(minLength: 0)
+            Text("⌃Tab")
+                .font(.system(size: 10.5))
+                .foregroundStyle(.tertiary)
+                .padding(.leading, 9)
+                .help(L.t("settings_sections_help", lang))
+        }
+        .frame(width: 186)
+        .frame(maxHeight: .infinity, alignment: .top)
+    }
+
+    /// ⌃Tab / ⌃⇧Tab: соседний раздел по кругу.
+    fileprivate func step(_ delta: Int) {
+        let all = SettingsSection.allCases
+        let i = all.firstIndex(of: section) ?? 0
+        section = all[(i + delta + all.count) % all.count]
+    }
+
+    @ViewBuilder
+    fileprivate func sectionContent(_ section: SettingsSection) -> some View {
+        switch section {
+        case .general: group(L.t("set_general", lang)) { generalRows }
+        case .commands: group(L.t("set_commands", lang)) { commandRows }
+        case .apps: group(L.t("set_apps", lang)) { appRows }
+        case .clipboard: group(L.t("set_clipboard", lang)) { clipboardRows }
+        case .format: group(L.t("set_format", lang)) { formatRows }
+        case .screenshots: group(L.t("set_screenshots", lang)) { screenshotRows }
+        }
+    }
+
+    @ViewBuilder fileprivate var generalRows: some View {
+                row(L.t("hotkey", lang), first: true) { HotKeyCapsField(spec: binding(\.hotkeyString), lang: lang).fixedSize() }
+                row(L.t("folder_tree", lang), hint: L.t("folder_tree_hint", lang)) {
+                    HotKeyCapsField(spec: binding(\.folderTreeShortcut), lang: lang).fixedSize()
+                }
+                row(L.t("status_icon", lang), hint: L.t("status_icon_hint", lang)) {
+                    Toggle("", isOn: binding(\.showStatusIcon))
+                        .toggleStyle(GlassSwitchStyle())
+                        .labelsHidden()
+                }
+                row(L.t("theme", lang)) {
+                    GlassSegmented(options: ThemePreference.allCases.map { ($0.rawValue, L.t("theme_\($0.rawValue)", lang)) },
+                                   selection: binding(\.themeRaw))
+                }
+                row(L.t("language", lang)) {
+                    GlassSegmented(options: [("ru", "Русский"), ("en", "English")], selection: binding(\.languageCode))
+                }
+    }
+
+    @ViewBuilder fileprivate var commandRows: some View {
+                row(L.t("history_limit", lang), first: true) { GlassStepper(value: binding(\.historyLimit), range: 10...500, step: 10) }
+                row(L.t("preview_lines", lang)) {
+                    GlassStepper(value: binding(\.previewLines), range: SettingsStore.previewLinesRange)
+                }
+                row(L.t("shell", lang)) {
+                    GlassField(text: binding(\.shellPath), width: 160)
+                }
+                row(L.t("timeout", lang)) {
+                    GlassField(text: Binding(
+                        get: { settings.timeoutSeconds == 0 ? "" : String(Int(settings.timeoutSeconds)) },
+                        set: { settings.timeoutSeconds = TimeInterval(Int($0.filter(\.isNumber)) ?? 0) }),
+                               placeholder: L.t("timeout_none", lang), width: 80)
+                }
+                row(L.t("latin_layout", lang)) {
+                    Toggle("", isOn: binding(\.latinLayoutInInput))
+                        .toggleStyle(GlassSwitchStyle())
+                        .labelsHidden()
+                        .help(L.t("latin_layout_hint", lang))
+                }
     }
 }

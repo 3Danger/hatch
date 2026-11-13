@@ -583,6 +583,23 @@ final class FocusReturnTests: XCTestCase {
         XCTAssertEqual(panel.childWindows?.count ?? 0, 0)
     }
 
+    /// Настройки — разделы слева; ⌃Tab — следующий раздел, ⌃⇧Tab — предыдущий.
+    func testControlTabSwitchesSettingsSections() throws {
+        let panel = try showPanel()
+        key(43, ",", .command, to: panel) // ⌘,
+        wait { panel.childWindows?.count == 1 }
+        let sheet = try XCTUnwrap(panel.childWindows?.first)
+        var steps: [Int] = []
+        let token = NotificationCenter.default.addObserver(forName: .hatchSettingsStep, object: nil, queue: nil) {
+            steps.append($0.object as? Int ?? 0)
+        }
+        defer { NotificationCenter.default.removeObserver(token) }
+        key(48, "\t", .control, to: sheet) // ⌃Tab
+        key(48, "\u{19}", [.control, .shift], to: sheet) // ⌃⇧Tab
+        XCTAssertEqual(steps, [1, -1])
+        XCTAssertEqual(panel.childWindows?.count, 1, "настройки открыты")
+    }
+
     private static func find<T: NSView>(_ type: T.Type, in view: NSView) -> T? {
         if let match = view as? T { return match }
         for sub in view.subviews { if let found = find(type, in: sub) { return found } }

@@ -85,6 +85,7 @@ macOS will ask for permission to send notifications (when long commands finish) 
 | ⌘Q | panel | hide the panel; quit from settings or the menu bar icon |
 | ⌘, | panel | settings and back |
 | ⌘/ | panel | shortcut sheet for the current mode |
+| ⌃Tab · ⌃⇧Tab | settings | next · previous section |
 | ↑ / ↓ · Enter · Esc | search | move between found blocks · expand · leave |
 | ↑ ↓ → ← · Space · letters | folder tree | move by row, expand and enter, go up · collapse · filter (parents of matches are dimmed) |
 | Enter · ⌘← ⌘→ · Esc | folder tree | go there, like `cd` · neighboring folder of the path · close |
