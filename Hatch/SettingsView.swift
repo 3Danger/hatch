@@ -590,6 +590,10 @@ extension SettingsView {
             }
         }
         if settings.formatKinds.contains("sql") {
+            row(L.t("sql_style", lang), hint: L.t("sql_style_hint", lang)) {
+                GlassSegmented(options: [("standard", L.t("sql_dialect_standard", lang)), ("hatch", L.t("sql_style_hatch", lang))],
+                               selection: binding(\.sqlStyle))
+            }
             row(L.t("sql_case", lang), hint: "SELECT, FROM, WHERE…") {
                 GlassSegmented(options: [("upper", "UPPER"), ("lower", "lower"), ("preserve", L.t("sql_case_keep", lang))],
                                selection: binding(\.sqlKeywordCase))

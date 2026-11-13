@@ -109,7 +109,9 @@ enum SyntaxDetector {
         options: [.caseInsensitive])
 
     /// Запрос, а не текст со словом «select»: начинается с команды SQL и у неё есть своя вторая часть.
-    static func isSQL(_ text: String) -> Bool {
+    static func isSQL(_ query: String) -> Bool {
+        // комментарии в начале (`-- name: InsertAction :one` у sqlc) — не повод не узнать запрос
+        let text = withoutLeadingComments(query)
         let range = NSRange(text.startIndex..., in: text)
         guard let match = sqlStart.firstMatch(in: text, range: range),
               let word = Range(match.range(at: 1), in: text).map({ text[$0].lowercased() }) else { return false }
@@ -119,6 +121,21 @@ enum SyntaxDetector {
         if word.hasPrefix("insert") { return has(#"\b(values|select)\b"#) }
         if word.hasPrefix("update") { return has(#"\bset\b"#) }
         return true
+    }
+
+    /// Текст без комментариев SQL в начале (`-- …` и `/* … */`).
+    static func withoutLeadingComments(_ text: String) -> String {
+        var rest = Substring(text)
+        while true {
+            rest = rest.drop(while: { $0.isWhitespace })
+            if rest.hasPrefix("--") {
+                rest = rest.drop(while: { !$0.isNewline })
+            } else if rest.hasPrefix("/*"), let end = rest.range(of: "*/") {
+                rest = rest[end.upperBound...]
+            } else {
+                return String(rest)
+            }
+        }
     }
 
     private static let yamlKey = try! NSRegularExpression(pattern: #"^\s*(- +)?[A-Za-z_][\w.\-/]*\s*:(\s|$)"#)

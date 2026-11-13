@@ -86,6 +86,9 @@ final class SettingsStore {
     var formatKinds: [String] { didSet { defaults.set(formatKinds, forKey: Keys.formatKinds) } }
     /// Регистр ключевых слов SQL: "upper", "lower", "preserve".
     var sqlKeywordCase: String { didSet { defaults.set(sqlKeywordCase, forKey: Keys.sqlKeywordCase) } }
+    /// Формат SQL: "standard" (sql-formatter) или "hatch" — свой, бета: столбцы с запятой в начале,
+    /// `WHERE TRUE` и `  AND …` по строке.
+    var sqlStyle: String { didSet { defaults.set(sqlStyle, forKey: Keys.sqlStyle) } }
     /// Диалект SQL для форматирования: "sql", "postgresql", "mysql", "clickhouse".
     var sqlDialect: String { didSet { defaults.set(sqlDialect, forKey: Keys.sqlDialect) } }
     /// Команды, вывод которых показывается как есть (`cat`, `less`).
@@ -139,6 +142,7 @@ final class SettingsStore {
         static let formatKinds = "settings.formatKinds"
         static let sqlKeywordCase = "settings.sqlKeywordCase"
         static let sqlDialect = "settings.sqlDialect"
+        static let sqlStyle = "settings.sqlStyle"
         static let formatExcludedCommands = "settings.formatExcludedCommands"
         static let formatExcludedApps = "settings.formatExcludedApps"
         static let screenshotShortcut = "settings.screenshotShortcut"
@@ -187,6 +191,7 @@ final class SettingsStore {
         self.sqlKeywordCase = ["upper", "lower", "preserve"].contains(keywordCase) ? keywordCase : "upper"
         let dialect = defaults.string(forKey: Keys.sqlDialect) ?? "sql"
         self.sqlDialect = Self.sqlDialects.contains(dialect) ? dialect : "sql"
+        self.sqlStyle = defaults.string(forKey: Keys.sqlStyle) == "hatch" ? "hatch" : "standard"
         self.formatExcludedCommands = defaults.stringArray(forKey: Keys.formatExcludedCommands) ?? Self.defaultFormatExcludedCommands
         self.formatExcludedApps = defaults.stringArray(forKey: Keys.formatExcludedApps) ?? []
         self.screenshotShortcut = defaults.string(forKey: Keys.screenshotShortcut) ?? Self.defaultScreenshotShortcut
@@ -332,7 +337,7 @@ final class SettingsStore {
     var syntaxOptions: SyntaxOptions {
         var allowed = Set(formatKinds.compactMap(SyntaxKind.init(rawValue:)))
         if allowed.contains(.json) { allowed.insert(.jsonLines) }
-        return SyntaxOptions(allowed: allowed, sqlCase: sqlKeywordCase, sqlDialect: sqlDialect)
+        return SyntaxOptions(allowed: allowed, sqlCase: sqlKeywordCase, sqlDialect: sqlDialect, sqlStyle: sqlStyle)
     }
 
     func toggleFormatKind(_ kind: String) {
@@ -384,6 +389,7 @@ final class SettingsStore {
         formatKinds = Self.defaultFormatKinds
         sqlKeywordCase = "upper"
         sqlDialect = "sql"
+        sqlStyle = "standard"
         formatExcludedCommands = Self.defaultFormatExcludedCommands
         formatExcludedApps = []
         screenshotShortcut = Self.defaultScreenshotShortcut

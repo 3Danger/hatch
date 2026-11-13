@@ -8,6 +8,8 @@ struct SyntaxOptions: Hashable, Sendable {
     var sqlCase: String = "upper"
     /// Диалект sql-formatter: "sql", "postgresql", "mysql", "clickhouse"…
     var sqlDialect: String = "sql"
+    /// Формат SQL: "standard" — sql-formatter, "hatch" — свой (бета, HatchSQL).
+    var sqlStyle: String = "standard"
 }
 
 enum SyntaxMode: Hashable, Sendable {
@@ -129,6 +131,11 @@ final class SyntaxService {
         case .jsonLines:
             return JSONSyntax.highlight(text)
         case .sql:
+            // свой формат — только целиком (в строке списка SQL всё равно в одну строку); не справился — обычный
+            if options.sqlStyle == "hatch", mode == .full,
+               let hatch = HatchSQL.format(text, keywordCase: options.sqlCase, dialect: options.sqlDialect) {
+                return highlight(hatch, "sql")
+            }
             let formatted = engine.formatSQL(text, keywordCase: options.sqlCase, dialect: options.sqlDialect) ?? text
             let shown = mode == .compact ? collapsed(formatted) : formatted
             return highlight(shown, "sql")

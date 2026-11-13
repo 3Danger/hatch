@@ -120,3 +120,22 @@ final class SyntaxTests: XCTestCase {
         XCTAssertEqual(tiny.minY, start.minY, "нижний край на месте")
     }
 }
+
+/// Свой формат SQL включается настройкой; в строке списка — всё равно обычный, в одну строку.
+final class SQLStyleSettingTests: XCTestCase {
+    func testHatchStyleOnlyWhenChosen() {
+        let sql = "select a, b from t where x = 1 and y = 2"
+        var options = SyntaxOptions(allowed: Set(SyntaxKind.allCases))
+        let standard = SyntaxService.compute(sql, kind: .sql, mode: .full, options: options, language: nil)
+        XCTAssertTrue(standard.text.hasPrefix("SELECT\n  a,"), standard.text)
+        options.sqlStyle = "hatch"
+        let hatch = SyntaxService.compute(sql, kind: .sql, mode: .full, options: options, language: nil)
+        XCTAssertEqual(hatch.text, "SELECT a\n     , b\nFROM t\nWHERE TRUE\n  AND x = 1\n  AND y = 2")
+        XCTAssertTrue(hatch.spans.contains { $0.token == .keyword })
+        let row = SyntaxService.compute(sql, kind: .sql, mode: .compact, options: options, language: nil)
+        XCTAssertFalse(row.text.contains("\n"))
+        // не справился — обычный формат
+        let odd = SyntaxService.compute("select (1 from t", kind: .sql, mode: .full, options: options, language: nil)
+        XCTAssertFalse(odd.text.isEmpty)
+    }
+}
