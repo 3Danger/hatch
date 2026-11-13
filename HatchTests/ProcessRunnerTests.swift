@@ -395,10 +395,10 @@ final class ProcessRunnerTests: XCTestCase {
         guard let session = waitStarted(store), let pgid = session.pgid else {
             return XCTFail("сессия не запустилась")
         }
-        // ^C до того, как шелл запустился, может потеряться — как и в обычном терминале
+        // ^C до того, как шелл запустился, может потеряться — как и в обычном терминале; на медленной
+        // машине (CI) так бывает и через полсекунды. Потерялся — ^C ещё раз, как сделал бы человек.
         RunLoop.main.run(until: Date().addingTimeInterval(0.5))
-
-        runner.interrupt(sessionID: session.id)
+        interruptUntilFinished(runner, store, session.id)
 
         XCTAssertEqual(waitTerminal(store)?.state, .stopped)
         XCTAssertFalse(Session.isAlive(pgid: pgid))
@@ -423,10 +423,20 @@ final class ProcessRunnerTests: XCTestCase {
         guard let session = store.sessions.first else { return XCTFail("сессия не запустилась") }
         // ^C до того, как шелл дочитал профиль, может потеряться — как и в обычном терминале
         RunLoop.main.run(until: Date().addingTimeInterval(0.5))
-
-        runner.interrupt(sessionID: session.id)
+        interruptUntilFinished(runner, store, session.id)
 
         XCTAssertEqual(waitTerminal(store)?.state, .stopped)
+    }
+
+    /// ^C, пока команда не завершится: потерянное (шелл ещё не готов) — ещё раз, как сделал бы человек.
+    private func interruptUntilFinished(_ runner: ProcessRunner, _ store: SessionStore, _ id: UUID) {
+        for _ in 0..<4 where !(store.sessions.first?.state.isTerminal ?? false) {
+            runner.interrupt(sessionID: id)
+            let deadline = Date().addingTimeInterval(2)
+            while !(store.sessions.first?.state.isTerminal ?? false), Date() < deadline {
+                RunLoop.main.run(until: Date().addingTimeInterval(0.05))
+            }
+        }
     }
 
     // MARK: - Все команды в терминале (цвет как в zsh)
