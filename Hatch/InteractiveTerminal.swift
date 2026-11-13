@@ -164,26 +164,53 @@ final class InteractiveTerminal: NSObject, LocalProcessTerminalViewDelegate {
         guard !finished else { return }
         finished = true
         let code = status.map(Self.exitStatus) ?? -1
-        deliverWhenDrained(code: code, since: Date())
+        deliverWhenDrained(code: code, pid: view.process.shellPid, since: Date())
+    }
+
+    enum Reaped: Equatable {
+        /// Статус забрали мы: это настоящий код выхода.
+        case status(Int32)
+        /// Процесс ещё не завершился до конца — статус не готов.
+        case running
+        /// Статус уже забрал SwiftTerm — верен его код.
+        case gone
+    }
+
+    /// SwiftTerm спрашивает статус через waitpid(WNOHANG) сразу по событию выхода и под нагрузкой
+    /// бывает раньше, чем статус готов: тогда он отдаёт 0, и упавшая команда выглядела успешной.
+    /// Поэтому спрашиваем сами, пока процесс не будет снят.
+    static func reap(_ pid: pid_t) -> Reaped {
+        guard pid > 0 else { return .gone }
+        var status: Int32 = 0
+        let result = waitpid(pid, &status, WNOHANG)
+        if result == pid { return .status(exitStatus(status)) }
+        return result == 0 ? .running : .gone
     }
 
     /// Процесс завершился раньше, чем терминал разобрал его вывод: большой быстрый вывод
     /// доходит порциями ещё какое-то время. Снимок — когда вывод дочитан до конца (EOF)
     /// и новых порций нет; иначе терялся бы конец вывода — итог команды.
-    private func deliverWhenDrained(code: Int32, since start: Date) {
+    private func deliverWhenDrained(code reported: Int32, pid: pid_t, since start: Date) {
+        var code = reported
+        var waiting = pid
+        switch Self.reap(pid) {
+        case .status(let real): code = real; waiting = 0
+        case .gone: waiting = 0
+        case .running: break
+        }
         let reachedEnd = view.process.childfd == -1
         let quiet = Date().timeIntervalSince(lastDataAt) >= Self.drainQuiet
-        if (reachedEnd && quiet) || Date().timeIntervalSince(start) > Self.drainTimeout {
+        if (reachedEnd && quiet && waiting == 0) || Date().timeIntervalSince(start) > Self.drainTimeout {
             onExit?(code, snapshot())
             return
         }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
-            self?.deliverWhenDrained(code: code, since: start)
+            self?.deliverWhenDrained(code: code, pid: waiting, since: start)
         }
     }
 
     /// Сырой статус waitpid → код выхода; для убитых сигналом — номер сигнала, как у `Process`.
-    private static func exitStatus(_ status: Int32) -> Int32 {
+    static func exitStatus(_ status: Int32) -> Int32 {
         let signal = status & 0x7f
         return signal == 0 ? (status >> 8) & 0xff : signal
     }

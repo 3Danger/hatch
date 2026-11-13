@@ -785,6 +785,24 @@ final class ProcessRunnerTests: XCTestCase {
 
         XCTAssertEqual(store.sessions.first?.output.count, 18000)
     }
+
+    /// Код выхода дозапрашивается сам: пока процесс не снят — «ещё работает», потом настоящий код,
+    /// а если статус уже забрал SwiftTerm — «снят» (верен его код).
+    func testReapGetsRealExitCode() {
+        var pid: pid_t = 0
+        let args: [UnsafeMutablePointer<CChar>?] = ["/bin/sh", "-c", "sleep 0.2; exit 7"].map { $0.withCString { strdup($0) } } + [nil]
+        defer { args.forEach { free($0) } }
+        XCTAssertEqual(posix_spawn(&pid, "/bin/sh", nil, nil, args, environ), 0)
+        XCTAssertEqual(InteractiveTerminal.reap(pid), .running)
+        let deadline = Date().addingTimeInterval(5)
+        var result = InteractiveTerminal.reap(pid)
+        while result == .running, Date() < deadline {
+            usleep(20_000)
+            result = InteractiveTerminal.reap(pid)
+        }
+        XCTAssertEqual(result, .status(7))
+        XCTAssertEqual(InteractiveTerminal.reap(pid), .gone, "второй раз — уже снят")
+    }
 }
 
 extension Session {
@@ -792,4 +810,5 @@ extension Session {
     static func isAlive(pgid: Int32) -> Bool {
         kill(-pgid, 0) == 0 || kill(pgid, 0) == 0
     }
+
 }
