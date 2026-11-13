@@ -61,6 +61,8 @@ struct LauncherRootView: View {
     @State private var folderTreeRequest = 0
     /// Список «Избранное» (кнопка ★, ⌘E).
     @State private var favoritesOpen = false
+    /// Шпаргалка по клавишам (⌘/).
+    @State private var keysOpen = false
     /// Сообщение внизу панели («Удалено…», «В избранном…»), с «Отменить», если можно.
     @State private var toast: PanelToast?
     @FocusState private var inputFocused: Bool
@@ -147,6 +149,12 @@ struct LauncherRootView: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 ModeSwitcher(mode: inputMode, lang: lang, onSelect: switchMode)
+                    // ⌘/ — шпаргалка по клавишам текущего режима, под переключателем
+                    .hatchPopup(isPresented: $keysOpen) { _ in
+                        PopupCard {
+                            KeysSheetView(mode: inputMode, hotkey: SystemScreenshotShortcuts.display(settings.hotkeyString), lang: lang)
+                        }
+                    }
             }
                 .padding(.leading, 14) // по левому краю текста в поле ввода
                 .padding(.trailing, 2)
@@ -466,7 +474,10 @@ struct LauncherRootView: View {
             // шаг применили Enter-ом или отменили Esc у свёрнутого блока — печатать дальше в поле ввода
             onStageEditEnded: { if expandedID == nil { inputFocused = true } },
             blockSyntax: { blockSyntax($0) },
-            onToggleFormat: { toggleBlockFormat($0) }
+            onToggleFormat: { toggleBlockFormat($0) },
+            highlight: searchMode ? searchQuery.trimmingCharacters(in: .whitespaces) : nil,
+            clipboardMatches: searchMode && !searchQuery.trimmingCharacters(in: .whitespaces).isEmpty
+                ? clipboard.matching(searchQuery.trimmingCharacters(in: .whitespaces), kind: .all).count : 0
         )
     }
 
@@ -774,7 +785,7 @@ struct LauncherRootView: View {
             fromPreview(preview) { insertText(text) }
         case (0, .command):
             if !model.selectAllText() { NSSound.beep() }
-        case (15, .command):
+        case (15, [.command, .shift]):
             // ⌘R — форматировать или как есть
             if model.syntaxKind == nil { NSSound.beep() } else { togglePreviewFormat(preview) }
         case (51, .command):
@@ -896,6 +907,8 @@ struct LauncherRootView: View {
         previews.closeAll(clipID: clip.id)
         clipboard.remove(clip)
         clipSelection = min(clipSelection, max(visibleClips.count - 1, 0))
+        // как у очистки буфера: 5 секунд можно вернуть (файл картинки удаляется не сразу)
+        showToast(L.t("clip_deleted", lang), undo: { clipboard.restore([clip]) })
     }
 
     /// Корзина и ⌃L в режиме буфера: незакреплённые убираются, 5 секунд можно вернуть.
@@ -1171,12 +1184,34 @@ struct LauncherRootView: View {
             case (37, .control) where clipboardMode && !showSettings:
                 clearClipboard()
                 return nil
-            case (15, .command) where clipboardMode && !showSettings:
-                // ⌘R — у выбранной записи: форматировать или как есть
+            case (15, [.command, .shift]) where clipboardMode && !showSettings:
+                // ⇧⌘R — у выбранной записи: форматировать или как есть (⌘R — повтор команды)
                 if let clip = selectedClip, clipSyntax(clip) != nil { toggleClipFormat(clip) } else { NSSound.beep() }
                 return nil
-            case (15, .command) where !showSettings && !searchMode:
-                // ⌘R — у раскрытого, выбранного стрелками или последнего блока
+            case (15, .command) where !showSettings && !clipboardMode:
+                // ⌘R — повторить команду раскрытого или выбранного стрелками блока, как «обновить» в macOS
+                guard let id = expandedID ?? navigator.selectedID,
+                      let session = sessionStore.filteredSessions.first(where: { $0.id == id }) else {
+                    NSSound.beep()
+                    return nil
+                }
+                rerun(session)
+                return nil
+            case (8, .command) where !showSettings && !clipboardMode && expandedID == nil && navigator.isNavigating
+                && ((event.window?.firstResponder as? NSTextView)?.selectedRange().length ?? 0) == 0:
+                // ⌘C у выбранного стрелками блока (в поле ничего не выделено) — скопировать его вывод
+                if let id = navigator.selectedID, let session = sessionStore.filteredSessions.first(where: { $0.id == id }) {
+                    copyOutput(session)
+                } else {
+                    NSSound.beep()
+                }
+                return nil
+            case (1, .command) where !showSettings && !clipboardMode && navigator.isNavigating:
+                // ⌘S — закрепить или открепить выбранный стрелками блок
+                if let id = navigator.selectedID { sessionStore.togglePin(id: id) }
+                return nil
+            case (15, [.command, .shift]) where !showSettings && !searchMode:
+                // ⇧⌘R — у раскрытого, выбранного стрелками или последнего блока
                 let id = expandedID ?? navigator.selectedID ?? sessionStore.filteredSessions.first?.id
                 if let session = sessionStore.filteredSessions.first(where: { $0.id == id }), blockSyntax(session) != nil {
                     toggleBlockFormat(session)
@@ -1217,6 +1252,11 @@ struct LauncherRootView: View {
             case (13, .command):
                 // ⌘W — то же, что Esc: закрыть верхний слой (окно, настройки, режим), иначе скрыть панель
                 Self.sendEscape(to: event.window)
+                return nil
+            case (44, .command) where !showSettings:
+                // ⌘/ — шпаргалка по клавишам режима; повторно — закрыть
+                favoritesOpen = false
+                keysOpen.toggle()
                 return nil
             case (43, .command):
                 // ⌘, — настройки, как в приложениях macOS; повторно — закрыть
@@ -1381,10 +1421,10 @@ struct LauncherRootView: View {
         // отформатированный вывод копируется таким, каким виден
         if let syntax = blockSyntax(session), syntax.on, let shown = syntax.text {
             Clipboard.copy(shown)
-            return
+        } else {
+            Clipboard.copy(runner.terminal(for: session.id)?.snapshot().plain ?? session.output)
         }
-        let text = runner.terminal(for: session.id)?.snapshot().plain ?? session.output
-        Clipboard.copy(text)
+        showToast(String(format: L.t("output_copied", lang), session.command))
     }
 
     private var colorScheme: ColorScheme? {
@@ -1431,14 +1471,29 @@ struct HistoryListView: View {
     /// Формат вывода блока (JSON, YAML, XML) и {} — форматировать или как есть.
     var blockSyntax: (Session) -> BlockSyntax? = { _ in nil }
     var onToggleFormat: (Session) -> Void = { _ in }
+    /// Поиск: что подсветить в командах и выводе (у вывода — только строки с совпадением).
+    var highlight: String?
+    /// Поиск ничего не нашёл в истории — сколько нашлось бы в буфере.
+    var clipboardMatches = 0
 
     var body: some View {
         if sessionStore.filteredSessions.isEmpty {
-            Text(L.t(sessionStore.filterText.isEmpty ? "history_empty" : "search_empty", lang))
+            if sessionStore.filterText.isEmpty {
+                EmptyHistoryView(lang: lang)
+            } else {
+                VStack(spacing: 6) {
+                    Text(L.t("search_empty", lang))
+                    // искомое могло быть скопировано, а не выполнено
+                    if clipboardMatches > 0 {
+                        Text(String(format: L.t("search_in_clipboard", lang), clipboardMatches))
+                            .foregroundStyle(Tactile.clip)
+                    }
+                }
                 .font(.callout)
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 20)
+            }
         } else {
             let sessions = sessionStore.filteredSessions
             ScrollViewReader { proxy in
@@ -1469,7 +1524,8 @@ struct HistoryListView: View {
                                          onStageEditEnded: onStageEditEnded,
                                          stageHistory: stageHistory,
                                          syntax: blockSyntax(session),
-                                         onToggleFormat: { onToggleFormat(session) })
+                                         onToggleFormat: { onToggleFormat(session) },
+                                         highlight: highlight)
                         .id(session.id)
                         .zIndex(session.id == expandedID ? 1 : 0)
                         .transition(.layersBlock)
@@ -1576,6 +1632,8 @@ struct SessionBlockView: View {
     /// Вывод — JSON, YAML или XML: отформатирован и подсвечен (кнопка {} — как есть).
     var syntax: BlockSyntax?
     var onToggleFormat: () -> Void = {}
+    /// Поиск: подсветить совпадения в команде и показать только строки вывода с ними.
+    var highlight: String?
     /// Какой шаг конвейера редактируется: индекс, `pipeline.count` — новый шаг, nil — никакой.
     @State private var editingStage: Int?
     @State private var stageDraft = ""
@@ -1654,7 +1712,7 @@ struct SessionBlockView: View {
                 .animation(LayersDepth.spring, value: isExpanded)
 
             VStack(alignment: .leading, spacing: 2) {
-                Text(session.command)
+                Text(Self.marked(AttributedString(session.command), highlight))
                     .font(.system(size: 13, weight: .semibold))
                     .lineLimit(1)
                     .truncationMode(.tail)
@@ -1686,7 +1744,10 @@ struct SessionBlockView: View {
     /// вверх, а кнопки поднимаются снизу по одной — шаги конвейера и «+» остаются на месте.
     private var statusSlot: some View {
         let showActions = hovered || isExpanded || isSelected
-        let actions = blockActions
+        // выбран стрелками и не под мышью — кнопки с клавишами, как у строк буфера: клавиши видны там,
+        // где ими пользуются
+        let keyed = isSelected && !hovered && !isExpanded && session.state.isTerminal
+        let actions = keyed ? blockActions.filter { $0.icon != .rerun && $0.icon != .copy } : blockActions
         return ZStack(alignment: .trailing) {
             StatusCapsule(status: BlockStatus(session), lang: lang)
                 .rotation3DEffect(.degrees(showActions ? 75 : 0), axis: (1, 0, 0), anchor: .top, perspective: 0.5)
@@ -1694,6 +1755,10 @@ struct SessionBlockView: View {
                 .opacity(showActions ? 0 : 1)
                 .animation(.spring(response: 0.38, dampingFraction: 0.8), value: showActions)
             HStack(spacing: 4) {
+                if keyed {
+                    keyButton("⌘C", L.t("block_copy_output", lang), perform: onCopy)
+                    keyButton("⌘R", L.t("rerun_short", lang), perform: onRerun)
+                }
                 ForEach(Array(actions.enumerated()), id: \.offset) { index, action in
                     GlassIconButton(icon: action.icon, color: action.color, size: LauncherMetrics.blockButton,
                                     help: action.help, action: action.run)
@@ -1707,6 +1772,25 @@ struct SessionBlockView: View {
             }
             .allowsHitTesting(showActions)
         }
+    }
+
+    /// Кнопка-колпачок «клавиша + подпись» — то же, что сочетание (как у строк буфера).
+    private func keyButton(_ key: String, _ title: String, perform: @escaping () -> Void) -> some View {
+        Button(action: perform) {
+            HStack(spacing: 5) {
+                KeyHint(key: key)
+                Text(title)
+                    .font(.system(size: 11.5))
+                    .foregroundStyle(Tactile.keyText)
+                    .lineLimit(1)
+            }
+            .padding(.leading, 4)
+            .padding(.trailing, 8)
+            .frame(height: LauncherMetrics.blockButton)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(KeyCapButtonStyle(cornerRadius: 7))
+        .fixedSize()
     }
 
     private struct BlockAction {
@@ -1782,11 +1866,20 @@ struct SessionBlockView: View {
             Button {
                 startEditing(at: session.pipeline.count, text: "")
             } label: {
-                // в макете — знак «+» шрифтом 15, а не жирный символ
-                Text("+")
-                    .font(.system(size: 15))
+                // «фильтр»: просто «+» не говорил, что он добавит
+                // подпись — у блока под мышью и выбранного, у остальных значок: список не пестрит
+                HStack(spacing: 4) {
+                    Image(systemName: "line.3.horizontal.decrease")
+                        .font(.system(size: 10, weight: .semibold))
+                    if hovered || isSelected {
+                        Text(L.t("filter", lang))
+                            .font(.system(size: 11.5))
+                    }
+                }
                     .foregroundStyle(Tactile.keyText)
-                    .frame(width: LauncherMetrics.blockButton, height: LauncherMetrics.blockButton)
+                    .frame(minWidth: LauncherMetrics.blockButton)
+                    .padding(.horizontal, hovered || isSelected ? 7 : 0)
+                    .frame(height: LauncherMetrics.blockButton)
                     .contentShape(Rectangle())
             }
             .buttonStyle(KeyCapButtonStyle(cornerRadius: LauncherMetrics.buttonRadius(LauncherMetrics.blockButton)))
@@ -1955,8 +2048,13 @@ struct SessionBlockView: View {
         let source = shownOutput
         let columns = previewColumns
         let limit = outputLines + 1
-        let layout = OutputPreview.layout(lines: source.components(separatedBy: "\n"),
-                                          gap: session.outputGap, maxLines: outputLines,
+        let all = source.components(separatedBy: "\n")
+        // поиск: только строки с совпадением, как grep, — видно, почему блок нашёлся
+        let found = highlight.flatMap { query in
+            query.isEmpty ? nil : all.filter { plain($0).range(of: query, options: [.caseInsensitive, .diacriticInsensitive]) != nil }
+        } ?? []
+        let layout = OutputPreview.layout(lines: found.isEmpty ? all : found,
+                                          gap: found.isEmpty ? session.outputGap : nil, maxLines: outputLines,
                                           rows: { columns > 0 ? wrappedRows($0, columns: columns, limit: limit).count : 1 })
         return VStack(alignment: .leading, spacing: 0) {
             ForEach(Array(layout.head.enumerated()), id: \.offset) { outputLine($0.element, rows: layout.headRows[$0.offset]) }
@@ -2010,8 +2108,32 @@ struct SessionBlockView: View {
         return row
     }
 
+    /// Видимый текст строки вывода (без ANSI-кодов).
+    private func plain(_ line: String) -> String {
+        shownIsANSI ? String(ANSIText.attributed(line).characters) : line
+    }
+
+    /// Совпадения с запросом поиска — подсвечены, как в списках Hatch.
+    static func marked(_ text: AttributedString, _ query: String?) -> AttributedString {
+        guard let query, !query.isEmpty else { return text }
+        var result = text
+        let plain = String(result.characters)
+        var range = plain.startIndex..<plain.endIndex
+        while let found = plain.range(of: query, options: [.caseInsensitive, .diacriticInsensitive], range: range) {
+            let from = plain.distance(from: plain.startIndex, to: found.lowerBound)
+            let length = plain.distance(from: found.lowerBound, to: found.upperBound)
+            let chars = result.characters
+            let lower = chars.index(chars.startIndex, offsetBy: from)
+            let upper = chars.index(lower, offsetBy: length)
+            result[lower..<upper].backgroundColor = Tactile.search.opacity(0.45)
+            result[lower..<upper].foregroundColor = .white
+            range = found.upperBound..<plain.endIndex
+        }
+        return result
+    }
+
     private func outputRow(_ text: AttributedString) -> some View {
-        Text(text)
+        Text(Self.marked(text, highlight))
             .font(.system(size: LauncherMetrics.outputFontSize, design: .monospaced))
             .lineLimit(1)
             .truncationMode(.tail)
@@ -2144,9 +2266,9 @@ struct CommandInputView: View {
                 .textFieldStyle(.plain)
                 .font(font)
         }
-        if let fix {
-            FixLabel(text: fix)
-        } else if let quick, showsQuickLabel {
+        // исправление опечатки показывает строка «Команды … нет» под полем — в поле второй раз не нужно
+        // (Tab по-прежнему подставляет его)
+        if fix == nil, let quick, showsQuickLabel {
             QuickActionLabel(action: quick, lang: lang)
         }
         if let trailing { trailing }

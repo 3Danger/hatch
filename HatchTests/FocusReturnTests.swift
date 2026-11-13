@@ -513,7 +513,7 @@ final class FocusReturnTests: XCTestCase {
         XCTAssertFalse(panel.isVisible)
     }
 
-    /// ⌘1 у текста: то же окно просмотра, JSON — отформатирован; ⌘R — как есть (запоминается в записи).
+    /// ⌘1 у текста: то же окно просмотра, JSON — отформатирован; ⇧⌘R — как есть (запоминается в записи).
     func testTextPreviewFormatsAndToggles() throws {
         let panel = try showPanel()
         clipboard.record(Clip(text: #"{"b":1,"a":[2,3]}"#, copiedAt: Date()), days: 7)
@@ -526,7 +526,7 @@ final class FocusReturnTests: XCTestCase {
         XCTAssertEqual(textView.string, "{\n  \"b\": 1,\n  \"a\": [\n    2,\n    3\n  ]\n}", "порядок ключей как в исходнике")
         XCTAssertEqual(preview.preview?.model.caption.hasPrefix("JSON"), true)
 
-        key(15, "r", .command, to: preview) // ⌘R — как есть
+        key(15, "r", [.command, .shift], to: preview) // ⇧⌘R — как есть
         wait { !textView.string.contains("\n") }
         XCTAssertEqual(textView.string, #"{"b":1,"a":[2,3]}"#)
         XCTAssertEqual(clipboard.clips.first?.formatted, false, "выбор запомнился в записи")
@@ -540,8 +540,8 @@ final class FocusReturnTests: XCTestCase {
         XCTAssertFalse(preview.isVisible)
     }
 
-    /// ⌘R в списке команд: вывод последнего блока — как есть (и обратно).
-    func testCommandRTogglesBlockFormatting() throws {
+    /// ⇧⌘R в списке команд: вывод последнего блока — как есть (и обратно).
+    func testShiftCommandRTogglesBlockFormatting() throws {
         let panel = try showPanel()
         let runner = try XCTUnwrap(runner)
         runner.run(command: #"printf '{"id":1,"tags":["a"]}'"#)
@@ -549,10 +549,38 @@ final class FocusReturnTests: XCTestCase {
         while store.sessions.first?.state.isTerminal != true, Date() < deadline { spin(0.05) }
         spin(0.3)
         XCTAssertNil(store.sessions.first?.formatted)
-        key(15, "r", .command, to: panel) // ⌘R
+        key(15, "r", [.command, .shift], to: panel) // ⇧⌘R
         XCTAssertEqual(store.sessions.first?.formatted, false, "отформатированный по умолчанию — теперь как есть")
-        key(15, "r", .command, to: panel)
+        key(15, "r", [.command, .shift], to: panel)
         XCTAssertEqual(store.sessions.first?.formatted, true)
+    }
+
+    /// ↓ выбирает блок, ⌘R повторяет его команду в том же блоке (новый блок не появляется).
+    func testCommandRRerunsSelectedBlock() throws {
+        let panel = try showPanel()
+        let runner = try XCTUnwrap(runner)
+        let file = FileManager.default.temporaryDirectory.appendingPathComponent("rerun-\(UUID().uuidString)").path
+        runner.run(command: "echo x >> '\(file)'; wc -l < '\(file)'")
+        var deadline = Date().addingTimeInterval(5)
+        while store.sessions.first?.state.isTerminal != true, Date() < deadline { spin(0.05) }
+        XCTAssertEqual(store.sessions.first?.output.trimmingCharacters(in: .whitespacesAndNewlines), "1")
+        key(125, "\u{F701}", [.function, .numericPad], to: panel) // ↓ — выбрать блок
+        key(15, "r", .command, to: panel) // ⌘R
+        deadline = Date().addingTimeInterval(5)
+        while store.sessions.first?.output.trimmingCharacters(in: .whitespacesAndNewlines) != "2", Date() < deadline { spin(0.05) }
+        XCTAssertEqual(store.sessions.count, 1, "повтор — в том же блоке")
+        XCTAssertEqual(store.sessions.first?.output.trimmingCharacters(in: .whitespacesAndNewlines), "2")
+    }
+
+    /// ⌘/ открывает шпаргалку по клавишам, Esc закрывает.
+    func testCommandSlashOpensKeysSheet() throws {
+        let panel = try showPanel()
+        key(44, "/", .command, to: panel) // ⌘/
+        wait { panel.childWindows?.count == 1 }
+        let sheet = try XCTUnwrap(panel.childWindows?.first)
+        key(53, "\u{1b}", to: sheet)
+        wait { (panel.childWindows?.count ?? 0) == 0 }
+        XCTAssertEqual(panel.childWindows?.count ?? 0, 0)
     }
 
     private static func find<T: NSView>(_ type: T.Type, in view: NSView) -> T? {

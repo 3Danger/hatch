@@ -20,7 +20,7 @@ struct Clip: Codable, Identifiable, Equatable, Hashable {
     /// файлы буфера до картинок читаются как раньше.
     var image: ClipImage?
 
-    /// Форматирование включили или выключили кнопкой {} (⌘R); nil — как в настройках.
+    /// Форматирование включили или выключили кнопкой {} (⇧⌘R); nil — как в настройках.
     var formatted: Bool?
 
     var isPinned: Bool {

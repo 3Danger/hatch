@@ -31,7 +31,7 @@ final class ClipPreviewModel {
     let syntaxKind: SyntaxKind?
     let codeLanguage: String?
     let options: SyntaxOptions
-    /// Показывать отформатированным ({} и ⌘R).
+    /// Показывать отформатированным ({} и ⇧⌘R).
     private(set) var formatted: Bool
     /// Отформатированный текст с подсветкой (считается при открытии и при переключении).
     private(set) var rendered: Highlighted?
@@ -311,7 +311,7 @@ final class ClipPreviews {
     weak var anchor: NSView?
     /// Окно из панели закрылось само (клик мимо, скрытие панели, закрепление) — панели забыть его.
     var onTransientGone: () -> Void = {}
-    /// {} и ⌘R в окне текста: форматировать или показывать как есть.
+    /// {} и ⇧⌘R в окне текста: форматировать или показывать как есть.
     var onToggleFormat: (ClipPreviewWindow) -> Void = { _ in }
     /// Меню правого клика по картинке этого окна.
     var menuItems: (ClipPreviewWindow) -> (leading: [NSMenuItem], trailing: [NSMenuItem]) = { _ in ([], []) }
@@ -562,7 +562,7 @@ private struct ClipPreviewContent: View {
                 items = [("⌘C", "preview_hint_copy_text"), ("⌘V", "clip_insert"), ("Esc", "preview_hint_deselect")]
             } else {
                 var list = [("↩", "clip_copy"), ("⌘↩", "clip_insert")]
-                if model.syntaxKind != nil { list.append(("⌘R", model.formatted ? "preview_hint_raw" : "preview_hint_format")) }
+                if model.syntaxKind != nil { list.append(("⇧⌘R", model.formatted ? "preview_hint_raw" : "preview_hint_format")) }
                 list.append(model.isPinned ? ("⌘S", "preview_hint_unpin") : ("⌘S", "preview_hint_pin"))
                 list.append((model.isPinned ? "⌘W" : "Esc", "preview_hint_close"))
                 items = list

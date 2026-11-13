@@ -218,7 +218,7 @@ private struct ClipRow: View {
             .background(Tactile.keyText.opacity(0.12), in: RoundedRectangle(cornerRadius: 4))
     }
 
-    /// {} — форматировать запись или показывать как есть (⌘R).
+    /// {} — форматировать запись или показывать как есть (⇧⌘R).
     private func formatButton(on: Bool) -> some View {
         Button(action: onToggleFormat) {
             Text("{}")
@@ -319,7 +319,8 @@ struct ClipThumbnail: View {
                     .overlay(Image(systemName: "photo").foregroundStyle(.tertiary))
             }
         }
-        .frame(width: width, height: height)
+        // от левого верхнего угла: у скриншота там начало текста (по центру резалась середина строки)
+        .frame(width: width, height: height, alignment: .topLeading)
         .clipShape(RoundedRectangle(cornerRadius: 7))
         .overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(Color.primary.opacity(0.15), lineWidth: 0.5))
     }

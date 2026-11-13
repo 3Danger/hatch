@@ -42,10 +42,10 @@ struct SettingsView: View {
 
             ScrollView {
             VStack(spacing: 0) {
-            group {
-                row(L.t("hotkey", lang), first: true) { HotKeyCapsField(spec: binding(\.hotkeyString), lang: lang) }
+            group(L.t("set_general", lang)) {
+                row(L.t("hotkey", lang), first: true) { HotKeyCapsField(spec: binding(\.hotkeyString), lang: lang).fixedSize() }
                 row(L.t("folder_tree", lang), hint: L.t("folder_tree_hint", lang)) {
-                    HotKeyCapsField(spec: binding(\.folderTreeShortcut), lang: lang)
+                    HotKeyCapsField(spec: binding(\.folderTreeShortcut), lang: lang).fixedSize()
                 }
                 row(L.t("status_icon", lang), hint: L.t("status_icon_hint", lang)) {
                     Toggle("", isOn: binding(\.showStatusIcon))
@@ -61,7 +61,7 @@ struct SettingsView: View {
                 }
             }
 
-            group {
+            group(L.t("set_commands", lang)) {
                 row(L.t("history_limit", lang), first: true) { GlassStepper(value: binding(\.historyLimit), range: 10...500, step: 10) }
                 row(L.t("preview_lines", lang)) {
                     GlassStepper(value: binding(\.previewLines), range: SettingsStore.previewLinesRange)
@@ -83,10 +83,10 @@ struct SettingsView: View {
                 }
             }
 
-            group { appRows }
-            group { clipboardRows }
-            group { formatRows }
-            group { screenshotRows }
+            group(L.t("set_apps", lang)) { appRows }
+            group(L.t("set_clipboard", lang)) { clipboardRows }
+            group(L.t("set_format", lang)) { formatRows }
+            group(L.t("set_screenshots", lang)) { screenshotRows }
                 .task(id: "\(settings.screenshotsEnabled) \(settings.screenshotShortcut)") {
                     while !Task.isCancelled {
                         screenshotTaken = settings.screenshotsEnabled && SystemScreenshotShortcuts.isTaken(settings.screenshotShortcut)
@@ -102,17 +102,17 @@ struct SettingsView: View {
             .frame(height: min(groupsHeight, Self.maxGroupsHeight))
 
             HStack(spacing: 8) {
-                Text("Hatch \(version)").font(.caption).foregroundStyle(.tertiary)
-                Spacer()
-                // выход без значка в строке меню (и ⌘Q в панели)
+                Text("Hatch \(version) ·").font(.caption).foregroundStyle(.tertiary)
+                // выход без значка в строке меню (⌘Q в панели только скрывает её) — ссылкой, а не крупной
+                // красной кнопкой рядом с «Готово»: её легко было нажать вместо «Готово»
                 Button { NSApp.terminate(nil) } label: {
                     Text(L.t("quit", lang))
-                        .font(.system(size: 13, weight: .semibold))
+                        .font(.caption)
                         .foregroundStyle(Tactile.redText)
-                        .padding(.horizontal, 14)
-                        .frame(height: 34)
+                        .contentShape(Rectangle())
                 }
-                .buttonStyle(KeyCapButtonStyle(cornerRadius: 10))
+                .buttonStyle(.plain)
+                Spacer()
                 Button(action: onClose) {
                     Text(L.t("done", lang))
                         .font(.system(size: 13, weight: .semibold))
@@ -139,12 +139,21 @@ struct SettingsView: View {
             .stroke(LinearGradient(colors: [.white.opacity(0.08), .clear], startPoint: .top, endPoint: .center), lineWidth: 1))
     }
 
-    private func group<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
-        VStack(spacing: 0) { content() }
-            .background(Tactile.group, in: RoundedRectangle(cornerRadius: 14))
-            .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(Tactile.groupEdge))
-            .padding(.horizontal, 12)
-            .padding(.vertical, 5)
+    /// Группа настроек с заголовком: по заголовкам нужное находится без чтения каждой строки.
+    private func group<Content: View>(_ title: String, @ViewBuilder _ content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title.uppercased())
+                .font(.system(size: 10.5, weight: .semibold))
+                .tracking(0.6)
+                .foregroundStyle(.secondary)
+                .padding(.leading, 8)
+            VStack(spacing: 0) { content() }
+                .background(Tactile.group, in: RoundedRectangle(cornerRadius: 14))
+                .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(Tactile.groupEdge))
+        }
+        .padding(.horizontal, 12)
+        .padding(.top, 8)
+        .padding(.bottom, 2)
     }
 
     private func row<Control: View>(_ title: String, hint: String? = nil, first: Bool = false,
@@ -663,7 +672,7 @@ extension SettingsView {
         }
         if settings.screenshotsEnabled {
             row(L.t("screenshot_shortcut", lang), hint: L.t("screenshot_shortcut_hint", lang)) {
-                HotKeyCapsField(spec: binding(\.screenshotShortcut), lang: lang)
+                HotKeyCapsField(spec: binding(\.screenshotShortcut), lang: lang).fixedSize()
             }
             if screenshotTaken {
                 lineRow {

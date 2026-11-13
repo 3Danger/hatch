@@ -55,6 +55,7 @@ macOS will ask for permission to send notifications (when long commands finish) 
 | <kbd>⌘E</kbd> · <kbd>⌘D</kbd> | favorites · add the current folder to favorites |
 | <kbd>⌘4</kbd> | clipboard: everything you copied, with search |
 | <kbd>⌃L</kbd> | clear finished blocks (can be undone) |
+| <kbd>⌘/</kbd> | every shortcut of the current mode |
 
 <details>
 <summary><b>All shortcuts</b></summary>
@@ -65,7 +66,8 @@ macOS will ask for permission to send notifications (when long commands finish) 
 | Enter | input field | run the command; with a hint on the right, open the app or copy the result |
 | Tab · ⇧Tab | input field | complete; with several options, the common part first, then cycle forward and back |
 | → | input field | accept the gray suggestion: from history or an app name (Tab completes it too) |
-| ↑ / ↓ | panel | browse command history |
+| ↑ / ↓ | panel | browse command history; the block of that command is selected |
+| ⌘C · ⌘R · ⌘S | selected block | copy its output · rerun it in the same block · pin it |
 | ⌃C | expanded block | interrupt the command |
 | ⌘F | panel | search history and back (inside expanded output, search that output) |
 | ⌘E | panel | favorites: folders and commands |
@@ -74,7 +76,7 @@ macOS will ask for permission to send notifications (when long commands finish) 
 | ⌘4 | panel | clipboard and back |
 | ↑ / ↓ · Enter · ⌘Enter · Esc | clipboard | move between items · copy and hide the panel · insert into the input field · leave |
 | Tab · ⇧Tab · ⌘1 | clipboard | next · previous item type · open the item full size |
-| ⌘R | clipboard, block | formatted or as is |
+| ⇧⌘R | clipboard, block | formatted or as is |
 | ⌘S · ⌘⌫ · ⌃L | clipboard | pin · delete the selected item · clear the clipboard (pinned items stay); in a preview, ⌘S keeps the window on top of others |
 | Esc · ⌘W | anywhere | close the top layer, one per press: popup or settings → TAB suggestions → expanded block → search or clipboard → the “No command” line; after that, hide the panel (typed text stays). In a live terminal (vim, ssh) Esc goes to the program, ⌘W collapses the block |
 | ⌘1 (configurable) | panel | folder tree at the current folder |
@@ -82,6 +84,7 @@ macOS will ask for permission to send notifications (when long commands finish) 
 | ⌃L | panel | clear finished blocks (like the `clear` command) |
 | ⌘Q | panel | hide the panel; quit from settings or the menu bar icon |
 | ⌘, | panel | settings and back |
+| ⌘/ | panel | shortcut sheet for the current mode |
 | ↑ / ↓ · Enter · Esc | search | move between found blocks · expand · leave |
 | ↑ ↓ → ← · Space · letters | folder tree | move by row, expand and enter, go up · collapse · filter (parents of matches are dimmed) |
 | Enter · ⌘← ⌘→ · Esc | folder tree | go there, like `cd` · neighboring folder of the path · close |
@@ -102,7 +105,10 @@ macOS will ask for permission to send notifications (when long commands finish) 
 **History**
 - A block shows the command, folder, time, status and colored output. Long output shows the beginning and the end, the middle is collapsed.
 - Click a block to expand it: a finished one shows all its output, a running one shows the live terminal.
+- A failed command is marked red with its exit code; one you stopped yourself (<kbd>⌃C</kbd>, Stop) is gray.
+- <kbd>↑</kbd> <kbd>↓</kbd> select a block (its command goes to the input); the selected block shows its keys: <kbd>⌘C</kbd> copy output, <kbd>⌘R</kbd> rerun.
 - Rerun in the same block, pin, clear by levels. `clear` and <kbd>⌃L</kbd> remove finished blocks, with 5 seconds to undo.
+- Above the input: the current folder (the middle of a long path folds into `…`) and the mode switcher — commands, search (<kbd>⌘F</kbd>), clipboard (<kbd>⌘4</kbd>). Search highlights matches and shows only the matching lines of each block, with a count.
 
 **Pipeline**
 - `grep`, `sort` and `jq` steps work on the saved output, so it is safe even for `rm`, `curl -X POST` and deploys.
@@ -124,7 +130,7 @@ macOS will ask for permission to send notifications (when long commands finish) 
 - Enter or a double-click copies the item and hides the panel, leaving you to press <kbd>⌘V</kbd>. <kbd>⌘Enter</kbd> inserts the item into the input field. A click only selects a row; the selected and hovered rows show buttons for the same actions.
 - Copying something again moves it to the top. Files from Finder are saved as paths.
 - Each row has pin (<kbd>⌘S</kbd>) and delete. Pinned items stay grouped at the top and are never removed by clearing, age or the limit.
-- The trash button and <kbd>⌃L</kbd> in clipboard mode clear the clipboard (5 seconds to undo), not the command history.
+- <kbd>⌃L</kbd> in clipboard mode clears the clipboard (5 seconds to undo), not the command history. Deleting a single item can be undone too.
 - Images (screenshots with <kbd>⌘⇧⌃4</kbd>, Copy Image) appear as thumbnails with their size and app. The text on them is recognized on this Mac, offline, and is searchable. <kbd>⌘1</kbd> or a click on the thumbnail opens it full size, Enter copies it again, <kbd>⌘Enter</kbd> puts the image file path into the field. The preview is a window above the list: the image fills the window, and its header shows the keys that work right now. Drag the window by its header and resize it by its corners, always keeping the image proportions; a double-click on the header restores the original size. Select text on the image with the mouse, like in Preview: <kbd>⌘C</kbd> copies the selection (only the preview closes, Hatch stays), <kbd>⌘V</kbd> inserts it into the field, <kbd>⌘A</kbd> selects all of it. <kbd>⌘S</kbd> keeps the window on top of others: it stays when Hatch hides, shows on every desktop, and you can have several; <kbd>⌘V</kbd> and <kbd>⌘Enter</kbd> from it bring Hatch back and insert into the field. Esc and <kbd>⌘W</kbd> (and <kbd>⌘Q</kbd> for a pinned window) close the window, Esc clears the selection first; an unpinned preview also closes on a click outside it. Right-click shows the same actions as a menu, plus Copy Recognized Text and Pin in Clipboard. If the clipboard holds both text and an image (table cells), the text is saved. Up to 50 images, 20 MB each at most.
 - Passwords (password managers mark them as concealed) and copies from excluded apps are never saved.
 - Stored locally, up to 200 items for 7 days (configurable), and can be cleared in settings.
@@ -132,7 +138,7 @@ macOS will ask for permission to send notifications (when long commands finish) 
 **Formatting**
 - Hatch recognizes JSON (including logs made of JSON lines), SQL, YAML and XML by itself. In the clipboard the row is highlighted, with JSON and SQL on one line; in the output of a finished command, JSON, YAML and XML are shown formatted. A program's own colored output and the live terminal are left alone.
 - <kbd>⌘1</kbd> in the clipboard opens any text in the same window as images: in full, wrapped to the width, selectable with the mouse (<kbd>⌘A</kbd>, <kbd>⌘C</kbd> for the selection, ↩ for the whole text as shown, <kbd>⌘↩</kbd> into the field), <kbd>⌘S</kbd> keeps it on top of other windows, resize by the corners.
-- The `{}` button on an item, in the preview window and on a command block, and <kbd>⌘R</kbd>, switch between formatted and as is; the choice is remembered. What you see is what gets copied.
+- The `{}` button on an item, in the preview window and on a command block, and <kbd>⇧⌘R</kbd>, switch between formatted and as is; the choice is remembered. What you see is what gets copied.
 - SQL is broken into clauses, with keywords in UPPER CASE by default (lower case or unchanged in settings); dialects: standard, PostgreSQL, MySQL, ClickHouse.
 - “SQL format: Hatch · beta” in settings is Hatch's own style: columns with a leading comma, `JOIN … ON TRUE` and `WHERE TRUE` with `  AND …` conditions one per line, three or more ORs in parentheses as `(FALSE` with `OR …` one per line, CASE across lines. The query never changes in meaning: the result is checked against the original word for word, and if they do not match or a construct is unfamiliar, the standard format is shown.
 - In settings: whether to format by default, which formats to recognize (“Code” highlights shell, Go, Python and others, off by default), and commands (`cat`, `less`) and apps whose content is shown as is. Anything over 1 MB is shown as is.

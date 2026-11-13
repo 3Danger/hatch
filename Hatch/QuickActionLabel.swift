@@ -138,7 +138,10 @@ struct MissingCommandRow: View {
                     Button { onPick(suggestion) } label: {
                         HStack(spacing: 4) {
                             if index == 0 { KeyHint(key: "⇥") }
-                            Text(suggestion).font(.system(size: 12, design: .monospaced))
+                            // вся исправленная команда: видно, что именно выполнится
+                            Text(index == 0 ? CommandNotFound.replacingFirstWord(in: missing.command, with: suggestion) : suggestion)
+                                .font(.system(size: 12, design: .monospaced))
+                                .lineLimit(1)
                         }
                         .padding(.leading, index == 0 ? 3 : 7)
                         .padding(.trailing, 7)
