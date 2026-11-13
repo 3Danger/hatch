@@ -641,8 +641,8 @@ struct LauncherRootView: View {
         // деление на ноль: звук, набранное остаётся исправить
         if action == .divisionByZero { return true }
         text = ""
-        if case .calculate(let value) = action {
-            showToast(String(format: L.t("calc_copied", lang), Calculator.display(value)))
+        if case .calculate(let value, let separator) = action {
+            showToast(String(format: L.t("calc_copied", lang), Calculator.display(value, separator: separator)))
         }
         NotificationCenter.default.post(name: .hatchRequestHide, object: nil)
         return true

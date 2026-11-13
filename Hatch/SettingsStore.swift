@@ -52,6 +52,10 @@ final class SettingsStore {
     var openAppsFromInput: Bool { didSet { defaults.set(openAppsFromInput, forKey: Keys.openApps) } }
     /// Калькулятор в поле ввода: результат справа, Enter копирует.
     var calculatorInInput: Bool { didSet { defaults.set(calculatorInInput, forKey: Keys.calculator) } }
+    /// Разделитель дробной части результата, если во вводе его нет: "." или ",".
+    var calculatorSeparator: String { didSet { defaults.set(calculatorSeparator, forKey: Keys.calculatorSeparator) } }
+    /// Результат всегда с `calculatorSeparator`, как бы ни было набрано.
+    var calculatorForceSeparator: Bool { didSet { defaults.set(calculatorForceSeparator, forKey: Keys.calculatorForce) } }
     /// Алиас → приложение (bundle id или путь): `code` → VS Code.
     private(set) var appAliases: [String: String] { didSet { defaults.set(appAliases, forKey: Keys.appAliases) } }
     /// Имена, которые остаются командами, даже если совпали с приложением (`claude`, `mail`).
@@ -92,6 +96,8 @@ final class SettingsStore {
         static let favoriteCommands = "settings.favoriteCommands"
         static let openApps = "settings.openAppsFromInput"
         static let calculator = "settings.calculatorInInput"
+        static let calculatorSeparator = "settings.calculatorSeparator"
+        static let calculatorForce = "settings.calculatorForceSeparator"
         static let appAliases = "settings.appAliases"
         static let appExclusions = "settings.appExclusions"
         static let clipboardEnabled = "settings.clipboardEnabled"
@@ -124,6 +130,8 @@ final class SettingsStore {
         self.favoriteCommands = defaults.stringArray(forKey: Keys.favoriteCommands) ?? []
         self.openAppsFromInput = defaults.object(forKey: Keys.openApps) as? Bool ?? true
         self.calculatorInInput = defaults.object(forKey: Keys.calculator) as? Bool ?? true
+        self.calculatorSeparator = defaults.string(forKey: Keys.calculatorSeparator) == "," ? "," : "."
+        self.calculatorForceSeparator = defaults.object(forKey: Keys.calculatorForce) as? Bool ?? false
         self.appAliases = defaults.dictionary(forKey: Keys.appAliases) as? [String: String] ?? Self.defaultAppAliases
         self.appExclusions = defaults.stringArray(forKey: Keys.appExclusions) ?? Self.defaultAppExclusions
         self.clipboardEnabled = defaults.object(forKey: Keys.clipboardEnabled) as? Bool ?? true
@@ -243,7 +251,9 @@ final class SettingsStore {
     /// Разбор поля ввода с текущими настройками.
     func quickActionResolver(apps: [AppEntry]) -> QuickActionResolver {
         QuickActionResolver(apps: apps, aliases: appAliases, exclusions: appExclusions,
-                            appsEnabled: openAppsFromInput, calculatorEnabled: calculatorInInput)
+                            appsEnabled: openAppsFromInput, calculatorEnabled: calculatorInInput,
+                            decimalSeparator: calculatorSeparator == "," ? "," : ".",
+                            forceDecimalSeparator: calculatorForceSeparator)
     }
 
     private func rememberRecent(_ path: String) {
@@ -273,6 +283,8 @@ final class SettingsStore {
         showStatusIcon = true
         openAppsFromInput = true
         calculatorInInput = true
+        calculatorSeparator = "."
+        calculatorForceSeparator = false
         clipboardEnabled = true
         clipboardDays = Self.defaultClipboardDays
         folderTreeShortcut = Self.defaultFolderTreeShortcut

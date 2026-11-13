@@ -109,7 +109,7 @@ final class QuickActionTests: XCTestCase {
     }
 
     func testCalculatorComesFirst() {
-        XCTAssertEqual(resolve("2^10"), .calculate(1024))
+        XCTAssertEqual(resolve("2^10"), .calculate(1024, separator: "."))
         XCTAssertEqual(resolve("1/0"), .divisionByZero)
         XCTAssertNil(resolve("42"))
     }
@@ -152,5 +152,18 @@ final class QuickActionTests: XCTestCase {
         XCTAssertEqual(reloaded.appExclusions, ["claude"])
         reloaded.removeExclusion("claude")
         XCTAssertEqual(reloaded.appExclusions, [])
+    }
+
+    /// Разделитель результата: как набрано; нет или вперемешку — из настроек; «всегда так» — из настроек.
+    func testCalculatorSeparator() {
+        var r = resolver()
+        r.decimalSeparator = ","
+        XCTAssertEqual(resolve("11.11*.11", r), .calculate(11.11 * 0.11, separator: "."))
+        XCTAssertEqual(resolve("11,11*,11", r), .calculate(11.11 * 0.11, separator: ","))
+        XCTAssertEqual(resolve("7/2", r), .calculate(3.5, separator: ","))
+        XCTAssertEqual(resolve("1.5+2,5", r), .calculate(4, separator: ","))
+        r.decimalSeparator = "."
+        r.forceDecimalSeparator = true
+        XCTAssertEqual(resolve("1,5*2", r), .calculate(3, separator: "."))
     }
 }

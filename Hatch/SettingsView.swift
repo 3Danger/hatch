@@ -394,6 +394,14 @@ extension SettingsView {
         row(L.t("calculator", lang), hint: L.t("calculator_hint", lang)) {
             Toggle("", isOn: binding(\.calculatorInInput)).toggleStyle(GlassSwitchStyle()).labelsHidden()
         }
+        if settings.calculatorInInput {
+            row(L.t("calc_separator", lang), hint: L.t("calc_separator_hint", lang)) {
+                GlassSegmented(options: [(".", "1.5"), (",", "1,5")], selection: binding(\.calculatorSeparator))
+            }
+            row(L.t("calc_force", lang), hint: L.t("calc_force_hint", lang)) {
+                Toggle("", isOn: binding(\.calculatorForceSeparator)).toggleStyle(GlassSwitchStyle()).labelsHidden()
+            }
+        }
         row(L.t("app_aliases", lang), hint: L.t("app_aliases_hint", lang)) { newAliasControls }
         ForEach(aliasGroups, id: \.id) { entry in
             lineRow { aliasRow(entry.id, aliases: entry.aliases) }

@@ -118,7 +118,8 @@ enum QuickAction: Equatable {
     case openApp(AppEntry)
     /// Имя и существующие пути: `code .` открывает текущую папку в VS Code.
     case openPaths(AppEntry, [URL])
-    case calculate(Double)
+    /// Результат расчёта и разделитель дробной части для него (как во вводе или из настроек).
+    case calculate(Double, separator: Character)
     case divisionByZero
 
     /// Enter делает своё, а не выполняет команду.
@@ -137,6 +138,10 @@ struct QuickActionResolver {
     var exclusions: [String] = []
     var appsEnabled = true
     var calculatorEnabled = true
+    /// Разделитель дробной части, если во вводе его нет (`7/2`) или есть оба.
+    var decimalSeparator: Character = "."
+    /// Всегда `decimalSeparator`, как бы ни было набрано.
+    var forceDecimalSeparator = false
     /// Шелл знает это имя (команда, алиас, функция): тогда Enter его выполняет, а не дописывает.
     var isCommand: (String) -> Bool = { _ in false }
     /// С какого числа букв подсказывать приложение по началу имени.
@@ -147,7 +152,9 @@ struct QuickActionResolver {
         guard !trimmed.isEmpty else { return nil }
         if calculatorEnabled, let outcome = Calculator.evaluate(trimmed) {
             switch outcome {
-            case .value(let value): return .calculate(value)
+            case .value(let value):
+                let typed = forceDecimalSeparator ? nil : Calculator.separator(in: trimmed)
+                return .calculate(value, separator: typed ?? decimalSeparator)
             case .divisionByZero: return .divisionByZero
             }
         }
@@ -224,8 +231,8 @@ extension QuickAction {
             NSWorkspace.shared.openApplication(at: app.url, configuration: NSWorkspace.OpenConfiguration())
         case .openPaths(let app, let urls):
             NSWorkspace.shared.open(urls, withApplicationAt: app.url, configuration: NSWorkspace.OpenConfiguration())
-        case .calculate(let value):
-            Clipboard.copy(Calculator.clipboard(value))
+        case .calculate(let value, let separator):
+            Clipboard.copy(Calculator.clipboard(value, separator: separator))
         case .divisionByZero:
             NSSound.beep()
         case .suggestApp:

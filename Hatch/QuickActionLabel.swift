@@ -28,8 +28,8 @@ struct QuickActionLabel: View {
                 KeyHint(key: "↩")
                 AppIconView(app: app)
                 name(String(format: L.t("quick_open_in", lang), pathsTitle(urls), app.title))
-            case .calculate(let value):
-                Text("= " + Calculator.display(value))
+            case .calculate(let value, let separator):
+                Text("= " + Calculator.display(value, separator: separator))
                     .font(.system(size: 14, weight: .semibold, design: .monospaced))
                     .foregroundStyle(Tactile.okText)
                     .fixedSize()

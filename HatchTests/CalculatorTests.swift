@@ -43,15 +43,31 @@ final class CalculatorTests: XCTestCase {
         XCTAssertEqual(Calculator.evaluate("5/(2-2)"), .divisionByZero)
     }
 
+    /// Разряды через пробел: пробел, за которым ровно три цифры; иначе — не число.
+    func testThousandsSeparatedBySpaces() {
+        XCTAssertEqual(value("1 000 000 / 3")! , 1_000_000.0 / 3, accuracy: 1e-9)
+        XCTAssertEqual(value("1 000,5*2"), 2001)
+        XCTAssertEqual(value("1\u{00A0}000 + 1"), 1001) // неразрывный пробел из документа
+        XCTAssertNil(Calculator.evaluate("2 3"))
+        XCTAssertNil(Calculator.evaluate("1 0000 + 1"))
+        XCTAssertNil(Calculator.evaluate("1 000 000"), "одно число — не расчёт")
+    }
+
+    func testSeparatorAsTyped() {
+        XCTAssertEqual(Calculator.separator(in: "11.11*.11"), ".")
+        XCTAssertEqual(Calculator.separator(in: "11,11*,11"), ",")
+        XCTAssertNil(Calculator.separator(in: "7/2"))
+        XCTAssertNil(Calculator.separator(in: "1.5+2,5"))
+    }
+
     func testFormatting() {
-        let ru = Locale(identifier: "ru_RU")
-        let en = Locale(identifier: "en_US")
-        XCTAssertEqual(Calculator.clipboard(1024, locale: ru), "1024")
-        XCTAssertEqual(Calculator.clipboard(1024, locale: en), "1024")
-        XCTAssertEqual(Calculator.display(1024, locale: en), "1,024")
-        XCTAssertEqual(Calculator.clipboard(0.5, locale: ru), "0,5")
-        XCTAssertEqual(Calculator.clipboard(0.5, locale: en), "0.5")
-        XCTAssertEqual(Calculator.clipboard(0.1 + 0.2, locale: en), "0.3")
-        XCTAssertEqual(Calculator.clipboard(1.0 / 3, locale: en), "0.3333333333")
+        XCTAssertEqual(Calculator.display(1024), "1\u{00A0}024")
+        XCTAssertEqual(Calculator.clipboard(1024), "1024")
+        XCTAssertEqual(Calculator.display(1024.5, separator: ","), "1\u{00A0}024,5")
+        XCTAssertEqual(Calculator.clipboard(1024.5, separator: ","), "1024,5")
+        XCTAssertEqual(Calculator.clipboard(0.5), "0.5")
+        XCTAssertEqual(Calculator.clipboard(0.1 + 0.2), "0.3")
+        XCTAssertEqual(Calculator.clipboard(1.0 / 3), "0.3333333333")
+        XCTAssertEqual(Calculator.clipboard(1.2221), "1.2221")
     }
 }

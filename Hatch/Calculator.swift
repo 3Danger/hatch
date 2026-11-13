@@ -1,8 +1,9 @@
 import Foundation
 
-/// Калькулятор в поле ввода, как в Spotlight: `12*3.5`, `(1200-150)/3`, `2^10`, `4500*15%`.
+/// Калькулятор в поле ввода, как в Spotlight: `12*3.5`, `(1200-150)/3`, `2^10`, `4500*15%`, `1 000 000 / 3`.
 /// Считает, только если в строке одни числа и знаки действий и есть хотя бы одно действие:
-/// одно число (`42`, `-5`) — это ввод команды, а не расчёт.
+/// одно число (`42`, `-5`) — это ввод команды, а не расчёт. Дробная часть — через точку или запятую;
+/// разряды можно разделять пробелом (пробел, за которым ровно три цифры).
 enum Calculator {
     enum Outcome: Equatable {
         case value(Double)
@@ -25,27 +26,42 @@ enum Calculator {
         }
     }
 
-    /// Результат для подписи: с разделителем разрядов, до 10 знаков после запятой, как в системе.
-    static func display(_ value: Double, locale: Locale = .current) -> String {
-        format(value, locale: locale, grouping: true)
+    /// Каким разделителем дробной части набрано выражение: только точки — `.`, только запятые — `,`;
+    /// ни того ни другого или вперемешку — nil (тогда — из настроек).
+    static func separator(in text: String) -> Character? {
+        switch (text.contains("."), text.contains(",")) {
+        case (true, false): "."
+        case (false, true): ","
+        default: nil
+        }
     }
 
-    /// В буфер: то же число без разделителя разрядов — чтобы вставлялось как число.
-    static func clipboard(_ value: Double, locale: Locale = .current) -> String {
-        format(value, locale: locale, grouping: false)
+    /// Результат для подписи: разряды через неразрывный пробел (`1 024,5`), до 10 знаков дробной части.
+    static func display(_ value: Double, separator: Character = ".") -> String {
+        format(value, separator: separator, grouping: true)
     }
 
-    private static func format(_ value: Double, locale: Locale, grouping: Bool) -> String {
+    /// В буфер: то же число без разрядов — чтобы вставлялось как число (`1024,5`).
+    static func clipboard(_ value: Double, separator: Character = ".") -> String {
+        format(value, separator: separator, grouping: false)
+    }
+
+    private static func format(_ value: Double, separator: Character, grouping: Bool) -> String {
         let formatter = NumberFormatter()
-        formatter.locale = locale
+        formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.numberStyle = .decimal
+        formatter.decimalSeparator = String(separator)
         formatter.usesGroupingSeparator = grouping
+        formatter.groupingSeparator = "\u{00A0}"
+        formatter.groupingSize = 3
         formatter.maximumFractionDigits = 10
         formatter.minimumFractionDigits = 0
         return formatter.string(from: NSNumber(value: value)) ?? String(value)
     }
 
-    private static let allowed = Set("0123456789.,+-*/^%()×÷ ")
+    /// Пробелы: обычный, неразрывный и узкий неразрывный (попадаются при вставке из документов).
+    private static let spaces: Set<Character> = [" ", "\u{00A0}", "\u{202F}"]
+    private static let allowed = Set("0123456789.,+-*/^%()×÷").union(spaces)
     private static let actions = Set("+*/^%×÷")
 
     /// Одни цифры и знаки, есть цифра и действие. Минус в начале числа — не действие (`-5`),
@@ -53,7 +69,7 @@ enum Calculator {
     private static func looksLikeExpression(_ text: String) -> Bool {
         guard !text.isEmpty, text.allSatisfy(allowed.contains), text.contains(where: \.isNumber) else { return false }
         if text.contains(where: actions.contains) { return true }
-        let chars = Array(text.filter { $0 != " " })
+        let chars = Array(text.filter { !spaces.contains($0) })
         return chars.indices.contains { index in
             chars[index] == "-" && index > 0 && (chars[index - 1].isNumber || chars[index - 1] == ")" || chars[index - 1] == ".")
         }
@@ -129,12 +145,17 @@ enum Calculator {
         }
 
         /// Дробная часть — через точку или запятую: `1.5` и `1,5`.
+        /// Разряды целой части — через пробел, если за ним ровно три цифры: `1 000 000`.
         private mutating func number() throws -> Double {
             skipSpaces()
             var digits = ""
             var hasSeparator = false
             while position < chars.count {
                 let char = chars[position]
+                if Calculator.spaces.contains(char), !hasSeparator, !digits.isEmpty, isThousandsGroup(after: position) {
+                    position += 1
+                    continue
+                }
                 if char.isNumber {
                     digits.append(char)
                 } else if char == "." || char == "," {
@@ -150,6 +171,13 @@ enum Calculator {
             return value
         }
 
+        /// После пробела ровно три цифры, а за ними не цифра: `1 000` — разряды, `2 3` и `1 0000` — нет.
+        private func isThousandsGroup(after space: Int) -> Bool {
+            let group = space + 1
+            guard group + 3 <= chars.count, chars[group..<group + 3].allSatisfy(\.isNumber) else { return false }
+            return group + 3 == chars.count || !chars[group + 3].isNumber
+        }
+
         private mutating func take(_ options: Set<Character>) -> Character? {
             skipSpaces()
             guard position < chars.count, options.contains(chars[position]) else { return nil }
@@ -158,7 +186,7 @@ enum Calculator {
         }
 
         private mutating func skipSpaces() {
-            while position < chars.count, chars[position] == " " { position += 1 }
+            while position < chars.count, Calculator.spaces.contains(chars[position]) { position += 1 }
         }
     }
 }
