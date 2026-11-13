@@ -1,4 +1,4 @@
-<title>Hatch Демо-ролик</title>
+<title>Hatch demo</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 <style>
 /* Кадр 1600×900 (16:9), масштабируется под окно. Тёмная тема Hatch — единственная: ролик снимается в ней. */
@@ -34,7 +34,9 @@ body.rec { padding: 0; gap: 0; justify-content: center; overflow: hidden }
 .fit::before { content: ""; display: block; padding-top: 56.25% }
 body.rec .fit { max-width: none; width: 100vw; height: 100vh }
 body.rec .fit::before { display: none }
-#film { position: absolute; left: 0; top: 0; width: 1600px; height: 900px; transform-origin: 0 0; overflow: hidden; border-radius: 14px;
+#film { position: absolute; left: 0; top: 0; width: 1600px; height: 900px; transform-origin: 0 0; overflow: hidden; border-radius: 14px; background: #0b0c10 }
+/* камера: рабочий стол с панелью приближается к тому, что происходит; подписи и клавиши — поверх, не приближаются */
+#world { position: absolute; inset: 0; transform-origin: 0 0; transition: transform 1.1s cubic-bezier(.45,0,.2,1);
   background:
     radial-gradient(55% 60% at 18% 22%, #27406b 0%, transparent 70%),
     radial-gradient(50% 55% at 86% 80%, #4a2f63 0%, transparent 70%),
@@ -51,7 +53,7 @@ body.rec #film { border-radius: 0 }
 .menubar .hatchglyph::after { content: ""; position: absolute; left: 3px; right: 3px; top: 5px; height: 1.6px; background: rgba(255,255,255,.9) }
 
 /* панель Hatch */
-.pwrap { position: absolute; left: 50%; top: 66px; width: 780px; transform: translateX(-50%) scale(1.32); transform-origin: top center }
+.pwrap { position: absolute; left: 50%; top: 150px; width: 780px; transform: translateX(-50%) }
 .panel { position: relative; width: 780px; background: linear-gradient(#333336, #2a2a2d); border: 1px solid #3f3f43;
   border-radius: 19px; padding: 8px; display: flex; flex-direction: column; gap: 8px; color: var(--fg); font: 13px var(--ui);
   box-shadow: 0 0 0 1px rgba(0,0,0,.6), 0 30px 80px rgba(0,0,0,.6); opacity: 0; scale: .96; transform: translateY(-10px);
@@ -148,9 +150,110 @@ body.rec #film { border-radius: 0 }
 .tree .foot span { display: inline-flex; gap: 4px; align-items: center }
 .kh { font: 600 10px var(--ui); color: var(--fg2); background: var(--well); border-radius: 4px; padding: 1px 5px; box-shadow: inset 0 1px 2px rgba(0,0,0,.6) }
 
-.toast { position: absolute; left: 50%; bottom: -54px; translate: -50% 0; padding: 8px 14px; border-radius: 10px; background: #3a3a3d; color: var(--fg); font: 13px var(--ui);
+.toast { position: absolute; left: 50%; bottom: 14px; translate: -50% 0; z-index: 5; padding: 8px 14px; border-radius: 10px; background: #3a3a3d; color: var(--fg); font: 13px var(--ui);
   box-shadow: 0 0 0 .5px rgba(0,0,0,.6), 0 8px 20px rgba(0,0,0,.5); opacity: 0; transform: translateY(8px); transition: .3s; white-space: nowrap }
 .toast.on { opacity: 1; transform: none }
+
+
+/* ───── буфер обмена ───── */
+.inbar.clip::after { border-color: rgba(191,90,242,.75); opacity: 1 }
+.inbar.clip .caret { background: #bf5af2 }
+.inbar.clip .prompt { color: #bf5af2 }
+.cbadge { display: none; align-items: center; gap: 6px; font: 600 12px var(--ui); color: #bf5af2; background: rgba(191,90,242,.14); border: 1px solid rgba(191,90,242,.55); border-radius: 99px; padding: 2px 9px }
+.inbar.clip .cbadge { display: inline-flex }
+.inbar.clip .ibs { display: none }
+.segs { display: inline-flex; gap: 2px; padding: 2px; border-radius: 8px; background: #212123; box-shadow: inset 0 1.5px 2.5px rgba(0,0,0,.6), 0 .5px 0 rgba(255,255,255,.06) }
+.seg { display: inline-flex; gap: 5px; align-items: center; height: 20px; padding: 0 9px; border-radius: 6px; font: 11.5px var(--ui); color: var(--fg2); white-space: nowrap }
+.seg b { font-weight: 500; color: var(--fg3) }
+.seg.on { color: var(--fg); background: var(--raise); box-shadow: inset 0 0 0 1px var(--raise-edge), 0 1px 0 var(--raise-under) }
+.crumbs .days { margin-left: auto; font-size: 11px; color: var(--fg3) }
+.clist { background: var(--sect); border-radius: 11px; padding: 6px; display: flex; flex-direction: column; gap: 2px }
+.cgrp { font: 600 10.5px var(--ui); letter-spacing: .05em; text-transform: uppercase; color: var(--fg2); padding: 6px 9px 2px; display: flex; gap: 5px; align-items: center }
+.cgrp .pinc { color: #bf5af2 }
+.crow { display: flex; align-items: center; gap: 10px; padding: 7px 9px; border-radius: 8px; border: 1px solid transparent; transition: background .2s, border-color .2s, opacity .3s, max-height .35s; max-height: 80px; overflow: hidden }
+.crow.sel { background: rgba(191,90,242,.18); border-color: rgba(191,90,242,.55) }
+.crow.gone { opacity: 0; max-height: 0; padding-block: 0; margin-top: -2px }
+.aico { width: 22px; height: 22px; border-radius: 6px; flex: none; box-shadow: 0 0 0 .5px rgba(255,255,255,.3); display: grid; place-items: center; font: 700 11px var(--ui); color: #fff }
+.cthumb { width: 92px; height: 52px; border-radius: 7px; flex: none; background: #101012; box-shadow: 0 0 0 .5px rgba(255,255,255,.18); overflow: hidden; padding: 6px 7px; font: 5.4px/1.7 var(--mono); color: #c9c9ce; white-space: nowrap }
+.cthumb .e, .dash .e { color: #ff6961 }
+.cbody { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 2px }
+.ctitle { font: 12.5px var(--mono); white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
+.ctitle.img { font: 500 12.5px var(--ui) }
+.ctitle mark { background: rgba(191,90,242,.4); color: #fff; border-radius: 2px }
+.cmeta { font: 11px var(--ui); color: var(--fg2); white-space: nowrap }
+.cmeta .t { color: var(--fg3) }
+.cacts { display: flex; gap: 4px; opacity: 0; transition: opacity .2s }
+.crow.sel .cacts { opacity: 1 }
+.capk { display: inline-flex; align-items: center; gap: 5px; height: 24px; padding: 0 8px 0 4px; border-radius: 7px; font: 11.5px var(--ui); color: var(--fg); background: var(--raise); box-shadow: inset 0 0 0 1px var(--raise-edge), 0 1px 0 var(--raise-under); white-space: nowrap }
+.capk i { font-style: normal; font: 600 10px var(--ui); min-width: 18px; height: 16px; padding: 0 4px; border-radius: 4px; display: grid; place-items: center; background: var(--well); color: var(--fg2); box-shadow: inset 0 1px 2px rgba(0,0,0,.6) }
+
+/* ───── окно на рабочем столе (для снимка) ───── */
+.dash.on { opacity: 1 }
+.dash { opacity: 0; transition: opacity .6s; position: absolute; left: 150px; top: 96px; width: 940px; height: 560px; border-radius: 12px; background: #1f2026; border: 1px solid #34353c; box-shadow: 0 20px 50px rgba(0,0,0,.5); overflow: hidden; color: #d9dae0 }
+.dash .bar { height: 30px; background: #2a2b31; display: flex; align-items: center; gap: 7px; padding: 0 12px; font: 12px var(--ui); color: var(--fg2) }
+.dash .bar i { width: 11px; height: 11px; border-radius: 50%; background: #ff5f57 } .dash .bar i:nth-child(2) { background: #febc2e } .dash .bar i:nth-child(3) { background: #28c840 }
+.dash .bar span { margin-left: 12px }
+.dash .body { padding: 26px 30px; display: flex; flex-direction: column; gap: 18px }
+.dash h3 { margin: 0; font: 600 20px var(--ui); display: flex; gap: 10px; align-items: center }
+.dash h3 em { font: 600 12px var(--ui); font-style: normal; color: #ffb340; background: rgba(255,179,64,.14); border: 1px solid rgba(255,179,64,.5); padding: 2px 8px; border-radius: 99px }
+.dash .tiles { display: flex; gap: 14px }
+.dash .tile { flex: 1; background: #26272e; border-radius: 10px; padding: 14px 16px; font: 12px var(--ui); color: var(--fg2) }
+.dash .tile b { display: block; font: 600 24px var(--ui); color: #f2f3f7; margin-top: 6px }
+.dash .log { background: #15161a; border-radius: 10px; padding: 14px 16px; font: 13px/1.9 var(--mono); white-space: nowrap }
+.dash .log .d { color: #6f7079 }
+.selbox { position: absolute; border: 1.5px solid rgba(255,255,255,.9); box-shadow: 0 0 0 9999px rgba(0,0,0,.35); display: none; z-index: 6 }
+.selbox.on { display: block }
+.selbox b { position: absolute; right: -2px; bottom: -26px; font: 600 12px var(--ui); color: #fff; background: rgba(0,0,0,.7); padding: 3px 7px; border-radius: 5px; white-space: nowrap }
+.flash { position: absolute; inset: 0; background: #fff; opacity: 0; pointer-events: none; z-index: 25 }
+.flash.go { animation: flash .4s ease-out }
+@keyframes flash { 0% { opacity: .5 } 100% { opacity: 0 } }
+
+/* миниатюра снимка */
+.sthumb { position: absolute; right: 28px; bottom: 28px; width: 300px; border-radius: 10px; overflow: hidden; background: #15161a; z-index: 7;
+  box-shadow: 0 16px 34px rgba(0,0,0,.6), 0 0 0 1px rgba(255,255,255,.18); transform: translateX(360px); transition: transform .5s cubic-bezier(.2,.9,.25,1), opacity .3s }
+.sthumb.on { transform: none }
+.sthumb.hover { box-shadow: 0 16px 34px rgba(0,0,0,.6), 0 0 0 1.5px rgba(191,90,242,.8) }
+.sthumb.gone { opacity: 0 }
+.shot { padding: 12px 14px 16px; font: 9.5px/1.9 var(--mono); color: #d9dae0; white-space: nowrap }
+.shot .d { color: #6f7079 }
+.shot .e { color: #ff6961 }
+.sthumb .shot { font-size: 7px; padding: 10px 12px 14px }
+.sthumb .timer { position: absolute; left: 0; bottom: 0; height: 3px; background: rgba(191,90,242,.9); width: 100% }
+.sthumb .timer.run { transition: width 10s linear; width: 0 }
+.sbadge { position: absolute; left: 8px; top: 8px; display: inline-flex; align-items: center; gap: 5px; height: 22px; padding: 0 9px 0 7px; border-radius: 7px; background: #3a3a3d; color: #e6e6ea;
+  font: 11px var(--ui); box-shadow: 0 4px 10px rgba(0,0,0,.5), 0 0 0 .5px rgba(0,0,0,.35); opacity: 0; transform: translateY(-3px); transition: opacity .4s, transform .4s }
+.sbadge b { color: #bf5af2; font-weight: 800 }
+.sbadge.on { opacity: 1; transform: none }
+
+/* окно просмотра */
+.pwin { position: absolute; left: 440px; top: 250px; width: 720px; border-radius: 12px; overflow: hidden; background: #2a2a2d; border: 1px solid #4a4a4e; z-index: 8;
+  box-shadow: 0 30px 70px rgba(0,0,0,.65); opacity: 0; transform: scale(.96); transition: opacity .25s, transform .3s, border-color .3s }
+.pwin.on { opacity: 1; transform: none }
+.pwin.pinned { border-color: rgba(191,90,242,.7) }
+.phead { display: flex; align-items: center; gap: 10px; height: 34px; padding: 0 10px 0 13px; background: linear-gradient(#36363a, #2e2e31); border-bottom: 1px solid #1c1c1e; font: 12px var(--ui); color: var(--fg2); white-space: nowrap }
+.phead .info { color: #b9b9bf }
+.phints { display: flex; gap: 10px }
+.phints span { display: inline-flex; gap: 4px; align-items: center }
+.phints i { font-style: normal; font: 600 10px var(--ui); min-width: 18px; height: 17px; padding: 0 4px; border-radius: 4px; display: grid; place-items: center; background: var(--well); color: var(--fg2); box-shadow: inset 0 1px 2px rgba(0,0,0,.6) }
+.phints .lit i { background: rgba(10,132,255,.4); color: #fff }
+.pbtn { margin-left: auto; display: flex; gap: 4px }
+.pbtn span { width: 24px; height: 24px; border-radius: 6px; display: grid; place-items: center; color: var(--fg2); transition: background .25s, color .25s }
+.pbtn span svg { width: 13px; height: 13px }
+.pbtn span.on { color: #bf5af2; background: rgba(191,90,242,.16) }
+.pwin .shot { font-size: 18px; padding: 22px 26px 28px; background: #15161a }
+.w { border-radius: 2px; transition: background .12s }
+.w.hl { background: rgba(10,132,255,.45); color: #fff }
+.wtoast { position: absolute; left: 50%; bottom: 14px; translate: -50% 0; padding: 6px 12px; border-radius: 8px; background: #3a3a3d; font: 13px var(--ui); color: var(--fg);
+  box-shadow: 0 6px 16px rgba(0,0,0,.5); opacity: 0; transform: translateY(8px); transition: .3s; white-space: nowrap }
+.wtoast.on { opacity: 1; transform: none }
+
+/* быстрые действия в поле */
+.qa { display: none; align-items: center; gap: 8px; font: 15px var(--ui); color: var(--fg2); white-space: nowrap; margin-right: 6px }
+.qa.on { display: inline-flex }
+.qa b { font: 600 20px var(--ui); color: #74e6ab }
+.qa .appi { width: 22px; height: 22px; border-radius: 6px; background: linear-gradient(160deg, #6fd0ff, #1f7cf0); display: grid; place-items: center }
+.qa .appi::after { content: ""; width: 12px; height: 12px; border-radius: 50%; border: 1.5px solid #fff }
+.qa .k2 { font: 600 11px var(--ui); padding: 1px 6px; border-radius: 4px; background: var(--well); box-shadow: inset 0 1px 2px rgba(0,0,0,.6) }
 
 /* курсор */
 .cursor { position: absolute; z-index: 20; left: 1700px; top: 700px; width: 22px; height: 32px; transition: left .9s cubic-bezier(.45,0,.2,1), top .9s cubic-bezier(.45,0,.2,1); filter: drop-shadow(0 2px 3px rgba(0,0,0,.5)) }
@@ -158,14 +261,17 @@ body.rec #film { border-radius: 0 }
 .cursor svg { transition: scale .1s; transform-origin: 3px 3px }
 
 /* подписи и клавиши */
-.cap { position: absolute; left: 80px; bottom: 64px; max-width: 1100px; transition: opacity .4s, transform .4s; }
+.cap { position: absolute; left: 0; right: 0; bottom: 0; height: 150px; padding: 40px 64px 0; display: flex; align-items: flex-start; gap: 22px;
+  background: linear-gradient(180deg, rgba(8,9,12,0) 0%, rgba(8,9,12,.94) 22%, rgba(8,9,12,.97) 100%); transition: opacity .4s, transform .4s }
 .cap.hide { opacity: 0; transform: translateY(10px) }
-.cap .step { font: 600 13px var(--ui); letter-spacing: .14em; text-transform: uppercase; color: rgba(255,255,255,.55); margin-bottom: 10px }
-.cap h2 { margin: 0; font: 700 46px/1.08 var(--display); letter-spacing: -.02em; text-wrap: balance }
-.cap p { margin: 12px 0 0; font: 400 20px/1.4 var(--ui); color: var(--ink2); text-wrap: balance }
-.hud { position: absolute; right: 80px; bottom: 70px; display: flex; gap: 10px; align-items: center }
-.hud .k { min-width: 64px; height: 64px; padding: 0 18px; border-radius: 14px; display: grid; place-items: center; font: 600 26px var(--ui); color: #fff;
-  background: linear-gradient(180deg, rgba(90,90,98,.92), rgba(58,58,64,.92)); box-shadow: inset 0 0 0 1.5px rgba(255,255,255,.14), 0 4px 0 rgba(10,10,12,.9), 0 14px 30px rgba(0,0,0,.45);
+.cap .step { flex: none; margin-top: 8px; font: 700 13px var(--ui); letter-spacing: .12em; text-transform: uppercase; color: #fff; padding: 6px 11px; border-radius: 8px;
+  background: rgba(10,132,255,.28); box-shadow: inset 0 0 0 1px rgba(10,132,255,.6) }
+.cap .tx { min-width: 0 }
+.cap h2 { margin: 0; font: 700 34px/1.12 var(--display); letter-spacing: -.015em; white-space: nowrap }
+.cap p { margin: 7px 0 0; font: 400 19px/1.35 var(--ui); color: var(--ink2); white-space: nowrap }
+.hud { position: absolute; right: 64px; bottom: 34px; display: flex; gap: 10px; align-items: center; z-index: 30 }
+.hud .k { min-width: 56px; height: 56px; padding: 0 16px; border-radius: 13px; display: grid; place-items: center; font: 600 23px var(--ui); color: #fff;
+  background: linear-gradient(180deg, rgba(90,90,98,.95), rgba(58,58,64,.95)); box-shadow: inset 0 0 0 1.5px rgba(255,255,255,.14), 0 4px 0 rgba(10,10,12,.9), 0 14px 30px rgba(0,0,0,.45);
   animation: keyin .22s cubic-bezier(.3,1.5,.5,1) }
 .hud .k.down { translate: 0 3px; box-shadow: inset 0 0 0 1.5px rgba(255,255,255,.14), 0 1px 0 rgba(10,10,12,.9), 0 10px 24px rgba(0,0,0,.45) }
 @keyframes keyin { from { opacity: 0; transform: translateY(10px) scale(.9) } }
@@ -201,14 +307,34 @@ body.rec .ctl { display: none }
 
 <div class="fit" id="fit">
   <div id="film">
-    <div class="menubar"><span class="apple"></span><span>Finder</span><span style="opacity:.7">Файл</span><span style="opacity:.7">Правка</span><span style="opacity:.7">Вид</span><span class="sp"></span><span class="hatchglyph"></span><span style="font-variant-numeric:tabular-nums">Чт 12:04</span></div>
+   <div id="world">
+    <div class="menubar"><span class="apple"></span><span>Finder</span><span style="opacity:.7">File</span><span style="opacity:.7">Edit</span><span style="opacity:.7">View</span><span class="sp"></span><span class="hatchglyph"></span><span style="font-variant-numeric:tabular-nums">Thu 12:04</span></div>
+
+    <div class="dash" id="dash">
+      <div class="bar"><i></i><i></i><i></i><span>Dashboard — orders-api</span></div>
+      <div class="body">
+        <h3>orders-api <em>● degraded</em></h3>
+        <div class="tiles"><div class="tile">p95 latency<b>1.8 s</b></div><div class="tile">error rate<b>4.2%</b></div><div class="tile">requests<b>12.4k/min</b></div></div>
+        <div class="log" id="dlog"><div><span class="d">12:03:41</span> <span class="e">ERROR</span> upstream connect error: connection refused</div><div><span class="d">12:03:41</span> host db-primary.internal:5432 · retry in 30s</div><div><span class="d">12:03:12</span> <span class="e">ERROR</span> pool timeout after 5000 ms</div><div><span class="d">12:02:58</span> WARN slow query: 1.4 s · orders.find_by_user</div></div>
+      </div>
+    </div>
+    <div class="selbox" id="selbox"><b id="seldims"></b></div>
+    <div class="sthumb" id="sthumb"><span class="sbadge" id="sbadge"><b>✓</b>In clipboard</span><div class="shot" id="thumbshot"></div><div class="timer" id="stimer"></div></div>
+    <div class="pwin" id="pwin">
+      <div class="phead"><span class="info">1280 × 360 · Screenshot</span><span class="phints" id="phints"></span>
+        <span class="pbtn"><span id="ppin"><svg viewBox="0 0 12 12"><path d="M4 1h4l-.6 3.4L9.5 6.5v.8h-3V11L6 11.5 5.5 11V7.3h-3v-.8l2.1-2.1z" fill="currentColor"/></svg></span><span><svg viewBox="0 0 12 12"><path d="M2.5 2.5l7 7m0-7l-7 7" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></span></span></div>
+      <div class="shot" id="pshot"></div>
+      <div class="wtoast" id="wtoast"></div>
+    </div>
 
     <div class="pwrap"><div class="panel" id="panel">
       <div class="crumbs" id="crumbs"></div>
       <div class="inbar sunk ring" id="inbar">
         <span class="prompt">›</span>
         <span class="txt" id="intext"></span>
-        <span class="badge">Поиск <span style="font-size:10px">✕</span></span>
+        <span class="qa" id="qa"></span>
+        <span class="badge">Search <span style="font-size:10px">✕</span></span>
+        <span class="cbadge">Clipboard <span style="font-size:10px">✕</span></span>
         <div class="ibs">
           <span class="key ib" id="favbtn"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"><path d="M8 1.9l1.85 3.8 4.15.6-3 2.95.7 4.15L8 11.45 4.3 13.4l.7-4.15-3-2.95 4.15-.6z"/></svg></span>
           <span class="key ib"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="8" cy="8" r="2.2"/><path d="M8 1.5v2M8 12.5v2M1.5 8h2M12.5 8h2M3.4 3.4l1.4 1.4M11.2 11.2l1.4 1.4M3.4 12.6l1.4-1.4M11.2 4.8l1.4-1.4"/></svg></span>
@@ -218,18 +344,20 @@ body.rec .ctl { display: none }
       <div class="list" id="list"></div>
       <div class="toast" id="toast"></div>
     </div></div>
+    <svg class="cursor" id="cursor" viewBox="0 0 22 32"><path d="M2 2v24l6.2-6 4.3 9.6 4-1.8-4.2-9.4H21z" fill="#fff" stroke="#000" stroke-width="1.4" stroke-linejoin="round"/></svg>
+   </div>
 
-    <div class="cap hide" id="cap"><div class="step" id="capstep"></div><h2 id="captitle"></h2><p id="capsub"></p></div>
+    <div class="flash" id="flash"></div>
+    <div class="cap hide" id="cap"><div class="step" id="capstep"></div><div class="tx"><h2 id="captitle"></h2><p id="capsub"></p></div></div>
     <div class="hud" id="hud"></div>
 
     <div class="outro" id="outro">
       <div class="appicon"><div class="well">›<i></i></div></div>
       <h1>Hatch</h1>
-      <p class="tag">Люк в терминал: открыл, выполнил, закрыл.</p>
-      <div class="row"><span class="pill main">github.com/3Danger/hatch</span><span class="pill">macOS 26+</span><span class="pill">Бесплатно · MIT</span></div>
+      <p class="tag">A hatch to your terminal: open, run, close.</p>
+      <div class="row"><span class="pill main">github.com/3Danger/hatch</span><span class="pill">macOS 26+</span><span class="pill">Free · MIT</span></div>
     </div>
 
-    <svg class="cursor" id="cursor" viewBox="0 0 22 32"><path d="M2 2v24l6.2-6 4.3 9.6 4-1.8-4.2-9.4H21z" fill="#fff" stroke="#000" stroke-width="1.4" stroke-linejoin="round"/></svg>
   </div>
 </div>
 
@@ -287,30 +415,32 @@ function reset() {
   $('hud').innerHTML = '';
   $('toast').className = 'toast';
   $('inbar').className = 'inbar sunk ring';
-  $('cursor').style.transition = 'none'; $('cursor').style.left = '1700px'; $('cursor').style.top = '760px';
+  $('cursor').style.transition = 'none'; $('cursor').style.left = '1300px'; $('cursor').style.top = '820px';
   requestAnimationFrame(() => $('cursor').style.transition = '');
   setCrumbs(['~', 'git', 'hatch'], false);
   setInput('');
   document.querySelector('.tree')?.remove();
+  for (const id of ['sthumb', 'pwin', 'selbox']) $(id).className = id === 'sthumb' ? 'sthumb' : id === 'pwin' ? 'pwin' : 'selbox';
+  $('sbadge').className = 'sbadge'; $('dash').className = 'dash'; cursorShape(false); $('stimer').className = 'timer'; $('qa').className = 'qa'; $('ppin').className = '';
   $('list').innerHTML = `
     <div class="blk sunk" data-k="swift build"><div class="bh"><span class="tri"></span><div class="ttl"><span class="cmd">swift build</span><span class="meta"><span class="dir">hatch</span><span class="tm">12:01</span></span></div>
-      <div class="chips"><span class="key bb">${ICON.plus}</span></div><div class="slot"><span class="status ok"><span class="dot">${ICON.check}</span>готово</span></div></div>
+      <div class="chips"><span class="key bb">${ICON.plus}</span></div><div class="slot"><span class="status ok"><span class="dot">${ICON.check}</span>done</span></div></div>
       <div class="pv">Building for debugging...\nBuild complete! (4.21s)</div></div>
     <div class="blk sunk" data-k="brew upgrade"><div class="bh"><span class="tri"></span><div class="ttl"><span class="cmd">brew upgrade</span><span class="meta"><span class="dir">~</span><span class="tm">11:47</span></span></div>
-      <div class="chips"><span class="key bb">${ICON.plus}</span></div><div class="slot"><span class="status ok"><span class="dot">${ICON.check}</span>готово</span></div></div>
+      <div class="chips"><span class="key bb">${ICON.plus}</span></div><div class="slot"><span class="status ok"><span class="dot">${ICON.check}</span>done</span></div></div>
       <div class="pv">==> Upgrading 3 outdated packages\nffmpeg 7.1 -> 7.2, git 2.51 -> 2.52, jq 1.8.1</div></div>`;
   $('prog').style.width = '0';
 }
 function setCrumbs(parts, fav, lit) {
   $('crumbs').innerHTML = parts.map((p, i) => `${i ? '<span class="sep">›</span>' : ''}<span class="crumb ${lit === p ? 'lit' : ''}" data-c="${p}">${p}</span>`).join('') + `<span class="fav ${fav ? 'on' : ''}">★</span>`;
 }
-function setInput(text, { ph = 'Введите команду…', caret = true } = {}) {
+function setInput(text, { ph = 'Run a command…', caret = true } = {}) {
   $('intext').innerHTML = text ? `<span>${text}</span>${caret ? '<span class="caret"></span>' : ''}` : `${caret ? '<span class="caret" style="margin:0 2px 0 0"></span>' : ''}<span class="ph">${ph}</span>`;
 }
 
 /* ───── время ───── */
 const SPEED = Number(new URLSearchParams(location.search).get('speed')) || 1;
-const TOTAL = 44000;
+const TOTAL = 80000;
 let t0 = 0;
 function wait(ms) { const g = gen; return new Promise((ok, no) => setTimeout(() => g === gen ? ok() : no('stop'), ms / SPEED)) }
 function tick() { if (!t0) return; $('prog').style.width = Math.min(100, (performance.now() - t0) * SPEED / TOTAL * 100) + '%'; requestAnimationFrame(tick) }
@@ -333,15 +463,38 @@ async function keys(list, hold = 650) {
 async function type(text, set, cps = 16) {
   for (let i = 1; i <= text.length; i++) { set(text.slice(0, i)); await wait(1000 / cps + (Math.random() * 40 - 20)) }
 }
-function at(el, dx = 0, dy = 0) {
-  const f = film.getBoundingClientRect(), s = f.width / 1600, r = el.getBoundingClientRect();
-  return [(r.left - f.left) / s + r.width / 2 + dx, (r.top - f.top) / s + r.height / 2 + dy];
+/* координаты элемента на «рабочем столе» (до приближения камеры) */
+function local(el) {
+  const w = $('world').getBoundingClientRect(), k = w.width / 1600, r = el.getBoundingClientRect();
+  return { x: (r.left - w.left) / k, y: (r.top - w.top) / k, w: r.width / k, h: r.height / k };
 }
-async function moveTo(el, dx = 0, dy = 0, ms = 900) {
-  const [x, y] = at(el, dx, dy);
-  const c = $('cursor'); c.style.transitionDuration = ms / SPEED + 'ms'; c.style.left = x - 3 + 'px'; c.style.top = y - 3 + 'px';
+function at(el, dx = 0, dy = 0) { const r = local(el); return [r.x + r.w / 2 + dx, r.y + r.h / 2 + dy] }
+/* камера: вписать элементы в кадр над полосой подписи, приблизив (не больше max) */
+const VIEW = { w: 1600, h: 900 - 140 };
+async function cam(els, { pad = 36, max = 2.2, ms = 1100, dy = 0, top = false, within = 'panel' } = {}) {
+  const rs = [].concat(els).map(local);
+  const x0 = Math.min(...rs.map(r => r.x)), y0 = Math.min(...rs.map(r => r.y));
+  const x1 = Math.max(...rs.map(r => r.x + r.w)), y1 = Math.max(...rs.map(r => r.y + r.h));
+  const s = Math.max(1, Math.min(max, VIEW.w / (x1 - x0 + 2 * pad), VIEW.h / (y1 - y0 + 2 * pad)));
+  let x = VIEW.w / 2 - (x0 + x1) / 2 * s, y = (top ? pad - y0 * s : VIEW.h / 2 - (y0 + y1) / 2 * s) + dy;
+  // панель шире кадра — её края не уходят внутрь кадра: вместо пустого стола по бокам — сама панель
+  const b = within && local($(within));
+  if (b && b.w * s >= VIEW.w) x = Math.min(-b.x * s, Math.max(VIEW.w - (b.x + b.w) * s, x));
+  x = Math.min(0, Math.max(1600 - 1600 * s, x)); y = Math.min(0, Math.max(VIEW.h - 900 * s, y));
+  const w = $('world'); w.style.transitionDuration = ms / SPEED + 'ms'; w.style.transform = `translate(${x}px, ${y}px) scale(${s})`;
   await wait(ms);
 }
+function camNow(els, opts = {}) { const w = $('world'); w.style.transition = 'none'; cam(els, { ...opts, ms: 0 }).catch(() => {}); w.offsetWidth; w.style.transition = '' }
+const ARROW = '<path d="M2 2v24l6.2-6 4.3 9.6 4-1.8-4.2-9.4H21z" fill="#fff" stroke="#000" stroke-width="1.4" stroke-linejoin="round"/>';
+const CROSS = '<path d="M11 3v26M-2 16h26" stroke="#000" stroke-width="3.2"/><path d="M11 3v26M-2 16h26" stroke="#fff" stroke-width="1.3"/>';
+let tip = [3, 3];
+function cursorShape(cross) { $('cursor').innerHTML = cross ? CROSS : ARROW; $('cursor').style.overflow = 'visible'; tip = cross ? [11, 16] : [3, 3] }
+async function moveXY(x, y, ms = 900, ease) {
+  const c = $('cursor'); c.style.transitionDuration = ms / SPEED + 'ms'; c.style.transitionTimingFunction = ease || '';
+  c.style.left = x - tip[0] + 'px'; c.style.top = y - tip[1] + 'px';
+  await wait(ms);
+}
+async function moveTo(el, dx = 0, dy = 0, ms = 900) { const [x, y] = at(el, dx, dy); await moveXY(x, y, ms) }
 async function click(el) {
   $('cursor').classList.add('click'); el && el.classList.add('press');
   await wait(130);
@@ -351,17 +504,17 @@ function toast(text) { $('toast').textContent = text; $('toast').className = 'to
 
 /* ───── ролик ───── */
 async function film_() {
-  // 0. рабочий стол
-  await wait(500);
-  await caption('Hatch для macOS', 'Терминал по одной клавише', 'Панель открывается поверх любого приложения — как Spotlight, только для команд.');
-  await wait(1700);
-
-  // 1. хоткей и команда
-  keys(['⌥', 'Space']);
-  await wait(320);
+  // 0. первый кадр — сразу Hatch с историей, камера на панели
   $('panel').classList.add('on'); $('inbar').classList.add('on');
-  await wait(900);
-  await caption('1 · Запуск', 'Команда — прямо в панели', 'Без окна терминала: вывод остаётся в истории отдельным блоком.');
+  camNow($('panel'), { pad: 30, top: true });
+  $('capstep').textContent = 'Hatch'; $('captitle').textContent = 'Your terminal, one keystroke away';
+  $('capsub').textContent = 'Opens over any app like Spotlight — just for commands.'; $('cap').className = 'cap';
+  $('hud').innerHTML = '<span class="k">⌥</span><span class="k">Space</span>';
+  await wait(2600);
+  $('hud').className = 'hud out';
+
+  // 1. команда
+  await caption('1 · Run', 'Commands run right in the panel', 'No terminal window — the output stays in history as a block.');
   await type('git log --oneline -8', v => setInput(v));
   await wait(250);
   keys(['↩'], 400);
@@ -370,48 +523,163 @@ async function film_() {
   blk.className = 'blk sunk enter'; blk.dataset.k = 'git log';
   blk.innerHTML = `<div class="bh"><span class="tri"></span><div class="ttl"><span class="cmd">git log --oneline -8</span><span class="meta"><span class="dir">hatch</span><span class="tm">12:04</span></span></div>
     <div class="chips" id="chips"></div>
-    <div class="slot" id="slot"><span class="status run" id="st"><span class="dot"></span>работает</span>
+    <div class="slot" id="slot"><span class="status run" id="st"><span class="dot"></span>running</span>
       <span class="acts">${['rerun', 'copy', 'star', 'pin', 'trash'].map(i => `<span class="key bb">${ICON[i]}</span>`).join('')}</span></div></div>
     <div class="out" id="out"></div>`;
   $('list').prepend(blk);
-  // старые блоки — компактнее: превью прячется
   document.querySelectorAll('.blk:not(.enter) .pv').forEach(p => { p.style.transition = 'max-height .4s, opacity .3s, padding .4s'; p.style.maxHeight = '0'; p.style.opacity = '0'; p.style.paddingBlock = '0'; p.style.overflow = 'hidden' });
   await wait(450);
   for (const [h, m] of LOG) {
     $('out').insertAdjacentHTML('beforeend', `<div class="ln"><span class="h">${h}</span> ${m}</div>`);
     await wait(110);
   }
-  await wait(250);
-  $('st').className = 'status ok'; $('st').innerHTML = `<span class="dot">${ICON.check}</span>готово`;
+  await wait(600);
+  await cam(blk, { pad: 30, max: 2.2, ms: 900 });
+  $('st').className = 'status ok'; $('st').innerHTML = `<span class="dot">${ICON.check}</span>done`;
   $('chips').innerHTML = `<span class="key bb" id="plus">${ICON.plus}</span>`;
-  await wait(1500);
+  await wait(1300);
 
   // 2. конвейер
-  await caption('2 · Конвейер', 'Фильтр по готовому выводу', 'Шаг grep обрабатывает сохранённый вывод — сама команда не запускается снова.');
-  await moveTo(blk.querySelector('.cmd'), 120, 0, 1000);
+  await caption('2 · Pipe', 'Filter the output — without re-running', 'grep works on the saved output: the command itself doesn’t run again.');
+  await moveTo(blk.querySelector('.cmd'), 120, 0, 900);
   blk.querySelector('.bh').classList.add('hover');
+  cam([$('chips'), $('slot')], { pad: 44, max: 2.35, ms: 900, top: true });
   await wait(500);
   await moveTo($('plus'), 4, 4, 650);
   await click($('plus'));
   $('chips').innerHTML = `<span class="stagef" id="stagef"><span class="caret"></span><span class="ph">grep …</span></span>`;
   await wait(350);
-  await moveTo(blk.querySelector('.ttl'), -40, 70, 700);
+  await moveTo(blk.querySelector('.ttl'), -40, 60, 600);
   await type('grep fix', v => $('stagef').innerHTML = `<span>${v}</span><span class="caret"></span>`, 13);
   await wait(250);
   keys(['↩'], 400);
   $('chips').innerHTML = `<span class="chip">grep fix</span><span class="key bb">${ICON.plus}</span>`;
+  blk.querySelector('.bh').classList.remove('hover');
+  cam(blk, { pad: 30, max: 2.2, ms: 900 });
+  await wait(300);
   $('out').querySelectorAll('.ln').forEach(l => {
     if (!l.textContent.includes('fix')) l.classList.add('cut');
     else l.innerHTML = l.innerHTML.replace('fix', '<mark>fix</mark>');
   });
   await wait(700);
-  blk.querySelector('.bh').classList.remove('hover');
-  await moveTo($('cap'), 200, 300, 900);
+  await wait(1800);
+
+  // 3. буфер обмена
+  await caption('3 · Clipboard', 'Everything you copied — searchable', 'Text, links, files and screenshots. Search even finds the text inside images.');
+  keys(['⌘', '4']);
+  await wait(300);
+  const saved = { list: $('list').innerHTML, crumbs: $('crumbs').innerHTML };
+  $('inbar').classList.add('clip');
+  setInput('', { ph: 'Search clipboard…' });
+  $('crumbs').innerHTML = `<span class="segs"><span class="seg on">All <b>9</b></span><span class="seg">Text <b>6</b></span><span class="seg">Images <b>3</b></span><span class="seg">📌 <b>1</b></span></span><span class="days">last 7 days</span>`;
+  const row = (o) => `<div class="crow ${o.sel ? 'sel' : ''}" data-s="${o.s}">
+      <span class="aico" style="background:${o.c}">${o.i || ''}</span>${o.img ? `<span class="cthumb">${o.img}</span>` : ''}
+      <span class="cbody"><span class="ctitle ${o.img ? 'img' : ''}">${o.t}</span><span class="cmeta">${o.m}</span></span>
+      <span class="cacts">${o.img ? '<span class="capk"><i>⌘1</i>preview</span>' : ''}<span class="capk"><i>↩</i>copy</span><span class="capk"><i>⌘↩</i>${o.img ? 'path' : 'to input'}</span></span></div>`;
+  $('list').innerHTML = `<div class="clist sunk" id="clist">
+    <div class="cgrp"><span class="pinc">📌</span>Pinned</div>
+    ${row({ s: 'ssh deploy@10.2.0.14', t: 'ssh deploy@10.2.0.14', m: 'Terminal · 2 days ago', c: '#2a2a2e', i: '›', sel: true })}
+    <div class="cgrp">Recent</div>
+    ${row({ s: 'kubectl -n prod logs orders-api --since=10m', t: 'kubectl -n prod logs orders-api --since=10m', m: 'Terminal · 2 min', c: '#2a2a2e', i: '›' })}
+    ${row({ s: 'psql error connection refused db-primary', t: 'psql: error: connection <span class="hit">refused</span>', m: 'Screenshot · 6 min · <span class="t">1280 × 360</span>', c: '#3a3a40', i: '▢',
+            img: '<div>~/git/orders ❯ psql -h db-primary</div><div class="e">psql: error: connection refused</div><div>Is the server running on host?</div>' })}
+    ${row({ s: 'https://github.com/3Danger/hatch/releases', t: 'https://github.com/3Danger/hatch/releases', m: 'Safari · 25 min', c: '#1677f2', i: '◎' })}
+    ${row({ s: '~/Downloads/q3-report.pdf', t: '~/Downloads/q3-report.pdf', m: 'Finder · 1 h', c: '#3d8ef0', i: '▤' })}
+  </div>`;
+  await cam($('panel'), { pad: 30, top: true, ms: 800 });
+  await wait(900);
+  await type('refused', v => {
+    setInput(v);
+    document.querySelectorAll('.crow').forEach(r => r.classList.toggle('gone', v.length >= 3 && !r.dataset.s.includes(v)));
+    document.querySelectorAll('.cgrp').forEach(g => g.classList.toggle('gone', v.length >= 3));
+    document.querySelectorAll('.cgrp').forEach(g => g.style.display = v.length >= 3 ? 'none' : '');
+  }, 10);
+  document.querySelectorAll('.crow').forEach(r => r.classList.toggle('sel', !r.classList.contains('gone')));
+  document.querySelectorAll('.hit').forEach(h => h.outerHTML = '<mark>refused</mark>');
+  const hitRow = [...document.querySelectorAll('.crow')].find(r => !r.classList.contains('gone'));
+  await cam(hitRow, { pad: 50, max: 2.2, ms: 900 });
+  await wait(1500);
+  keys(['↩'], 400);
+  await wait(200);
+  toast('Copied: image 1280 × 360');
   await wait(1300);
 
-  // 3. дерево папок
-  await caption('3 · Папки', '⌘1 — дерево папок', 'Стрелками по соседним папкам, Enter — перейти, как cd.');
+  // 4. скриншоты
+  $('panel').classList.remove('on');
+  $('cap').className = 'cap hide';
+  $('dash').classList.add('on');
+  await cam($('dash'), { pad: 30, within: null, ms: 1000 });
+  await caption('4 · Screenshots', '⇧⌘4 — straight to your clipboard', 'Works with Hatch hidden. No system thumbnail, no file on the Desktop.');
+  keys(['⇧', '⌘', '4']);
   await wait(400);
+  cursorShape(true);
+  const lines = $('dlog').children, r0 = local(lines[0]), r1 = local(lines[1]);
+  const sx = r0.x - 8, sy = r0.y - 6, ex = r0.x + Math.max(r0.w, r1.w) + 10, ey = r1.y + r1.h + 6;
+  await moveXY(sx, sy, 700);
+  const sel = $('selbox'); sel.style.left = sx + 'px'; sel.style.top = sy + 'px'; sel.style.width = '0px'; sel.style.height = '0px'; sel.className = 'selbox on';
+  moveXY(ex, ey, 1100, 'linear');
+  const t0s = performance.now();
+  await new Promise(done => { const step = () => { const k = Math.min(1, (performance.now() - t0s) * SPEED / 1100);
+    sel.style.width = (ex - sx) * k + 'px'; sel.style.height = (ey - sy) * k + 'px';
+    $('seldims').textContent = `${Math.round((ex - sx) * k * 2)} × ${Math.round((ey - sy) * k * 2)}`; k < 1 ? requestAnimationFrame(step) : done() }; step() });
+  await wait(350);
+  sel.className = 'selbox';
+  $('flash').className = 'flash'; void $('flash').offsetWidth; $('flash').className = 'flash go';
+  cursorShape(false);
+  const shotHTML = `<div><span class="d">12:03:41</span> <span class="e">ERROR</span> upstream connect error: connection refused</div><div><span class="d">12:03:41</span> host db-primary.internal:5432 · retry in 30s</div>`;
+  $('thumbshot').innerHTML = shotHTML;
+  await wait(250);
+  $('sthumb').classList.add('on');
+  $('stimer').classList.add('run');
+  setTimeout(() => $('sbadge').classList.add('on'), 350 / SPEED);
+  setTimeout(() => $('sbadge').classList.remove('on'), 2600 / SPEED);
+  await cam($('sthumb'), { pad: 90, max: 2.2, within: null, ms: 1000 });
+  await wait(900);
+  await moveTo($('sthumb'), 20, 0, 800);
+  $('sthumb').classList.add('hover');
+  const tm = $('stimer'); tm.style.width = getComputedStyle(tm).width; tm.style.transition = 'none';
+  await wait(900);
+  await click(null);
+  $('sthumb').classList.add('gone');
+  $('pshot').innerHTML = `<div><span class="d">12:03:41</span> <span class="e">ERROR</span> upstream connect error: connection refused</div><div><span class="d">12:03:41</span> host <span class="w">db-primary.internal:5432</span> · retry in 30s</div>`;
+  const hints = (k) => $('phints').innerHTML = ({
+    plain: [['↩', 'copy'], ['⌘↩', 'path'], ['⌘S', 'pin'], ['Esc', 'close']],
+    sel: [['⌘C', 'copy text', 1], ['⌘V', 'to input', 1], ['Esc', 'deselect']],
+    pinned: [['↩', 'copy'], ['⌘S', 'unpin'], ['⌘W', 'close']] })[k].map(([a, b, l]) => `<span class="${l ? 'lit' : ''}"><i>${a}</i>${b}</span>`).join('');
+  hints('plain');
+  $('pwin').classList.add('on');
+  await cam($('pwin'), { pad: 40, max: 2.0, within: null, ms: 1000 });
+  await caption('4 · Screenshots', 'Select text right on the shot', '⌘C copies it. ⌘S keeps the window on top of everything.');
+  const word = $('pshot').querySelector('.w');
+  await moveTo(word, -local(word).w / 2 - 2, 0, 800);
+  moveTo(word, local(word).w / 2 + 2, 0, 700);
+  await wait(500); word.classList.add('hl'); hints('sel');
+  await wait(900);
+  keys(['⌘', 'C'], 400);
+  await wait(200);
+  $('wtoast').textContent = 'Text copied'; $('wtoast').className = 'wtoast on';
+  await wait(1300);
+  $('wtoast').className = 'wtoast';
+  word.classList.remove('hl');
+  keys(['⌘', 'S'], 400);
+  await wait(200);
+  $('pwin').classList.add('pinned'); $('ppin').className = 'on'; hints('pinned');
+  await wait(1700);
+  keys(['⌘', 'W'], 400);
+  await wait(200);
+  $('pwin').classList.remove('on');
+
+  // 5. папки
+  $('dash').classList.remove('on');
+  $('inbar').classList.remove('clip');
+  setInput('');
+  $('list').innerHTML = saved.list; $('crumbs').innerHTML = saved.crumbs;
+  await caption('5 · Folders', '⌘1 — folder tree from the keyboard', 'Arrows to move around, ↩ to cd. ⌘D saves the folder to favorites.');
+  keys(['⌥', 'Space'], 400);
+  await wait(300);
+  $('panel').classList.add('on');
+  await cam($('panel'), { pad: 30, top: true, ms: 900 });
+  await wait(300);
   keys(['⌘', '1']);
   await wait(300);
   setCrumbs(['~', 'git', 'hatch'], false, 'hatch');
@@ -421,57 +689,52 @@ async function film_() {
   $('panel').append(tree);
   const T = { focus: '~/git/hatch', open: new Set() };
   const rows = () => { const out = []; for (const n of FS['~/git']) { const p = '~/git/' + n; out.push([p, 0]); if (T.open.has(p)) for (const c of FS[p] || []) out.push([p + '/' + c, 1]) } return out };
-  const draw = () => tree.innerHTML = `<div class="up">в <b>~/git</b></div><div class="rows">${rows().map(([p, d]) => {
+  const draw = () => tree.innerHTML = `<div class="up">in <b>~/git</b></div><div class="rows">${rows().map(([p, d]) => {
     const kids = FS[p]?.length, nm = p.split('/').pop();
-    return `<div class="trow ${p === T.focus ? 'sel' : ''}" style="padding-left:${4 + d * 16}px"><span class="tw ${kids ? '' : 'leaf'} ${T.open.has(p) ? 'open' : ''}">${ICON.chev}</span><span class="fg"></span>${nm}${p === '~/git/hatch' ? '<span class="cur">текущая</span>' : ''}</div>` }).join('')}</div>
-    <div class="foot"><span><span class="kh">→</span> войти</span><span><span class="kh">←</span> выше</span><span><span class="kh">↩</span> перейти</span><span><span class="kh">⌘←→</span> соседняя</span><span><span class="kh">esc</span> закрыть</span></div>`;
+    return `<div class="trow ${p === T.focus ? 'sel' : ''}" style="padding-left:${4 + d * 16}px"><span class="tw ${kids ? '' : 'leaf'} ${T.open.has(p) ? 'open' : ''}">${ICON.chev}</span><span class="fg"></span>${nm}${p === '~/git/hatch' ? '<span class="cur">current</span>' : ''}</div>` }).join('')}</div>
+    <div class="foot"><span><span class="kh">→</span> open</span><span><span class="kh">←</span> up</span><span><span class="kh">↩</span> go</span><span><span class="kh">esc</span> close</span></div>`;
   draw();
-  await wait(900);
+  cam([tree, $('crumbs')], { pad: 30, max: 2.1, top: true, ms: 900 });
+  await wait(1000);
   for (const step of [['↓', () => T.focus = '~/git/notes'], ['↓', () => T.focus = '~/git/website'], ['→', () => T.open.add('~/git/website')], ['→', () => T.focus = '~/git/website/public'], ['↑', () => T.focus = '~/git/website']]) {
-    keys([step[0]], 250); await wait(120); step[1](); draw(); await wait(560);
+    keys([step[0]], 250); await wait(120); step[1](); draw(); await wait(520);
   }
   keys(['↩'], 500);
   await wait(250);
   tree.remove();
   setCrumbs(['~', 'git', 'website'], false);
-  await wait(1300);
-
-  // 4. избранное и поиск
-  await caption('4 · Избранное и поиск', 'Нужное — под рукой', '⌘D — папка в избранное, ⌘F — поиск по всем командам и их выводу.');
-  await wait(300);
+  await cam($('panel'), { pad: 30, top: true, ms: 800 });
   keys(['⌘', 'D']);
   await wait(300);
   setCrumbs(['~', 'git', 'website'], true);
-  toast('★ Папка в избранном: website');
+  toast('★ Favorite folder: website');
   await wait(1700);
-  keys(['⌘', 'F']);
-  await wait(300);
-  $('inbar').classList.add('searching');
-  setInput('', { ph: 'Поиск по командам и выводу…' });
-  await wait(600);
-  await type('Build', v => {
-    setInput(v);
-    document.querySelectorAll('.blk').forEach(b => b.classList.toggle('gone', v.length >= 3 && b.dataset.k !== 'swift build'));
-  }, 9);
-  const sb = document.querySelector('[data-k="swift build"]'), pv = sb.querySelector('.pv');
-  pv.style.maxHeight = '60px'; pv.style.opacity = '1'; pv.style.paddingBlock = '7px 10px';
-  pv.innerHTML = 'Building for debugging...\n<mark class="s" style="background:rgba(255,159,10,.4);color:#fff;border-radius:2px">Build</mark> complete! (4.21s)';
-  await wait(1700);
-  keys(['esc'], 400);
-  $('inbar').classList.remove('searching');
-  setInput('');
-  document.querySelectorAll('.blk').forEach(b => b.classList.remove('gone'));
-  await wait(1100);
 
-  // 5. финал
-  $('cap').className = 'cap hide';
-  keys(['⌥', 'Space'], 500);
+  // 6. приложения и калькулятор
+  await caption('6 · Spotlight-style', 'Apps and math, right in the input', 'An expression shows its result — ↩ copies it. An app name opens the app.');
+  await cam($('inbar'), { pad: 60, max: 2.0, top: true, ms: 800 });
+  await type('(1200-150)/3', v => setInput(v), 12);
+  $('qa').innerHTML = '<b>= 350</b><span class="k2">↩</span>copy'; $('qa').className = 'qa on';
+  await wait(1300);
+  keys(['↩'], 400);
+  await wait(200);
+  $('qa').className = 'qa'; setInput('');
+  toast('Copied: 350');
+  await wait(1000);
+  await type('safari', v => setInput(v), 10);
+  $('qa').innerHTML = '<span class="appi"></span>Open Safari<span class="k2">↩</span>'; $('qa').className = 'qa on';
+  await wait(1400);
+  keys(['↩'], 400);
   await wait(300);
   $('panel').classList.remove('on');
-  await moveTo(film, 900, 700, 800);
-  await wait(400);
+
+  // финал
+  $('cap').className = 'cap hide';
+  const w = $('world'); w.style.transitionDuration = 900 / SPEED + 'ms'; w.style.transform = 'none';
+  await moveXY(1500, 860, 800);
+  await wait(300);
   $('outro').classList.add('on');
-  await wait(3800);
+  await wait(4200);
   window.__done = true; document.title = 'done';
 }
 

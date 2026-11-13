@@ -8,7 +8,7 @@
   <a href="https://github.com/3Danger/hatch/releases/latest"><b>Скачать для macOS</b></a> · macOS 26+ · бесплатно, MIT
 </p>
 
-<p align="center"><img src="docs/media/demo.gif" width="800" alt="Hatch: команда в панели, фильтр grep, дерево папок, избранное и поиск"></p>
+<p align="center"><img src="docs/media/demo.gif" width="800" alt="Hatch: команда в панели, фильтр grep, буфер обмена, скриншоты по ⇧⌘4, дерево папок, приложения и калькулятор"></p>
 <p align="center"><a href="docs/media/demo.mp4">Видео в хорошем качестве</a></p>
 
 ## Зачем

@@ -30,7 +30,8 @@ const tmp = fs.mkdtempSync(path.join(require('os').tmpdir(), 'hatch-demo-'));
   execFileSync('ffmpeg', ['-loglevel', 'error', '-y', '-ss', '0.4', '-i', video, '-c:v', 'libx264', '-preset', 'slow', '-crf', '18',
     '-pix_fmt', 'yuv420p', '-movflags', '+faststart', path.join(media, 'demo.mp4')]);
   execFileSync('ffmpeg', ['-loglevel', 'error', '-y', '-ss', '0.4', '-i', video, '-vf',
-    'fps=12,scale=960:-1:flags=lanczos,split[a][b];[a]palettegen=max_colors=160:stats_mode=diff[p];[b][p]paletteuse=dither=bayer:bayer_scale=4:diff_mode=rectangle',
+    // ролик длинный: GIF реже и меньше, чтобы README открывался быстро; качество — в MP4
+    'fps=8,scale=720:-1:flags=lanczos,split[a][b];[a]palettegen=max_colors=96:stats_mode=diff[p];[b][p]paletteuse=dither=bayer:bayer_scale=5:diff_mode=rectangle',
     path.join(media, 'demo.gif')]);
   console.log('готово:', media);
 })();
