@@ -889,6 +889,16 @@ extension SettingsView {
                 row(L.t("folder_tree", lang), hint: L.t("folder_tree_hint", lang)) {
                     HotKeyCapsField(spec: binding(\.folderTreeShortcut), lang: lang).fixedSize()
                 }
+                row(L.t("shortcuts_reset_title", lang), hint: L.t("shortcuts_reset_hint", lang)) {
+                    Button { settings.resetShortcuts() } label: {
+                        Text(L.t("shortcuts_reset", lang))
+                            .font(.system(size: 12.5, weight: .semibold))
+                            .padding(.horizontal, 12)
+                            .frame(height: 28)
+                    }
+                    .buttonStyle(KeyCapButtonStyle(cornerRadius: 8))
+                    .disabled(settings.shortcutsAreDefault)
+                }
                 row(L.t("status_icon", lang), hint: L.t("status_icon_hint", lang)) {
                     Toggle("", isOn: binding(\.showStatusIcon))
                         .toggleStyle(GlassSwitchStyle())

@@ -6,6 +6,8 @@ struct KeysSheetView: View {
     let mode: InputMode
     /// Сочетание открытия Hatch из настроек («⌥Space»).
     let hotkey: String
+    /// Сочетание дерева папок из настроек («⌘T»).
+    var tree = "⌘T"
     let lang: String
 
     struct Group: Identifiable {
@@ -15,7 +17,7 @@ struct KeysSheetView: View {
     }
 
     var body: some View {
-        let groups = Self.groups(mode: mode, hotkey: hotkey, lang: lang)
+        let groups = Self.groups(mode: mode, hotkey: hotkey, tree: tree, lang: lang)
         let half = (groups.count + 1) / 2
         VStack(alignment: .leading, spacing: 0) {
             Text(Self.title(mode, lang).uppercased())
@@ -74,10 +76,11 @@ struct KeysSheetView: View {
     }
 
     /// Что показать в режиме: только то, что в нём работает.
-    static func groups(mode: InputMode, hotkey: String, lang: String) -> [Group] {
+    static func groups(mode: InputMode, hotkey: String, tree: String = "⌘T", lang: String) -> [Group] {
         let t = { (ru: String, en: String) in Self.t(ru, en, lang) }
         let everywhere = Group(title: t("Везде", "Everywhere"), rows: [
-            ("⌘F", t("поиск по истории", "search history")), ("⌘4", t("буфер обмена", "clipboard")),
+            ("⌘1", t("команды", "commands")), ("⌘2", t("поиск по истории", "search history")),
+            ("⌘3", t("буфер обмена", "clipboard")),
             ("⇧⌘4", t("скриншот в буфер", "screenshot to clipboard")), ("Esc", t("закрыть слой", "close the top layer")),
             (hotkey, t("скрыть Hatch", "hide Hatch")),
         ])
@@ -94,7 +97,7 @@ struct KeysSheetView: View {
                     ("⌃C", t("прервать", "interrupt")),
                 ]),
                 Group(title: t("Окна", "Windows"), rows: [
-                    ("⌘1", t("дерево папок", "folder tree")), ("⌘E", t("избранное", "favorites")),
+                    (tree, t("дерево папок", "folder tree")), ("⌘E", t("избранное", "favorites")),
                     ("⌘D", t("папку в избранное", "favorite this folder")), ("⌘,", t("настройки", "settings")),
                     ("⌃L", t("очистить историю", "clear finished blocks")),
                 ]),
@@ -113,7 +116,7 @@ struct KeysSheetView: View {
             return [
                 Group(title: t("Запись", "Item"), rows: [
                     ("↑ ↓", t("выбрать", "select")), ("↩", t("копировать", "copy")), ("⌘↩", t("в поле", "to input")),
-                    ("⌘1", t("крупно", "preview")), ("⌘S", t("закрепить", "pin")), ("⌘⌫", t("удалить", "delete")),
+                    ("⌘Y", t("крупно", "preview")), ("⌘S", t("закрепить", "pin")), ("⌘⌫", t("удалить", "delete")),
                     ("⇧⌘R", t("формат или как есть", "formatted or as is")),
                 ]),
                 Group(title: t("Буфер", "Clipboard"), rows: [
@@ -133,8 +136,8 @@ struct EmptyHistoryView: View {
     var body: some View {
         let t = { (ru: String, en: String) in KeysSheetView.t(ru, en, lang) }
         let tips: [(String, String)] = [
-            ("⌘4", t("всё скопированное", "everything you copied")), ("⇧⌘4", t("скриншот в буфер", "screenshot to clipboard")),
-            ("⌘1", t("дерево папок", "folder tree")), ("⌘F", t("поиск по выводу", "search the output")),
+            ("⌘3", t("всё скопированное", "everything you copied")), ("⇧⌘4", t("скриншот в буфер", "screenshot to clipboard")),
+            ("⌘T", t("дерево папок", "folder tree")), ("⌘2", t("поиск по выводу", "search the output")),
             ("⌘E", t("избранное", "favorites")), ("⌘/", t("все клавиши", "all shortcuts")),
         ]
         VStack(alignment: .leading, spacing: 12) {

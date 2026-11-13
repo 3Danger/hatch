@@ -98,7 +98,7 @@ node docs/demo/record.js
 | `HistoryNavigator.swift`, `HistorySuggestion.swift` | ↑/↓ по истории, серая подсказка |
 | `QuickActions.swift`, `QuickActionLabel.swift`, `Calculator.swift` | приложения и калькулятор в поле ввода: список приложений, разбор строки, подпись справа |
 | `CommandNotFound.swift` | опечатка в имени команды: распознать «command not found», похожие имена |
-| `ClipboardHistory.swift`, `ClipboardView.swift`, `TextRecognizer.swift` | буфер обмена (⌘4): слежение за копированием, хранение текста и картинок, список, распознавание текста на картинках (Vision) |
+| `ClipboardHistory.swift`, `ClipboardView.swift`, `TextRecognizer.swift` | буфер обмена (⌘3): слежение за копированием, хранение текста и картинок, список, распознавание текста на картинках (Vision) |
 | `Syntax/Syntax.swift`, `Syntax/SyntaxService.swift` | форматирование и подсветка: какой формат, JSON своим кодом, SQL — sql-formatter, подсветка — highlight.js (оба в JavaScriptCore, файлы `.js` рядом), запоминание результатов |
 | `Syntax/HatchSQL.swift` | свой формат SQL (бета): разбор на слова, правила раскладки, сверка результата с исходным запросом |
 | `ModeSwitcher.swift`, `KeysSheet.swift` | переключатель режимов над полем и счётчик поиска; шпаргалка ⌘/ и пустая история |

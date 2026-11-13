@@ -33,13 +33,14 @@ final class SettingsStore {
     /// Ширина панели и предел высоты истории: тянутся за край панели, переживают перезапуск.
     var panelWidth: CGFloat { didSet { defaults.set(Double(panelWidth), forKey: Keys.panelWidth) } }
     var historyMaxHeight: CGFloat { didSet { defaults.set(Double(historyMaxHeight), forKey: Keys.historyMaxHeight) } }
-    /// Сочетание для дерева папок (пока открыта панель), формат как у горячей клавиши: "cmd-1".
+    /// Сочетание для дерева папок (пока открыта панель), формат как у горячей клавиши: "cmd-t".
     var folderTreeShortcut: String { didSet { defaults.set(folderTreeShortcut, forKey: Keys.folderTreeShortcut) } }
     static let defaultHotkey = "alt-space"
-    static let defaultFolderTreeShortcut = "cmd-1"
+    static let defaultFolderTreeShortcut = "cmd-t"
+    /// Прежние умолчания дерева: ⌘1 теперь — режим команд (⌘1 ⌘2 ⌘3 — режимы), их меняем на ⌘T.
+    static let replacedFolderTreeShortcuts: Set<String> = ["cmd-1", "cmd-p"]
     /// Умолчания до 0.1.3: у тех, кто их не менял, сочетания после обновления остаются прежними.
     static let legacyDefaultHotkey = "ctrl-space"
-    static let legacyDefaultFolderTreeShortcut = "cmd-p"
     /// Значок в строке меню. Без него Hatch открывается хоткеем или повторным запуском приложения.
     var showStatusIcon: Bool { didSet { defaults.set(showStatusIcon, forKey: Keys.showStatusIcon) } }
     /// Избранные папки и команды (кнопка ★ в поле ввода), в порядке добавления.
@@ -124,6 +125,7 @@ final class SettingsStore {
         static let historyMaxHeight = "settings.historyMaxHeight"
         static let showStatusIcon = "settings.showStatusIcon"
         static let folderTreeShortcut = "settings.folderTreeShortcut"
+        static let modeKeysMigrated = "settings.modeKeysMigrated"
         static let favoriteDirectories = "settings.favoriteDirectories"
         static let favoriteCommands = "settings.favoriteCommands"
         static let openApps = "settings.openAppsFromInput"
@@ -152,6 +154,7 @@ final class SettingsStore {
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
         Self.keepLegacyShortcuts(in: defaults)
+        Self.moveFolderTreeOffModeKeys(in: defaults)
         self.hotkeyString = defaults.string(forKey: Keys.hotkey) ?? Self.defaultHotkey
         self.themeRaw = defaults.string(forKey: Keys.theme) ?? "system"
         self.languageCode = defaults.string(forKey: Keys.language) ?? "en"
@@ -211,8 +214,15 @@ final class SettingsStore {
         let existing = defaults.dictionaryRepresentation().keys.contains { $0.hasPrefix("settings.") }
         guard existing else { return }
         if defaults.string(forKey: Keys.hotkey) == nil { defaults.set(legacyDefaultHotkey, forKey: Keys.hotkey) }
-        if defaults.string(forKey: Keys.folderTreeShortcut) == nil {
-            defaults.set(legacyDefaultFolderTreeShortcut, forKey: Keys.folderTreeShortcut)
+    }
+
+    /// Один раз: дерево папок с ⌘1 (и старого ⌘P) — на ⌘T, ⌘1 занят режимом команд.
+    /// Дальше выбранное в настройках не трогаем, даже ⌘P.
+    static func moveFolderTreeOffModeKeys(in defaults: UserDefaults) {
+        guard !defaults.bool(forKey: Keys.modeKeysMigrated) else { return }
+        defaults.set(true, forKey: Keys.modeKeysMigrated)
+        if let stored = defaults.string(forKey: Keys.folderTreeShortcut), replacedFolderTreeShortcuts.contains(stored) {
+            defaults.set(defaultFolderTreeShortcut, forKey: Keys.folderTreeShortcut)
         }
     }
 
@@ -369,6 +379,19 @@ final class SettingsStore {
     }
 
     func removeFormatExcludedApp(_ bundleID: String) { formatExcludedApps.removeAll { $0 == bundleID } }
+
+    /// Сочетания клавиш — как при установке: открыть Hatch, дерево папок, скриншот.
+    func resetShortcuts() {
+        hotkeyString = Self.defaultHotkey
+        folderTreeShortcut = Self.defaultFolderTreeShortcut
+        screenshotShortcut = Self.defaultScreenshotShortcut
+    }
+
+    /// Сочетания уже как при установке — кнопке сброса нечего делать.
+    var shortcutsAreDefault: Bool {
+        hotkeyString == Self.defaultHotkey && folderTreeShortcut == Self.defaultFolderTreeShortcut
+            && screenshotShortcut == Self.defaultScreenshotShortcut
+    }
 
     func resetToDefaults() {
         hotkeyString = Self.defaultHotkey

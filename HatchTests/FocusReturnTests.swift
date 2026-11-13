@@ -94,7 +94,7 @@ final class FocusReturnTests: XCTestCase {
     }
 
     func testEscapeFromFolderTreeReturnsFocusToInput() throws {
-        try assertEscapeReturnsFocus(open: 18, "1", "дерево папок") // ⌘1
+        try assertEscapeReturnsFocus(open: 17, "t", "дерево папок") // ⌘T
     }
 
     func testEscapeFromFavoritesReturnsFocusToInput() throws {
@@ -166,7 +166,7 @@ final class FocusReturnTests: XCTestCase {
     /// ⌘W во всплывающем окне (дерево папок) закрывает только его, как Esc.
     func testCommandWClosesPopupOnly() throws {
         let panel = try showPanel()
-        key(18, "1", .command, to: panel) // ⌘1
+        key(17, "t", .command, to: panel) // ⌘T
         wait { panel.childWindows?.count == 1 }
         let tree = try XCTUnwrap(panel.childWindows?.first)
         key(13, "w", .command, to: tree)
@@ -308,17 +308,38 @@ final class FocusReturnTests: XCTestCase {
         XCTAssertEqual(settings.currentDirectory, "/usr", "Delete стёр «x», и Enter открыл /usr")
     }
 
-    /// ⌘1 в режиме буфера — просмотр картинки, а не дерево папок.
-    func testCommandOneInClipboardDoesNotOpenTree() throws {
+    /// ⌘1 ⌘2 ⌘3 — команды, поиск, буфер; клавиша включённого режима — обратно к командам.
+    /// ⌘F и ⌘4 по-прежнему работают; дерево папок — на ⌘T, и в буфере его нет.
+    func testCommandDigitsSwitchModes() throws {
         let panel = try showPanel()
-        key(21, "4", .command, to: panel) // ⌘4
-        key(18, "1", .command, to: panel) // ⌘1: картинки не выбрано — звук, дерево не открывается
+        let placeholder = { self.textField(in: panel.contentView!)?.placeholderString }
+        let lang = settings.languageCode
+        let commands = L.t("input_placeholder", lang), search = L.t("search_placeholder", lang), clip = L.t("clip_placeholder", lang)
+        XCTAssertEqual(placeholder(), commands)
+        key(20, "3", .command, to: panel) // ⌘3
+        XCTAssertEqual(placeholder(), clip)
+        key(19, "2", .command, to: panel) // ⌘2 — из буфера сразу в поиск
+        XCTAssertEqual(placeholder(), search)
+        key(19, "2", .command, to: panel) // ещё раз ⌘2 — к командам
+        XCTAssertEqual(placeholder(), commands)
+        key(20, "3", .command, to: panel)
+        key(18, "1", .command, to: panel) // ⌘1 — к командам
+        XCTAssertEqual(placeholder(), commands)
+        key(18, "1", .command, to: panel) // ⌘1 в командах ничего не открывает
         spin()
-        XCTAssertEqual(panel.childWindows?.count ?? 0, 0, "дерево папок не открылось")
-        key(21, "4", .command, to: panel) // обратно к командам
+        XCTAssertEqual(panel.childWindows?.count ?? 0, 0, "⌘1 больше не дерево папок")
+        XCTAssertEqual(placeholder(), commands)
+        key(3, "f", .command, to: panel) // ⌘F — тоже поиск
+        XCTAssertEqual(placeholder(), search)
+        key(21, "4", .command, to: panel) // ⌘4 — тоже буфер
+        XCTAssertEqual(placeholder(), clip)
+        key(17, "t", .command, to: panel) // ⌘T в буфере — не дерево
+        spin()
+        XCTAssertEqual(panel.childWindows?.count ?? 0, 0, "в буфере дерево не открывается")
         key(18, "1", .command, to: panel)
+        key(17, "t", .command, to: panel) // ⌘T — дерево папок
         wait { panel.childWindows?.count == 1 }
-        XCTAssertEqual(panel.childWindows?.count, 1, "вне буфера ⌘1 — снова дерево папок")
+        XCTAssertEqual(panel.childWindows?.count, 1, "⌘T — дерево папок")
     }
 
     /// ⌘S в списке буфера закрепляет выбранный фрагмент, повторно — открепляет.
@@ -339,7 +360,7 @@ final class FocusReturnTests: XCTestCase {
         let image = try XCTUnwrap(clipboard.recordImage(png: ClipboardImageTests.png(), width: 240, height: 120,
                                                         app: nil, bundleID: nil, days: 7))
         key(21, "4", .command, to: panel) // ⌘4
-        key(18, "1", .command, to: panel) // ⌘1 — просмотр
+        key(16, "y", .command, to: panel) // ⌘Y — просмотр
         wait { panel.childWindows?.count == 1 }
         let preview = try XCTUnwrap(panel.childWindows?.first as? ClipPreviewPanel)
         // картинка во всё окно, сверху шапка
@@ -355,7 +376,7 @@ final class FocusReturnTests: XCTestCase {
         wait { (panel.childWindows?.count ?? 0) == 0 }
         XCTAssertEqual(panel.childWindows?.count ?? 0, 0, "⌘W закрыл просмотр")
         XCTAssertTrue(panel.isVisible, "панель осталась")
-        key(18, "1", .command, to: panel) // всё ещё буфер: ⌘1 — снова просмотр, не дерево
+        key(16, "y", .command, to: panel) // всё ещё буфер: ⌘Y — снова просмотр
         wait { panel.childWindows?.count == 1 }
         let again = try XCTUnwrap(panel.childWindows?.first)
         key(51, "\u{7F}", .command, to: again) // ⌘⌫
@@ -371,7 +392,7 @@ final class FocusReturnTests: XCTestCase {
         _ = try XCTUnwrap(clipboard.recordImage(png: ClipboardImageTests.png(), width: 240, height: 120,
                                                 app: nil, bundleID: nil, days: 7))
         key(21, "4", .command, to: panel) // ⌘4
-        key(18, "1", .command, to: panel) // ⌘1
+        key(16, "y", .command, to: panel) // ⌘Y
         wait { panel.childWindows?.count == 1 }
         let preview = try XCTUnwrap(panel.childWindows?.first as? ClipPreviewPanel)
         key(1, "s", .command, to: preview) // ⌘S
@@ -396,7 +417,7 @@ final class FocusReturnTests: XCTestCase {
         _ = try XCTUnwrap(clipboard.recordImage(png: ClipboardImageTests.png(), width: 240, height: 120,
                                                 app: nil, bundleID: nil, days: 7))
         key(21, "4", .command, to: panel) // ⌘4
-        key(18, "1", .command, to: panel) // ⌘1
+        key(16, "y", .command, to: panel) // ⌘Y
         wait { panel.childWindows?.count == 1 }
         let point = NSPoint(x: panel.frame.width / 2, y: 20) // низ панели — список
         for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
@@ -437,7 +458,7 @@ final class FocusReturnTests: XCTestCase {
         _ = clipboard.recordImage(png: ClipboardImageTests.png("HATCH 2048", width: 420, height: 120), width: 420, height: 120,
                                   app: nil, bundleID: nil, days: 7)
         key(21, "4", .command, to: panel) // ⌘4
-        key(18, "1", .command, to: panel) // ⌘1 — просмотр
+        key(16, "y", .command, to: panel) // ⌘Y — просмотр
         wait { panel.childWindows?.count == 1 }
         let preview = try XCTUnwrap(panel.childWindows?.first)
         let overlay = try XCTUnwrap(Self.find(ImageAnalysisOverlayView.self, in: preview.contentView!))
@@ -466,7 +487,7 @@ final class FocusReturnTests: XCTestCase {
         _ = clipboard.recordImage(png: ClipboardImageTests.png("HATCH 2048", width: 420, height: 120), width: 420, height: 120,
                                   app: nil, bundleID: nil, days: 7)
         key(21, "4", .command, to: panel) // ⌘4
-        key(18, "1", .command, to: panel) // ⌘1
+        key(16, "y", .command, to: panel) // ⌘Y
         wait { panel.childWindows?.count == 1 }
         let preview = try XCTUnwrap(panel.childWindows?.first as? ClipPreviewPanel)
         let overlay = try XCTUnwrap(Self.find(ImageAnalysisOverlayView.self, in: preview.contentView!))
@@ -518,7 +539,7 @@ final class FocusReturnTests: XCTestCase {
         let panel = try showPanel()
         clipboard.record(Clip(text: #"{"b":1,"a":[2,3]}"#, copiedAt: Date()), days: 7)
         key(21, "4", .command, to: panel) // ⌘4
-        key(18, "1", .command, to: panel) // ⌘1
+        key(16, "y", .command, to: panel) // ⌘Y
         wait { panel.childWindows?.first is ClipPreviewPanel }
         let preview = try XCTUnwrap(panel.childWindows?.first as? ClipPreviewPanel)
         let textView = try XCTUnwrap(Self.find(NSTextView.self, in: preview.contentView!))

@@ -22,10 +22,10 @@ Close it and you are right back where you were.
 - **Your shell.** zsh or bash with your `~/.zshrc`: aliases, functions, colors. `ssh`, `vim` and `htop` open right in the panel.
 - **History as blocks.** Every command is a block with its output and status: rerun, copy, pin.
 - **Filters without rerunning.** The “+” on a block adds `grep`, `sort` or `jq` to the saved output. The command itself does not run again.
-- **Folders from the keyboard.** <kbd>⌘1</kbd> opens the folder tree, ★ holds favorite folders and commands.
-- **Search.** <kbd>⌘F</kbd> searches all commands and their output.
+- **Folders from the keyboard.** <kbd>⌘T</kbd> opens the folder tree, ★ holds favorite folders and commands.
+- **Search.** <kbd>⌘2</kbd> searches all commands and their output.
 - **zsh-style completion.** TAB and suggestions from history, with no lag.
-- **Clipboard.** <kbd>⌘4</kbd> shows everything you copied, with search, including screenshots and the text on them. Passwords from password managers are never saved.
+- **Clipboard.** <kbd>⌘3</kbd> shows everything you copied, with search, including screenshots and the text on them. Passwords from password managers are never saved.
 - **Formatting.** JSON, SQL, YAML and XML in the clipboard and in command output, indented and highlighted; a `{}` button on every item and block.
 - **Screenshots.** <kbd>⇧⌘4</kbd> puts a screen area straight into the clipboard and Hatch history; the thumbnail in the bottom-right corner opens it full size.
 - **Apps and a calculator, like Spotlight.** `safari` and Enter opens Safari, `code .` opens the current folder in VS Code. `(1200-150)/3` shows 350 right away, Enter copies the result.
@@ -50,10 +50,9 @@ macOS will ask for permission to send notifications (when long commands finish) 
 | <kbd>⌥</kbd><kbd>Space</kbd> | show or hide Hatch (configurable) |
 | <kbd>Enter</kbd> · <kbd>Tab</kbd> | run the command · complete |
 | <kbd>↑</kbd> <kbd>↓</kbd> | browse command history |
-| <kbd>⌘F</kbd> | search commands and output |
-| <kbd>⌘1</kbd> | folder tree (configurable) |
+| <kbd>⌘1</kbd> · <kbd>⌘2</kbd> · <kbd>⌘3</kbd> | modes: commands · search commands and output · clipboard; the key of the current mode goes back to commands |
+| <kbd>⌘T</kbd> | folder tree (configurable) |
 | <kbd>⌘E</kbd> · <kbd>⌘D</kbd> | favorites · add the current folder to favorites |
-| <kbd>⌘4</kbd> | clipboard: everything you copied, with search |
 | <kbd>⌃L</kbd> | clear finished blocks (can be undone) |
 | <kbd>⌘/</kbd> | every shortcut of the current mode |
 
@@ -69,17 +68,16 @@ macOS will ask for permission to send notifications (when long commands finish) 
 | ↑ / ↓ | panel | browse command history; the block of that command is selected |
 | ⌘C · ⌘R · ⌘S | selected block | copy its output · rerun it in the same block · pin it |
 | ⌃C | expanded block | interrupt the command |
-| ⌘F | panel | search history and back (inside expanded output, search that output) |
+| ⌘1 · ⌘2 · ⌘3 | panel | commands · search history · clipboard; the current mode's key goes back to commands (⌘F and ⌘4 work too; inside expanded output ⌘F searches that output) |
 | ⌘E | panel | favorites: folders and commands |
 | ↑ / ↓ · ⌘↑ / ⌘↓ · Enter | favorites | select · move up or down (or drag with the mouse) · go to or run |
 | letters · Backspace · Esc | lists | filter favorites, the folder tree and the app picker · delete a letter · clear the filter, a second Esc closes |
-| ⌘4 | panel | clipboard and back |
 | ↑ / ↓ · Enter · ⌘Enter · Esc | clipboard | move between items · copy and hide the panel · insert into the input field · leave |
-| Tab · ⇧Tab · ⌘1 | clipboard | next · previous item type · open the item full size |
+| Tab · ⇧Tab · ⌘Y | clipboard | next · previous item type · open the item full size |
 | ⇧⌘R | clipboard, block | formatted or as is |
 | ⌘S · ⌘⌫ · ⌃L | clipboard | pin · delete the selected item · clear the clipboard (pinned items stay); in a preview, ⌘S keeps the window on top of others |
 | Esc · ⌘W | anywhere | close the top layer, one per press: popup or settings → TAB suggestions → expanded block → search or clipboard → the “No command” line; after that, hide the panel (typed text stays). In a live terminal (vim, ssh) Esc goes to the program, ⌘W collapses the block |
-| ⌘1 (configurable) | panel | folder tree at the current folder |
+| ⌘T (configurable) | panel | folder tree at the current folder |
 | ⌘D | panel | add the current folder to favorites or remove it |
 | ⌃L | panel | clear finished blocks (like the `clear` command) |
 | ⌘Q | panel | hide the panel; quit from settings or the menu bar icon |
@@ -109,7 +107,7 @@ macOS will ask for permission to send notifications (when long commands finish) 
 - A failed command is marked red with its exit code; one you stopped yourself (<kbd>⌃C</kbd>, Stop) is gray.
 - <kbd>↑</kbd> <kbd>↓</kbd> select a block (its command goes to the input); the selected block shows its keys: <kbd>⌘C</kbd> copy output, <kbd>⌘R</kbd> rerun.
 - Rerun in the same block, pin, clear by levels. `clear` and <kbd>⌃L</kbd> remove finished blocks, with 5 seconds to undo.
-- Above the input: the current folder (the middle of a long path folds into `…`) and the mode switcher — commands, search (<kbd>⌘F</kbd>), clipboard (<kbd>⌘4</kbd>). Search highlights matches and shows only the matching lines of each block, with a count.
+- Above the input: the current folder (the middle of a long path folds into `…`) and the mode switcher — commands (<kbd>⌘1</kbd>), search (<kbd>⌘2</kbd>), clipboard (<kbd>⌘3</kbd>). Search highlights matches and shows only the matching lines of each block, with a count.
 
 **Pipeline**
 - `grep`, `sort` and `jq` steps work on the saved output, so it is safe even for `rm`, `curl -X POST` and deploys.
@@ -118,7 +116,7 @@ macOS will ask for permission to send notifications (when long commands finish) 
 **Input**
 - Completion for commands, aliases, files and folders, without starting a shell on every keystroke.
 - A gray suggestion from history, like zsh-autosuggestions.
-- The current folder is shown above the field. Click it or press <kbd>⌘1</kbd> for the folder tree, <kbd>⌘</kbd>-click to copy the path, right-click for the folder menu (favorites, Finder, editors, Share, recent folders).
+- The current folder is shown above the field. Click it or press <kbd>⌘T</kbd> for the folder tree, <kbd>⌘</kbd>-click to copy the path, right-click for the folder menu (favorites, Finder, editors, Share, recent folders).
 - The Latin keyboard layout switches on in the field by itself and is restored when Hatch hides.
 
 **Typos**
@@ -126,19 +124,19 @@ macOS will ask for permission to send notifications (when long commands finish) 
 - If a command inside a script is not found, the block stays as usual.
 
 **Clipboard**
-- <kbd>⌘4</kbd> shows what you copied in any app while Hatch is running: newest first, with the app and time. Typing filters it.
+- <kbd>⌘3</kbd> shows what you copied in any app while Hatch is running: newest first, with the app and time. Typing filters it.
 - Above the field, instead of the path, a filter: all, text (and file paths), images, pinned; <kbd>Tab</kbd> and <kbd>⇧Tab</kbd> switch it.
 - Enter or a double-click copies the item and hides the panel, leaving you to press <kbd>⌘V</kbd>. <kbd>⌘Enter</kbd> inserts the item into the input field. A click only selects a row; the selected and hovered rows show buttons for the same actions.
 - Copying something again moves it to the top. Files from Finder are saved as paths.
 - Each row has pin (<kbd>⌘S</kbd>) and delete. Pinned items stay grouped at the top and are never removed by clearing, age or the limit.
 - <kbd>⌃L</kbd> in clipboard mode clears the clipboard (5 seconds to undo), not the command history. Deleting a single item can be undone too.
-- Images (screenshots with <kbd>⌘⇧⌃4</kbd>, Copy Image) appear as thumbnails with their size and app. The text on them is recognized on this Mac, offline, and is searchable. <kbd>⌘1</kbd> or a click on the thumbnail opens it full size, Enter copies it again, <kbd>⌘Enter</kbd> puts the image file path into the field. The preview is a window above the list: the image fills the window, and its header shows the keys that work right now. Drag the window by its header and resize it by its corners, always keeping the image proportions; a double-click on the header restores the original size. Select text on the image with the mouse, like in Preview: <kbd>⌘C</kbd> copies the selection (only the preview closes, Hatch stays), <kbd>⌘V</kbd> inserts it into the field, <kbd>⌘A</kbd> selects all of it. <kbd>⌘S</kbd> keeps the window on top of others: it stays when Hatch hides, shows on every desktop, and you can have several; <kbd>⌘V</kbd> and <kbd>⌘Enter</kbd> from it bring Hatch back and insert into the field. Esc and <kbd>⌘W</kbd> (and <kbd>⌘Q</kbd> for a pinned window) close the window, Esc clears the selection first; an unpinned preview also closes on a click outside it. Right-click shows the same actions as a menu, plus Copy Recognized Text and Pin in Clipboard. If the clipboard holds both text and an image (table cells), the text is saved. Up to 50 images, 20 MB each at most.
+- Images (screenshots with <kbd>⌘⇧⌃4</kbd>, Copy Image) appear as thumbnails with their size and app. The text on them is recognized on this Mac, offline, and is searchable. <kbd>⌘Y</kbd> or a click on the thumbnail opens it full size, Enter copies it again, <kbd>⌘Enter</kbd> puts the image file path into the field. The preview is a window above the list: the image fills the window, and its header shows the keys that work right now. Drag the window by its header and resize it by its corners, always keeping the image proportions; a double-click on the header restores the original size. Select text on the image with the mouse, like in Preview: <kbd>⌘C</kbd> copies the selection (only the preview closes, Hatch stays), <kbd>⌘V</kbd> inserts it into the field, <kbd>⌘A</kbd> selects all of it. <kbd>⌘S</kbd> keeps the window on top of others: it stays when Hatch hides, shows on every desktop, and you can have several; <kbd>⌘V</kbd> and <kbd>⌘Enter</kbd> from it bring Hatch back and insert into the field. Esc and <kbd>⌘W</kbd> (and <kbd>⌘Q</kbd> for a pinned window) close the window, Esc clears the selection first; an unpinned preview also closes on a click outside it. Right-click shows the same actions as a menu, plus Copy Recognized Text and Pin in Clipboard. If the clipboard holds both text and an image (table cells), the text is saved. Up to 50 images, 20 MB each at most.
 - Passwords (password managers mark them as concealed) and copies from excluded apps are never saved.
 - Stored locally, up to 200 items for 7 days (configurable), and can be cleared in settings.
 
 **Formatting**
 - Hatch recognizes JSON (including logs made of JSON lines), SQL, YAML and XML by itself. In the clipboard the row is highlighted, with JSON and SQL on one line; in the output of a finished command, JSON, YAML and XML are shown formatted. A program's own colored output and the live terminal are left alone.
-- <kbd>⌘1</kbd> in the clipboard opens any text in the same window as images: in full, wrapped to the width, selectable with the mouse (<kbd>⌘A</kbd>, <kbd>⌘C</kbd> for the selection, ↩ for the whole text as shown, <kbd>⌘↩</kbd> into the field), <kbd>⌘S</kbd> keeps it on top of other windows, resize by the corners.
+- <kbd>⌘Y</kbd> in the clipboard opens any text in the same window as images: in full, wrapped to the width, selectable with the mouse (<kbd>⌘A</kbd>, <kbd>⌘C</kbd> for the selection, ↩ for the whole text as shown, <kbd>⌘↩</kbd> into the field), <kbd>⌘S</kbd> keeps it on top of other windows, resize by the corners.
 - The `{}` button on an item, in the preview window and on a command block, and <kbd>⇧⌘R</kbd>, switch between formatted and as is; the choice is remembered. What you see is what gets copied.
 - SQL is broken into clauses, with keywords in UPPER CASE by default (lower case or unchanged in settings); dialects: standard, PostgreSQL, MySQL, ClickHouse.
 - “SQL format: Hatch · beta” in settings is Hatch's own style: columns with a leading comma, `JOIN … ON TRUE` and `WHERE TRUE` with `  AND …` conditions one per line, three or more ORs in parentheses as `(FALSE` with `OR …` one per line, CASE across lines. The query never changes in meaning: the result is checked against the original word for word, and if they do not match or a construct is unfamiliar, the standard format is shown.
@@ -165,7 +163,7 @@ macOS will ask for permission to send notifications (when long commands finish) 
 - Solid, without glass, in the style of macOS System Settings. Its height follows the content; size and position are remembered.
 - Hides on a click in another app (except system permission and password prompts), when switching desktops, on <kbd>⌘Q</kbd>, and on <kbd>Esc</kbd> and <kbd>⌘W</kbd> when there is nothing left to close. The hotkey opens it on the current desktop, including over a full-screen app.
 - The menu bar icon can be hidden: Hatch then opens with the hotkey or by launching it again.
-- Settings (<kbd>⌘,</kbd> or the gear) open as a separate layer over the panel without resizing it. Settings: hotkey, folder tree shortcut, icon, theme, language (RU/EN), preview lines, shell, timeout, Latin layout in the field, apps and calculator, aliases, exceptions, clipboard, formatting, screenshots.
+- Settings (<kbd>⌘,</kbd> or the gear) open as a separate layer over the panel without resizing it. Settings: hotkey, folder tree shortcut (one button resets all shortcuts), icon, theme, language (RU/EN), preview lines, shell, timeout, Latin layout in the field, apps and calculator, aliases, exceptions, clipboard, formatting, screenshots.
 
 </details>
 

@@ -1,7 +1,7 @@
 import SwiftUI
 import AppKit
 
-/// Переключатель режимов панели в строке над полем: команды, поиск (⌘F), буфер (⌘4).
+/// Переключатель режимов панели в строке над полем: команды (⌘1), поиск (⌘2), буфер (⌘3).
 /// Компактный: подпись только у включённого, у остальных — значок, название и клавиша — в подсказке.
 /// Включённый подсвечен цветом рамки поля этого режима.
 struct ModeSwitcher: View {
@@ -108,9 +108,9 @@ struct ModeSwitcher: View {
 
     static func help(_ mode: InputMode, _ lang: String) -> String {
         switch mode {
-        case .command: L.t("mode_commands", lang) + " (Esc)"
-        case .search: L.t("search", lang) + " (⌘F)"
-        case .clipboard: L.t("clip_mode", lang) + " (⌘4)"
+        case .command: L.t("mode_commands", lang) + " (⌘1)"
+        case .search: L.t("search", lang) + " (⌘2)"
+        case .clipboard: L.t("clip_mode", lang) + " (⌘3)"
         }
     }
 

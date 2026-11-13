@@ -42,6 +42,11 @@ final class UXTests: XCTestCase {
         let clipboard = KeysSheetView.groups(mode: .clipboard, hotkey: "⌥Space", lang: "ru").flatMap(\.rows).map(\.key)
         XCTAssertTrue(clipboard.contains("⌘↩") && clipboard.contains("⇧⌘R"))
         XCTAssertFalse(clipboard.contains("⌘R"), "в буфере ⌘R нет — формат на ⇧⌘R")
+        XCTAssertTrue(["⌘1", "⌘2", "⌘3"].allSatisfy(command.contains), "режимы — ⌘1 ⌘2 ⌘3")
+        XCTAssertFalse(command.contains("⌘F") || command.contains("⌘4"), "старые клавиши режимов не показываем")
+        XCTAssertTrue(clipboard.contains("⌘Y"), "крупно — ⌘Y")
+        let tree = KeysSheetView.groups(mode: .command, hotkey: "⌥Space", tree: "⌘O", lang: "ru").flatMap(\.rows).map(\.key)
+        XCTAssertTrue(tree.contains("⌘O"), "дерево — сочетание из настроек")
     }
 
     func testClipboardSeparatorsSkipSelectionAndGroups() {

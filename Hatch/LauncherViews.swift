@@ -57,7 +57,7 @@ struct LauncherRootView: View {
     @State private var previews = ClipPreviews()
     /// Тип фрагментов в фильтре над полем (Tab, ⇧Tab, клик).
     @State private var clipKind: ClipKind = .all
-    /// ⌘1 (или сочетание из настроек): дерево папок у текущей папки; счётчик — каждое нажатие.
+    /// ⌘T (или сочетание из настроек): дерево папок у текущей папки; счётчик — каждое нажатие.
     @State private var folderTreeRequest = 0
     /// Список «Избранное» (кнопка ★, ⌘E).
     @State private var favoritesOpen = false
@@ -152,7 +152,8 @@ struct LauncherRootView: View {
                     // ⌘/ — шпаргалка по клавишам текущего режима, под переключателем
                     .hatchPopup(isPresented: $keysOpen) { _ in
                         PopupCard {
-                            KeysSheetView(mode: inputMode, hotkey: SystemScreenshotShortcuts.display(settings.hotkeyString), lang: lang)
+                            KeysSheetView(mode: inputMode, hotkey: SystemScreenshotShortcuts.display(settings.hotkeyString),
+                                          tree: SystemScreenshotShortcuts.display(settings.folderTreeShortcut), lang: lang)
                         }
                     }
             }
@@ -249,7 +250,7 @@ struct LauncherRootView: View {
             guard let id = note.object as? UUID else { return }
             previewDetached(id, screen: (note.userInfo?["screen"] as? NSValue)?.rectValue)
         }
-        // ⌘1 открыл или закрыл просмотр картинки — окно просмотра следом
+        // ⌘Y открыл или закрыл просмотр картинки — окно просмотра следом
         .onChange(of: previewClipID) { _, id in syncPreview(id) }
         .onReceive(NotificationCenter.default.publisher(for: .hatchDidShow)) { _ in
             // панель открывается заново — в обычном режиме, с набранной командой
@@ -319,7 +320,10 @@ struct LauncherRootView: View {
     /// Настройки и очистка истории — справа в поле ввода, а не отдельной колонкой.
     private var inputMode: InputMode { searchMode ? .search : clipboardMode ? .clipboard : .command }
 
-    /// Клик по переключателю режимов: тот же переход, что по ⌘F, ⌘4 или Esc.
+    /// Режим по ⌘1 ⌘2 ⌘3 (коды клавиш 1, 2, 3).
+    static let modeKeys: [UInt16: InputMode] = [18: .command, 19: .search, 20: .clipboard]
+
+    /// Клик по переключателю режимов: тот же переход, что по ⌘1 ⌘2 ⌘3 или Esc.
     private func switchMode(_ mode: InputMode) {
         guard mode != inputMode else { return }
         switch mode {
@@ -636,7 +640,7 @@ struct LauncherRootView: View {
                           onTogglePin: { togglePin($0) }, onDelete: deleteClip,
                           imageURL: { clipboard.imageURL($0) },
                           syntax: { clipSyntax($0) }, onToggleFormat: { toggleClipFormat($0) })
-        // ⌘1 — картинка крупно, окном над списком (см. ClipPreviewWindow); ⌘1, Esc, ⌘W или клик мимо — закрыть
+        // ⌘Y — картинка крупно, окном над списком (см. ClipPreviewWindow); ⌘Y, Esc, ⌘W или клик мимо — закрыть
         .background(ClipPreviewAnchor(previews: previews))
     }
 
@@ -884,7 +888,7 @@ struct LauncherRootView: View {
         previewClipID.flatMap { id in clipboard.clips.first { $0.id == id } }
     }
 
-    /// ⌘1 в режиме буфера: открыть или закрыть выбранную запись крупно — картинку или текст.
+    /// ⌘Y в режиме буфера: открыть или закрыть выбранную запись крупно — картинку или текст.
     private func togglePreview() -> Bool {
         if previewClipID != nil { previewClipID = nil; return true }
         guard let clip = selectedClip else { return false }
@@ -1147,7 +1151,13 @@ struct LauncherRootView: View {
                modifiers.subtracting([.function, .numericPad]).isEmpty {
                 return routeArrowToHistory(event) ? nil : event
             }
-            // дерево папок — сочетание из настроек (по умолчанию ⌘1), пока открыта панель
+            // ⌘1 ⌘2 ⌘3 — режимы команд, поиска, буфера; клавиша включённого режима — обратно к командам.
+            // По коду клавиши — в любой раскладке; раньше сочетания дерева из настроек, чтобы не перехватило
+            if !showSettings, modifiers == .command, let mode = Self.modeKeys[event.keyCode] {
+                switchMode(mode == inputMode ? .command : mode)
+                return nil
+            }
+            // дерево папок — сочетание из настроек (по умолчанию ⌘T), пока открыта панель
             if !showSettings, !clipboardMode,
                KeyChordFormatter.matches(settings.folderTreeShortcut, modifiers: modifiers, keyCode: event.keyCode,
                                          characters: event.charactersIgnoringModifiers) {
@@ -1172,8 +1182,8 @@ struct LauncherRootView: View {
                 // ⌘S — закрепить или открепить выбранный фрагмент (в окне просмотра ⌘S закрепляет окно)
                 if let clip = activeClip { togglePin(clip) } else { NSSound.beep() }
                 return nil
-            case (18, .command) where clipboardMode && !showSettings:
-                // ⌘1 в буфере — картинка крупно (дерево папок здесь не нужно); не картинка — звук
+            case (16, .command) where clipboardMode && !showSettings:
+                // ⌘Y в буфере — запись крупно, как Quick Look в Finder; нечего показать — звук
                 if !togglePreview() { NSSound.beep() }
                 return nil
             case (48, []) where clipboardMode && !showSettings, (48, .shift) where clipboardMode && !showSettings:
@@ -2333,7 +2343,7 @@ struct CommandInputView: View {
 
     private var placeholder: String {
         switch mode {
-        case .command: "Введите команду…"
+        case .command: L.t("input_placeholder", lang)
         case .search: L.t("search_placeholder", lang)
         case .clipboard: L.t("clip_placeholder", lang)
         }

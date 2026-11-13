@@ -36,7 +36,7 @@ struct ClipboardListView: View {
     var onSelect: (Int) -> Void = { _ in }
     /// ⌘Enter: в поле (у картинки — путь к файлу).
     var onInsert: (Clip) -> Void = { _ in }
-    /// ⌘1 и клик по миниатюре: картинка крупно.
+    /// ⌘Y и клик по миниатюре: картинка крупно.
     var onPreview: (Clip) -> Void = { _ in }
     var onTogglePin: (Clip) -> Void = { _ in }
     var onDelete: (Clip) -> Void = { _ in }
@@ -210,7 +210,7 @@ private struct ClipRow: View {
             if showsActions {
                 // кнопки повторяют клавиши: то же действие мышью
                 HStack(spacing: 4) {
-                    keyButton("⌘1", L.t("clip_preview", lang), perform: onPreview)
+                    keyButton("⌘Y", L.t("clip_preview", lang), perform: onPreview)
                     if let syntax { formatButton(on: syntax.on) }
                     keyButton("↩", L.t("clip_copy", lang), perform: onCopy)
                     keyButton("⌘↩", L.t(clip.isImage ? "clip_insert_path" : "clip_insert", lang), perform: onInsert)

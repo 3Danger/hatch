@@ -16,25 +16,57 @@ final class SettingsStoreTests: XCTestCase {
         XCTAssertEqual(store.timeoutSeconds, 0)
         XCTAssertEqual(store.previewLines, 10)
         XCTAssertTrue(store.showStatusIcon)
-        XCTAssertEqual(store.folderTreeShortcut, "cmd-1")
+        XCTAssertEqual(store.folderTreeShortcut, "cmd-t")
         XCTAssertEqual(store.favoriteDirectories, [])
         XCTAssertEqual(store.favoriteCommands, [])
     }
 
-    /// Обновление с прежней версии: несохранённые сочетания остаются старыми умолчаниями,
-    /// сохранённые — какими были.
+    /// Обновление с прежней версии: несохранённый хоткей остаётся старым умолчанием, сохранённый — каким был;
+    /// дерево папок уходит с ⌘1 и ⌘P на ⌘T — ⌘1 теперь режим команд.
     func testUpdateKeepsOldDefaultShortcuts() {
         let defaults = UserDefaults(suiteName: suiteName)!
         defaults.set("/tmp", forKey: "settings.currentDirectory") // Hatch уже запускали
         let store = SettingsStore(defaults: defaults)
         XCTAssertEqual(store.hotkeyString, "ctrl-space")
-        XCTAssertEqual(store.folderTreeShortcut, "cmd-p")
+        XCTAssertEqual(store.folderTreeShortcut, "cmd-t")
 
         let custom = UserDefaults(suiteName: suiteName)!
         custom.set("cmd-shift-k", forKey: "settings.hotkey")
         let customStore = SettingsStore(defaults: custom)
         XCTAssertEqual(customStore.hotkeyString, "cmd-shift-k")
-        XCTAssertEqual(customStore.folderTreeShortcut, "cmd-p")
+        XCTAssertEqual(customStore.folderTreeShortcut, "cmd-t")
+    }
+
+    /// Дерево папок с ⌘1 (прежнее умолчание) и ⌘P переезжает на ⌘T один раз; своё сочетание остаётся,
+    /// и ⌘P, выбранный уже после переезда, — тоже.
+    func testFolderTreeMovesOffModeKeysOnce() {
+        for (stored, expected) in [("cmd-1", "cmd-t"), ("cmd-p", "cmd-t"), ("cmd-shift-o", "cmd-shift-o")] {
+            let defaults = UserDefaults(suiteName: suiteName)!
+            defaults.set(stored, forKey: "settings.folderTreeShortcut")
+            XCTAssertEqual(SettingsStore(defaults: defaults).folderTreeShortcut, expected, stored)
+        }
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defaults.set("cmd-1", forKey: "settings.folderTreeShortcut")
+        let store = SettingsStore(defaults: defaults)
+        store.folderTreeShortcut = "cmd-p"
+        XCTAssertEqual(SettingsStore(defaults: defaults).folderTreeShortcut, "cmd-p", "выбор после переезда не трогаем")
+    }
+
+    /// «Сбросить» в настройках: только сочетания клавиш, остальное как было.
+    func testResetShortcuts() {
+        let store = SettingsStore(defaults: UserDefaults(suiteName: suiteName)!)
+        XCTAssertTrue(store.shortcutsAreDefault)
+        store.hotkeyString = "cmd-shift-k"
+        store.folderTreeShortcut = "cmd-o"
+        store.screenshotShortcut = "cmd-shift-7"
+        store.historyLimit = 80
+        XCTAssertFalse(store.shortcutsAreDefault)
+        store.resetShortcuts()
+        XCTAssertTrue(store.shortcutsAreDefault)
+        XCTAssertEqual(store.hotkeyString, "alt-space")
+        XCTAssertEqual(store.folderTreeShortcut, "cmd-t")
+        XCTAssertEqual(store.screenshotShortcut, SettingsStore.defaultScreenshotShortcut)
+        XCTAssertEqual(store.historyLimit, 80, "прочие настройки не тронуты")
     }
 
     /// Избранное: добавить и убрать тем же действием, порядок добавления, переживает перезапуск.
