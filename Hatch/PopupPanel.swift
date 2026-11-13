@@ -68,10 +68,14 @@ final class PopupController {
     }
 
     /// Элемент сдвинулся (путь раскрывается и сворачивается) — окно едет за ним, не меняясь.
-    func follow(anchor: NSRect, placement: PopupPlacement, mouse: NSPoint?) {
-        guard let window, placement != .atMouse else { return }
+    /// true — окно сдвинулось.
+    @discardableResult
+    func follow(anchor: NSRect, placement: PopupPlacement, mouse: NSPoint?) -> Bool {
+        guard let window, placement != .atMouse else { return false }
         let origin = origin(anchor: anchor, size: window.frame.size, placement: placement, mouse: mouse)
-        if origin != window.frame.origin { window.setFrameOrigin(origin) }
+        guard origin != window.frame.origin else { return false }
+        window.setFrameOrigin(origin)
+        return true
     }
 
     private func origin(anchor: NSRect, size: NSSize, placement: PopupPlacement, mouse: NSPoint?) -> NSPoint {
@@ -195,9 +199,9 @@ private struct PopupAnchor: NSViewRepresentable {
         coordinator.controller.wantsShown = isPresented
         view.onAttach = nil
         view.onMove = { [weak view, weak coordinator] in
-            guard let view, let coordinator, coordinator.controller.isShown, let window = view.window else { return }
-            coordinator.controller.follow(anchor: window.convertToScreen(view.convert(view.bounds, to: nil)),
-                                          placement: placement, mouse: coordinator.mouse)
+            guard let view, let coordinator, coordinator.controller.isShown, let window = view.window else { return false }
+            return coordinator.controller.follow(anchor: window.convertToScreen(view.convert(view.bounds, to: nil)),
+                                                 placement: placement, mouse: coordinator.mouse)
         }
         guard isPresented else {
             if coordinator.controller.isShown { coordinator.controller.dismiss() }
@@ -222,7 +226,7 @@ private struct PopupAnchor: NSViewRepresentable {
         // элемент только что появился и ещё не в окне (папка из-за «…», путь раскрывается) — покажем,
         // когда встанет: иначе окно не открылось бы, пока что-нибудь ещё не обновит якорь
         if view.window == nil { view.onAttach = show } else { show() }
-        view.follow(for: 0.45)
+        view.followUntilSettled()
     }
 
     static func dismantleNSView(_ view: AnchorView, coordinator: Coordinator) {
@@ -245,19 +249,23 @@ final class PopupAnchorView: NSView {
     var onSecondaryClick: ((NSPoint) -> Void)?
     /// Окно надо показать, а якорь ещё не в окне — показать, как только встанет.
     var onAttach: (() -> Void)?
-    /// Сверить открытое окно с местом якоря (соседи анимируют ширину — якорь едет).
-    var onMove: (() -> Void)?
+    /// Сверить открытое окно с местом якоря (соседи анимируют ширину — якорь едет). true — окно сдвинулось.
+    var onMove: (() -> Bool)?
     private var followTimer: Timer?
 
-    /// Сразу после показа окно какое-то время едет за якорем кадр за кадром: путь раскрывается или
+    /// После показа окно едет за якорем кадр за кадром, пока якорь не замрёт: путь раскрывается или
     /// сворачивается анимацией, а сам якорь об этом не узнаёт — двигается обрезающий его контейнер.
-    func follow(for seconds: TimeInterval) {
+    /// Не по времени анимации: на занятой машине она начинается позже и идёт рывками.
+    func followUntilSettled() {
         followTimer?.invalidate()
-        let end = Date().addingTimeInterval(seconds)
+        let start = Date()
+        var still = 0
         let timer = Timer(timeInterval: 1.0 / 60, repeats: true) { [weak self] timer in
             MainActor.assumeIsolated {
-                guard let self, Date() < end else { timer.invalidate(); return }
-                self.onMove?()
+                guard let self else { timer.invalidate(); return }
+                still = self.onMove?() == true ? 0 : still + 1
+                let elapsed = Date().timeIntervalSince(start)
+                if (elapsed > 0.4 && still >= 12) || elapsed > 2 { timer.invalidate() }
             }
         }
         RunLoop.main.add(timer, forMode: .common)
