@@ -13,17 +13,28 @@ struct ModeSwitcher: View {
     /// Ширина кнопки без подписи.
     static let iconWidth: CGFloat = 26
     static let spacing: CGFloat = 2
+    /// Режим, который сейчас нарисован. Догоняет `mode` с небольшой задержкой: смена режима меняет и
+    /// высоту панели (буфер ↔ история), и подсветка, начавшая ехать в тот же миг, обрывалась — окно
+    /// перекладывалось и анимация перескакивала за два кадра. После перекладки она едет целиком.
+    @State private var shown: InputMode?
+    @State private var generation = 0
 
     /// Ширина включённой кнопки — одна на все режимы (по самой длинной подписи): переключатель не меняет
     /// ширину и не съезжает, подсветка только скользит под другую кнопку.
     static func activeWidth(_ lang: String) -> CGFloat {
-        let font = NSFont.systemFont(ofSize: 11.5, weight: .medium)
-        let widest = modes.map { (title($0, lang) as NSString).size(withAttributes: [.font: font]).width }.max() ?? 60
+        let widest = modes.map { titleWidth($0, lang) }.max() ?? 60
         return (widest + 12 + 5 + 18).rounded(.up) // значок, промежуток, поля
+    }
+
+    /// Ширина подписи режима.
+    static func titleWidth(_ mode: InputMode, _ lang: String) -> CGFloat {
+        let font = NSFont.systemFont(ofSize: 11.5, weight: .medium)
+        return (title(mode, lang) as NSString).size(withAttributes: [.font: font]).width.rounded(.up)
     }
 
     var body: some View {
         let active = Self.activeWidth(lang)
+        let mode = shown ?? self.mode
         let index = CGFloat(Self.modes.firstIndex(of: mode) ?? 0)
         ZStack(alignment: .leading) {
             // одна подсветка на всех: скользит под включённую кнопку, а не гаснет на одной и загорается на другой
@@ -33,28 +44,41 @@ struct ModeSwitcher: View {
                 .frame(width: active, height: 20)
                 .offset(x: index * (Self.iconWidth + Self.spacing))
             HStack(spacing: Self.spacing) {
-                ForEach(Self.modes, id: \.self) { item in segment(item, active: active) }
+                ForEach(Self.modes, id: \.self) { item in segment(item, active: active, mode: mode) }
             }
         }
         .padding(2)
         .tactileWell(RoundedRectangle(cornerRadius: 8, style: .circular))
-        .animation(.spring(response: 0.32, dampingFraction: 0.86), value: mode)
         .fixedSize()
+        // всё внутри переключателя — всегда пружиной: перекладка окна панели (её высота меняется вместе
+        // с режимом) идёт без анимации и обрывала движение подсветки на полпути
+        .transaction { $0.animation = .spring(response: 0.32, dampingFraction: 0.86) }
+        .onChange(of: self.mode) { _, new in
+            generation += 1
+            let current = generation
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.06) {
+                guard current == generation else { return } // успели переключить ещё раз — едем к последнему
+                withAnimation(.spring(response: 0.32, dampingFraction: 0.86)) { shown = new }
+            }
+        }
     }
 
-    private func segment(_ item: InputMode, active: CGFloat) -> some View {
+    private func segment(_ item: InputMode, active: CGFloat, mode: InputMode) -> some View {
         let on = item == mode
         return Button { onSelect(item) } label: {
-            HStack(spacing: 5) {
+            // подпись есть всегда, у выключенных — нулевой ширины и прозрачная: не появляется заново.
+            // Новая подпись появлялась с положением из момента, когда панель ещё меняла высоту
+            // (выход из буфера), и «прыгала» снизу вверх
+            HStack(spacing: on ? 5 : 0) {
                 Image(systemName: Self.icon(item))
                     .font(.system(size: 10.5, weight: .semibold))
-                if on {
-                    Text(Self.title(item, lang))
-                        .font(.system(size: 11.5, weight: .medium))
-                        .lineLimit(1)
-                        .fixedSize()
-                        .transition(.opacity)
-                }
+                Text(Self.title(item, lang))
+                    .font(.system(size: 11.5, weight: .medium))
+                    .lineLimit(1)
+                    .fixedSize()
+                    .frame(width: on ? Self.titleWidth(item, lang) : 0, alignment: .leading)
+                    .clipped()
+                    .opacity(on ? 1 : 0)
             }
             .foregroundStyle(on ? Color.white : Color.secondary)
             .frame(width: on ? active : Self.iconWidth, height: 20)

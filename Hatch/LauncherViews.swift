@@ -958,7 +958,10 @@ struct LauncherRootView: View {
         guard clipboardMode else { return }
         previewClipID = nil
         clipboardQuery = ""
-        withAnimation(.easeOut(duration: 0.2)) { clipboardMode = false }
+        // без анимации: панель сжимается сразу, а анимированная высота содержимого «съезжала» внутри
+        // уже меньшего окна — всё содержимое, переключатель тоже, скакало по вертикали.
+        // Подсветка переключателя едет своей пружиной
+        clipboardMode = false
         if expandedID == nil {
             inputFocused = true
             reclaimInputFocus { !clipboardMode && expandedID == nil && !showSettings }

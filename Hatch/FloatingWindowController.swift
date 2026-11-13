@@ -83,7 +83,8 @@ final class FloatingWindowController {
         // поверх скруглённого стекла это выглядит как артефакт. Тень рисует сама панель.
         panel.hasShadow = false
 
-        let hosting = NSHostingView(rootView: self.rootView)
+        // содержимое прижато к верху окна: пока окно догоняет новую (меньшую) высоту, панель не съезжает вниз-вверх
+        let hosting = NSHostingView(rootView: self.rootView.frame(maxHeight: .infinity, alignment: .top))
         // окно принимает размер, который просит SwiftUI-содержимое
         hosting.sizingOptions = [.minSize, .intrinsicContentSize, .maxSize]
         panel.contentView = hosting
