@@ -19,6 +19,8 @@ final class ProcessRunner {
     private var runTokens: [UUID: UUID] = [:]
     /// Сессии, запущенные из поля ввода (не повтор): только их убирает «command not found».
     private var freshRuns: Set<UUID> = []
+    /// Остановлены пользователем (⌃C, «стоп»): ненулевой код у них — «остановлена», а не ошибка.
+    private var stopRequests: Set<UUID> = []
     /// Последний запуск с опечаткой в имени команды: блока нет, набранное — снова в поле.
     private(set) var missingCommand: MissingCommand?
     /// Команда ждёт ввода: блок раскрывается. Номер растёт, чтобы раскрывать и повторно ту же сессию.
@@ -127,6 +129,7 @@ final class ProcessRunner {
 
     /// Ctrl+C: ^C через tty — SIGINT получит текущая программа, она может его перехватить.
     func interrupt(sessionID: UUID) {
+        stopRequests.insert(sessionID)
         if let terminal = terminals[sessionID] {
             terminal.send("\u{3}")
             return
@@ -135,8 +138,19 @@ final class ProcessRunner {
         Self.signal(pgid, SIGINT)
     }
 
+    /// Чем закончилась команда: 0 — «готово»; остановил пользователь (сам или сигналом прерывания:
+    /// ⌃C прямо в терминале не проходит через `interrupt`) — «остановлена»; иначе — завершена
+    /// с кодом, и блок показывает «ошибка · код N».
+    static func finalState(exitCode: Int32?, stoppedByUser: Bool) -> SessionState {
+        guard let code = exitCode, code != 0 else { return exitCode == nil && stoppedByUser ? .stopped : .completed }
+        // 128 + SIGINT / SIGKILL / SIGTERM
+        if stoppedByUser || [130, 137, 143].contains(code) { return .stopped }
+        return .completed
+    }
+
     /// Останавливает сессию, убивая всю группу процессов.
     func stop(sessionID: UUID) {
+        stopRequests.insert(sessionID)
         guard let pgid = sessionStore.sessions.first(where: { $0.id == sessionID })?.pgid else { return }
         Self.signal(pgid, SIGTERM)
         DispatchQueue.global().asyncAfter(deadline: .now() + 1.0) {
@@ -255,6 +269,7 @@ final class ProcessRunner {
                        followsCurrent: Bool, interactive: Bool) {
         let token = UUID()
         runTokens[sessionID] = token
+        stopRequests.remove(sessionID) // прежняя остановка к новому запуску не относится
         let startedAt = Date()
         let pwdFile = followsCurrent
             ? FileManager.default.temporaryDirectory.appendingPathComponent("hatch-pwd-\(sessionID.uuidString)")
@@ -274,6 +289,7 @@ final class ProcessRunner {
         terminal.onExit = { [weak self] code, screen in
             guard let self, self.runTokens[sessionID] == token else { return } // сессию уже перезапустили
             self.terminals[sessionID] = nil
+            let stopped = self.stopRequests.remove(sessionID) != nil
             // Директорию меняет только команда, которая сама сделала cd: долгая команда,
             // запущенная раньше, не откатывает текущую директорию назад.
             if let finalDirectory = pwdFile.flatMap(Self.consumeReportedDirectory),
@@ -291,7 +307,7 @@ final class ProcessRunner {
                     s.rawOutputANSI = screen.ansi
                 }
                 if s.state.isActive {
-                    s.state = code == 0 ? .completed : .stopped
+                    s.state = Self.finalState(exitCode: code, stoppedByUser: stopped)
                 }
                 s.finishedAt = s.finishedAt ?? Date()
             }

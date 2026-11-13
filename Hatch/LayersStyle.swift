@@ -241,7 +241,10 @@ struct StatusCapsule: View {
                     .frame(minWidth: 16, minHeight: 16)
                     .background(Tactile.red, in: Capsule())
             case .stopped, .interrupted:
-                EmptyView()
+                // остановил пользователь — серый квадрат «стоп», не путать с красной ошибкой
+                Image(systemName: "stop.circle.fill")
+                    .foregroundStyle(.secondary)
+                    .font(.system(size: 13))
             }
             Text(status.label(lang))
                 .foregroundStyle(textColor)

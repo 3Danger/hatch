@@ -343,7 +343,7 @@ final class ProcessRunnerTests: XCTestCase {
         runner.runInPTY("exit 3")
 
         let session = waitTerminal(store)
-        XCTAssertEqual(session?.state, .stopped)
+        XCTAssertEqual(session?.state, .completed, "ошибка — завершена с кодом, а не «остановлена»")
         XCTAssertEqual(session?.exitCode, 3)
     }
 
@@ -728,7 +728,7 @@ final class ProcessRunnerTests: XCTestCase {
         settings.currentDirectory = dir
 
         let session = runAndWait(runner, store, "cd ./no-such-dir")
-        XCTAssertEqual(session?.state, .stopped)
+        XCTAssertEqual(session?.state, .completed, "ошибка — завершена с кодом, а не «остановлена»")
         XCTAssertFalse(session?.output.isEmpty ?? true, "ошибка cd видна в выводе")
         XCTAssertEqual(settings.currentDirectory, dir)
     }
@@ -821,4 +821,14 @@ extension Session {
         kill(-pgid, 0) == 0 || kill(pgid, 0) == 0
     }
 
+
+    /// Ненулевой код — ошибка («завершена» с кодом); «остановлена» — только остановка пользователем.
+    func testFinalState() {
+        XCTAssertEqual(ProcessRunner.finalState(exitCode: 0, stoppedByUser: false), .completed)
+        XCTAssertEqual(ProcessRunner.finalState(exitCode: 1, stoppedByUser: false), .completed)
+        XCTAssertEqual(ProcessRunner.finalState(exitCode: 22, stoppedByUser: true), .stopped)
+        XCTAssertEqual(ProcessRunner.finalState(exitCode: 130, stoppedByUser: false), .stopped, "⌃C прямо в терминале")
+        XCTAssertEqual(ProcessRunner.finalState(exitCode: 143, stoppedByUser: false), .stopped)
+        XCTAssertEqual(ProcessRunner.finalState(exitCode: 0, stoppedByUser: true), .completed, "успела завершиться сама")
+    }
 }
