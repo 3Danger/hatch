@@ -59,6 +59,22 @@ final class PopupController {
 
         hosting.rootView = content()
         let size = hosting.fittingSize
+        window.setFrame(NSRect(origin: origin(anchor: anchor, size: size, placement: placement, mouse: mouse), size: size),
+                        display: true)
+        if firstShow {
+            parent?.addChildWindow(window, ordered: .above)
+            window.makeKeyAndOrderFront(nil)
+        }
+    }
+
+    /// Элемент сдвинулся (путь раскрывается и сворачивается) — окно едет за ним, не меняясь.
+    func follow(anchor: NSRect, placement: PopupPlacement, mouse: NSPoint?) {
+        guard let window, placement != .atMouse else { return }
+        let origin = origin(anchor: anchor, size: window.frame.size, placement: placement, mouse: mouse)
+        if origin != window.frame.origin { window.setFrameOrigin(origin) }
+    }
+
+    private func origin(anchor: NSRect, size: NSSize, placement: PopupPlacement, mouse: NSPoint?) -> NSPoint {
         let screen = (parent?.screen ?? NSScreen.main)?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1600, height: 1000)
         var origin: NSPoint
         switch placement {
@@ -74,11 +90,7 @@ final class PopupController {
         origin.x = min(max(origin.x, screen.minX - Self.margin), screen.maxX - size.width + Self.margin)
         origin.y = max(origin.y, screen.minY - Self.margin)
         origin.y = min(origin.y, screen.maxY - size.height + Self.margin)
-        window.setFrame(NSRect(origin: origin, size: size), display: true)
-        if firstShow {
-            parent?.addChildWindow(window, ordered: .above)
-            window.makeKeyAndOrderFront(nil)
-        }
+        return origin
     }
 
     /// Обновить содержимое открытого окна (например, из избранного убрали пункт) без перемещения стрелки.
@@ -181,6 +193,11 @@ private struct PopupAnchor: NSViewRepresentable {
         coordinator.controller.anchorView = view
         coordinator.controller.wantsShown = isPresented
         view.onAttach = nil
+        view.onMove = { [weak view, weak coordinator] in
+            guard let view, let coordinator, coordinator.controller.isShown, let window = view.window else { return }
+            coordinator.controller.follow(anchor: window.convertToScreen(view.convert(view.bounds, to: nil)),
+                                          placement: placement, mouse: coordinator.mouse)
+        }
         guard isPresented else {
             if coordinator.controller.isShown { coordinator.controller.dismiss() }
             return
@@ -205,6 +222,7 @@ private struct PopupAnchor: NSViewRepresentable {
         // элемент только что появился и ещё не в окне (папка из-за «…», путь раскрывается) — покажем,
         // когда встанет: иначе окно не открылось бы, пока что-нибудь ещё не обновит якорь
         if view.window == nil { view.onAttach = show } else { show() }
+        view.follow(for: 0.45)
     }
 
     static func dismantleNSView(_ view: AnchorView, coordinator: Coordinator) {
@@ -227,6 +245,24 @@ final class PopupAnchorView: NSView {
     var onSecondaryClick: ((NSPoint) -> Void)?
     /// Окно надо показать, а якорь ещё не в окне — показать, как только встанет.
     var onAttach: (() -> Void)?
+    /// Сверить открытое окно с местом якоря (соседи анимируют ширину — якорь едет).
+    var onMove: (() -> Void)?
+    private var followTimer: Timer?
+
+    /// Сразу после показа окно какое-то время едет за якорем кадр за кадром: путь раскрывается или
+    /// сворачивается анимацией, а сам якорь об этом не узнаёт — двигается обрезающий его контейнер.
+    func follow(for seconds: TimeInterval) {
+        followTimer?.invalidate()
+        let end = Date().addingTimeInterval(seconds)
+        let timer = Timer(timeInterval: 1.0 / 60, repeats: true) { [weak self] timer in
+            MainActor.assumeIsolated {
+                guard let self, Date() < end else { timer.invalidate(); return }
+                self.onMove?()
+            }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        followTimer = timer
+    }
     private var monitor: Any?
 
     // клики проходят насквозь: якорь только знает рамку элемента

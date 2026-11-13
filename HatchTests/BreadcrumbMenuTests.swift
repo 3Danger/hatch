@@ -197,11 +197,14 @@ final class BreadcrumbMenuTests: XCTestCase {
         spin()
         model.request += 1 // ⌘T — дерево у Versions
         wait { window.childWindows?.count == 1 }
-        // AppKit.framework (путь ещё свёрнут: «/», AppKit.framework, Versions), затем спрятанные — путь целиком
-        for (step, crumb) in [(1, 1), (2, 3), (3, 2), (4, 1)] {
+        // AppKit.framework, затем спрятанные за «…» (путь раскрывается): Frameworks, Library, System.
+        // Якоря спрятанных папок есть всегда, в свёрнутом пути — нулевой ширины, поэтому номера — по всему пути
+        for (step, crumb) in [(1, 4), (2, 3), (3, 2), (4, 1)] {
             press(try XCTUnwrap(window.childWindows?.first, "шаг \(step): дерево открыто"), 123)
             let target = { () -> CGFloat? in
-                let centers = self.crumbCenters(host, window)
+                // по порядку в пути, без сортировки: свёрнутые папки лежат друг на друге под «…»
+                let centers = self.anchors(in: host).filter { $0.onSecondaryClick == nil }
+                    .map { window.convertToScreen($0.convert($0.bounds, to: nil)).midX }
                 return centers.indices.contains(crumb) ? centers[crumb] : nil
             }
             wait { abs((window.childWindows?.first?.frame.midX ?? 0) - (target() ?? -1)) < 1 }

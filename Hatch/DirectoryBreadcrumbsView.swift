@@ -90,21 +90,45 @@ struct DirectoryBreadcrumbsView: View {
         count > 4 ? 1..<(count - 2) : nil
     }
 
+    /// Раскрытие «…»: середина пути выезжает по ширине, папки проявляются по очереди слева направо.
+    static let revealAnimation = Animation.timingCurve(0.2, 0.8, 0.2, 1, duration: 0.3)
+    /// Задержка между папками каскада.
+    static let cascadeStep = 0.045
+
+    /// Середина длинного пути раскрыта: дерево или меню открыто у папки, спрятанной за «…».
+    private var middleShown: Bool {
+        guard let hidden = Self.hiddenRange(count: PathBreadcrumbs.segments(for: path).count) else { return false }
+        return (openCrumb.map(hidden.contains) ?? false) || (menuCrumb.map(hidden.contains) ?? false)
+    }
+
     private var crumbs: some View {
         // строка пути, как в Finder: папки с синими значками через «›». Длинный путь — с «…» посередине,
         // чтобы рядом поместился переключатель режимов; пока дерево открыто у спрятанной папки, путь виден целиком
         HStack(spacing: 4) {
             let segments = PathBreadcrumbs.segments(for: path)
-            let hidden = Self.hiddenRange(count: segments.count)
-            let collapsed = hidden.map { range in
-                !(openCrumb.map(range.contains) ?? false) && !(menuCrumb.map(range.contains) ?? false)
-            } ?? false
-            ForEach(Array(segments.enumerated()), id: \.offset) { index, crumb in
-                if collapsed, let hidden, hidden.contains(index) {
-                    if index == hidden.lowerBound { ellipsis(segments: segments, hidden: hidden) }
-                } else {
-                    crumbView(index: index, crumb: crumb)
+            if let hidden = Self.hiddenRange(count: segments.count) {
+                let collapsed = !middleShown
+                ForEach(0..<hidden.lowerBound, id: \.self) { index in crumbView(index: index, crumb: segments[index]) }
+                // спрятанные папки на месте всегда, свёрнуты в нулевую ширину: раскрываются плавно,
+                // и дерево у них открывается сразу, не дожидаясь, пока элемент появится
+                ellipsis(segments: segments, hidden: hidden)
+                    .modifier(Reveal(progress: collapsed ? 1 : 0))
+                    .opacity(collapsed ? 1 : 0)
+                HStack(spacing: 4) {
+                    ForEach(Array(hidden.enumerated()), id: \.element) { order, index in
+                        crumbView(index: index, crumb: segments[index])
+                            .opacity(collapsed ? 0 : 1)
+                            .offset(x: collapsed ? -8 : 0)
+                            .animation(.easeOut(duration: collapsed ? 0.15 : 0.27)
+                                .delay(collapsed ? 0 : Double(order) * Self.cascadeStep), value: collapsed)
+                    }
                 }
+                .modifier(Reveal(progress: collapsed ? 0 : 1))
+                .allowsHitTesting(!collapsed)
+                .accessibilityHidden(collapsed)
+                ForEach(hidden.upperBound..<segments.count, id: \.self) { index in crumbView(index: index, crumb: segments[index]) }
+            } else {
+                ForEach(Array(segments.enumerated()), id: \.offset) { index, crumb in crumbView(index: index, crumb: crumb) }
             }
             // текущая папка в избранном — звёздочка после пути
             if favorites.contains(path) {
@@ -114,6 +138,7 @@ struct DirectoryBreadcrumbsView: View {
                     .onTapGesture { onToggleFavorite(path) }
             }
         }
+        .animation(Self.revealAnimation, value: middleShown)
         .font(font)
         .truncationMode(.head)
     }
@@ -235,5 +260,32 @@ struct DirectoryBreadcrumbsView: View {
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
             withAnimation(.easeOut(duration: 0.15)) { copied = false }
         }
+    }
+}
+
+/// Показать содержимое на долю его ширины (0 — нулевая ширина, 1 — целиком), лишнее обрезано.
+/// Доля анимируется: середина пути выезжает из «…» и прячется обратно.
+private struct Reveal: ViewModifier, Animatable {
+    var progress: CGFloat
+    var animatableData: CGFloat {
+        get { progress }
+        set { progress = newValue }
+    }
+
+    func body(content: Content) -> some View {
+        RevealLayout(progress: progress) { content.fixedSize() }.clipped()
+    }
+}
+
+private struct RevealLayout: Layout {
+    var progress: CGFloat
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let size = subviews.first?.sizeThatFits(.unspecified) ?? .zero
+        return CGSize(width: (size.width * min(max(progress, 0), 1)).rounded(.up), height: size.height)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        subviews.first?.place(at: CGPoint(x: bounds.minX, y: bounds.midY), anchor: .leading, proposal: .unspecified)
     }
 }
