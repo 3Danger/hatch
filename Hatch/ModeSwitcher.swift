@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 
 /// Переключатель режимов панели в строке над полем: команды, поиск (⌘F), буфер (⌘4).
 /// Компактный: подпись только у включённого, у остальных — значок, название и клавиша — в подсказке.
@@ -9,30 +10,54 @@ struct ModeSwitcher: View {
     var onSelect: (InputMode) -> Void
 
     private static let modes: [InputMode] = [.command, .search, .clipboard]
+    /// Ширина кнопки без подписи.
+    static let iconWidth: CGFloat = 26
+    static let spacing: CGFloat = 2
+
+    /// Ширина включённой кнопки — одна на все режимы (по самой длинной подписи): переключатель не меняет
+    /// ширину и не съезжает, подсветка только скользит под другую кнопку.
+    static func activeWidth(_ lang: String) -> CGFloat {
+        let font = NSFont.systemFont(ofSize: 11.5, weight: .medium)
+        let widest = modes.map { (title($0, lang) as NSString).size(withAttributes: [.font: font]).width }.max() ?? 60
+        return (widest + 12 + 5 + 18).rounded(.up) // значок, промежуток, поля
+    }
 
     var body: some View {
-        HStack(spacing: 2) {
-            ForEach(Self.modes, id: \.self) { item in segment(item) }
+        let active = Self.activeWidth(lang)
+        let index = CGFloat(Self.modes.firstIndex(of: mode) ?? 0)
+        ZStack(alignment: .leading) {
+            // одна подсветка на всех: скользит под включённую кнопку, а не гаснет на одной и загорается на другой
+            RoundedRectangle(cornerRadius: 6, style: .circular)
+                .fill(Self.color(mode).opacity(0.55))
+                .overlay(RoundedRectangle(cornerRadius: 6, style: .circular).strokeBorder(.white.opacity(0.14)))
+                .frame(width: active, height: 20)
+                .offset(x: index * (Self.iconWidth + Self.spacing))
+            HStack(spacing: Self.spacing) {
+                ForEach(Self.modes, id: \.self) { item in segment(item, active: active) }
+            }
         }
         .padding(2)
         .tactileWell(RoundedRectangle(cornerRadius: 8, style: .circular))
-        .animation(.spring(response: 0.3, dampingFraction: 0.85), value: mode)
+        .animation(.spring(response: 0.32, dampingFraction: 0.86), value: mode)
         .fixedSize()
     }
 
-    private func segment(_ item: InputMode) -> some View {
+    private func segment(_ item: InputMode, active: CGFloat) -> some View {
         let on = item == mode
         return Button { onSelect(item) } label: {
             HStack(spacing: 5) {
                 Image(systemName: Self.icon(item))
                     .font(.system(size: 10.5, weight: .semibold))
-                if on { Text(Self.title(item, lang)).font(.system(size: 11.5, weight: .medium)) }
+                if on {
+                    Text(Self.title(item, lang))
+                        .font(.system(size: 11.5, weight: .medium))
+                        .lineLimit(1)
+                        .fixedSize()
+                        .transition(.opacity)
+                }
             }
             .foregroundStyle(on ? Color.white : Color.secondary)
-            .padding(.horizontal, on ? 9 : 7)
-            .frame(height: 20)
-            .background(on ? Self.color(item).opacity(0.55) : .clear, in: RoundedRectangle(cornerRadius: 6, style: .circular))
-            .overlay(RoundedRectangle(cornerRadius: 6, style: .circular).strokeBorder(on ? .white.opacity(0.14) : .clear))
+            .frame(width: on ? active : Self.iconWidth, height: 20)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)

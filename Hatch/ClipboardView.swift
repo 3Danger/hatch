@@ -80,6 +80,14 @@ struct ClipboardListView: View {
                             .onHover { inside in
                                 if inside { hovered = clip.id } else if hovered == clip.id { hovered = nil }
                             }
+                        // тонкая граница между записями той же группы; у выбранной своя рамка — рядом с ней не нужна
+                        if Self.separates(clips, after: index, selection: selection) {
+                            Rectangle()
+                                .fill(Color.primary.opacity(0.09))
+                                .frame(height: 1)
+                                .padding(.leading, 41)
+                                .padding(.trailing, 9)
+                        }
                     }
                 }
                 .padding(6)
@@ -106,11 +114,21 @@ struct ClipboardListView: View {
         .padding(.bottom, 2)
     }
 
+    /// Граница после строки `index`: следующая есть, в той же группе (закреплённые и недавние разделены
+    /// заголовком), и ни одна из двух не выбрана.
+    static func separates(_ clips: [Clip], after index: Int, selection: Int) -> Bool {
+        guard index + 1 < clips.count else { return false }
+        if clips[index].isPinned != clips[index + 1].isPinned { return false }
+        return index != selection && index + 1 != selection
+    }
+
     /// Высота строк: однострочная 44, двухстрочная 61, заголовки групп по 22, плюс отступы списка.
     private var listHeight: CGFloat {
         let rows: CGFloat = clips.reduce(12) { $0 + ($1.isImage ? 70 : $1.lineCount > 1 ? 61 : 44) + 2 }
         let titles: CGFloat = hasGroups ? (clips.allSatisfy(\.isPinned) ? 24 : 48) : 0
-        return rows + titles
+        // границы между строками: 1 точка и ещё один промежуток списка
+        let separators = CGFloat(clips.indices.filter { Self.separates(clips, after: $0, selection: selection) }.count) * 3
+        return rows + titles + separators
     }
 
     private var empty: some View {

@@ -43,4 +43,18 @@ final class UXTests: XCTestCase {
         XCTAssertTrue(clipboard.contains("⌘↩") && clipboard.contains("⇧⌘R"))
         XCTAssertFalse(clipboard.contains("⌘R"), "в буфере ⌘R нет — формат на ⇧⌘R")
     }
+
+    func testClipboardSeparatorsSkipSelectionAndGroups() {
+        var pinned = Clip(text: "p", copiedAt: Date()); pinned.pinned = true
+        let clips = [pinned, Clip(text: "a", copiedAt: Date()), Clip(text: "b", copiedAt: Date()), Clip(text: "c", copiedAt: Date())]
+        XCTAssertFalse(ClipboardListView.separates(clips, after: 0, selection: 3), "между группами — заголовок, не линия")
+        XCTAssertTrue(ClipboardListView.separates(clips, after: 1, selection: 3))
+        XCTAssertFalse(ClipboardListView.separates(clips, after: 2, selection: 3), "рядом с выбранной — нет")
+        XCTAssertFalse(ClipboardListView.separates(clips, after: 3, selection: 0), "после последней — нет")
+    }
+
+    func testSwitcherKeepsOneWidth() {
+        XCTAssertGreaterThan(ModeSwitcher.activeWidth("ru"), ModeSwitcher.iconWidth)
+        XCTAssertGreaterThan(ModeSwitcher.activeWidth("en"), ModeSwitcher.iconWidth)
+    }
 }
