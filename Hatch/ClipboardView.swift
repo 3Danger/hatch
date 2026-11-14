@@ -32,7 +32,15 @@ struct ClipboardListView: View {
     let days: Int
     let lang: String
     var maxHeight: CGFloat = 470
+    /// Enter и двойной клик: вставить в приложение (если `pastes`) или скопировать.
     var onCopy: (Clip) -> Void = { _ in }
+    /// Enter вставляет сразу: у строки две кнопки — «↩ вставить» и «⌘C копировать».
+    var pastes = false
+    /// Куда вставит Enter: «вставить в Terminal».
+    var pasteTarget: String?
+    /// Сколько строк текста видно у записи (настройка «Строк у записи»).
+    var rowLines = SettingsStore.defaultClipboardRowLines
+    var onCopyOnly: (Clip) -> Void = { _ in }
     var onSelect: (Int) -> Void = { _ in }
     /// ⌘Enter: в поле (у картинки — путь к файлу).
     var onInsert: (Clip) -> Void = { _ in }
@@ -68,7 +76,8 @@ struct ClipboardListView: View {
                         }
                         ClipRow(clip: clip, selected: index == selection, showsActions: index == selection || hovered == clip.id,
                                 lang: lang, query: query, imageURL: imageURL(clip), syntax: syntax(clip),
-                                onCopy: { onCopy(clip) }, onInsert: { onInsert(clip) },
+                                pastes: pastes, pasteTarget: pasteTarget, rowLines: rowLines,
+                                onCopy: { onCopy(clip) }, onCopyOnly: { onCopyOnly(clip) }, onInsert: { onInsert(clip) },
                                 onToggleFormat: { onToggleFormat(clip) },
                                 onPreview: { onSelect(index); onPreview(clip) },
                                 onTogglePin: { onTogglePin(clip) }, onDelete: { onDelete(clip) })
@@ -124,11 +133,25 @@ struct ClipboardListView: View {
 
     /// Высота строк: однострочная 44, двухстрочная 61, заголовки групп по 22, плюс отступы списка.
     private var listHeight: CGFloat {
-        let rows: CGFloat = clips.reduce(12) { $0 + ($1.isImage ? 70 : $1.lineCount > 1 ? 61 : 44) + 2 }
+        let rows: CGFloat = clips.reduce(12) { total, clip in
+            total + (clip.isImage ? 70 : ClipRow.height(lines: shownLines(clip))) + 2
+        }
         let titles: CGFloat = hasGroups ? (clips.allSatisfy(\.isPinned) ? 24 : 48) : 0
         // границы между строками: 1 точка и ещё один промежуток списка
         let separators = CGFloat(clips.indices.filter { Self.separates(clips, after: $0, selection: selection) }.count) * 3
         return rows + titles + separators
+    }
+
+    /// Первые строки текста записи с оформлением (для тестов — то же, что показывает строка).
+    static func rowText(_ text: AttributedString, limit: Int) -> [AttributedString] { ClipRow.lines(text, limit: limit) }
+    static func rowHeight(lines: Int) -> CGFloat { ClipRow.height(lines: lines) }
+
+    /// Строк текста у записи: отформатированный — по строкам формата, не больше настройки.
+    private func shownLines(_ clip: Clip) -> Int {
+        if let syntax = syntax(clip), syntax.on, let text = syntax.text {
+            return min(ClipRow.lineCount(String(text.characters)), rowLines)
+        }
+        return min(clip.lineCount, rowLines)
     }
 
     private var empty: some View {
@@ -153,7 +176,11 @@ private struct ClipRow: View {
     var query = ""
     var imageURL: URL?
     var syntax: ClipSyntax?
+    var pastes = false
+    var pasteTarget: String?
+    var rowLines = SettingsStore.defaultClipboardRowLines
     var onCopy: () -> Void = {}
+    var onCopyOnly: () -> Void = {}
     var onInsert: () -> Void = {}
     var onToggleFormat: () -> Void = {}
     var onPreview: () -> Void = {}
@@ -161,13 +188,14 @@ private struct ClipRow: View {
     var onDelete: () -> Void = {}
 
     var body: some View {
-        HStack(alignment: .center, spacing: 10) {
+        // многострочный текст — кнопки и значок у первой строки, а не посередине высокой записи
+        HStack(alignment: !clip.isImage && clip.lineCount > 1 ? .top : .center, spacing: 10) {
             ClipSourceIcon(clip: clip)
             if clip.isImage {
                 ClipThumbnail(url: imageURL)
                     .contentShape(Rectangle())
                     .highPriorityGesture(TapGesture().onEnded { onPreview() })
-                    .help(L.t("clip_preview_help", lang))
+                    .hatchTip(.previewClip, lang)
             }
             VStack(alignment: .leading, spacing: 2) {
                 if let image = clip.image {
@@ -176,19 +204,19 @@ private struct ClipRow: View {
                         .font(.system(size: 12.5, weight: .medium))
                         .lineLimit(1)
                         .truncationMode(.tail)
-                } else if let syntax, syntax.on, let text = syntax.text, query.isEmpty {
-                    // формат узнан: подсвечено, JSON и SQL — в одну строку
-                    Text(text)
-                        .font(.system(size: 12.5, design: .monospaced))
-                        .lineLimit(clip.lineCount > 1 ? 2 : 1)
-                        .truncationMode(.tail)
                 } else {
-                    Text(preview)
-                        .font(.system(size: 12.5, design: .monospaced))
-                        // однострочный — в одну строку с многоточием: высота списка считается по строкам фрагмента
-                        .lineLimit(clip.lineCount > 1 ? 2 : 1)
-                        .truncationMode(.tail)
-                        .foregroundStyle(.primary)
+                    // текст по строкам, до N строк (настройка); формат включён — отформатированный,
+                    // как в окне просмотра. Каждая строка — в одну строку с многоточием: высота известна заранее
+                    let source = syntax.flatMap { $0.on ? $0.text : nil } ?? AttributedString(clip.text)
+                    VStack(alignment: .leading, spacing: 0) {
+                        ForEach(Array(Self.lines(source, limit: rowLines).enumerated()), id: \.offset) { _, line in
+                            Text(line)
+                                .font(.system(size: 12.5, design: .monospaced))
+                                .lineLimit(1)
+                                .truncationMode(.tail)
+                                .frame(height: Self.lineHeight, alignment: .leading)
+                        }
+                    }
                 }
                 HStack(spacing: 5) {
                     if let syntax { formatLabel(syntax.label) }
@@ -206,17 +234,15 @@ private struct ClipRow: View {
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
             }
+            .frame(minWidth: 140, alignment: .leading)
+            .layoutPriority(1)
             Spacer(minLength: 8)
             if showsActions {
-                // кнопки повторяют клавиши: то же действие мышью
-                HStack(spacing: 4) {
-                    keyButton("⌘Y", L.t("clip_preview", lang), perform: onPreview)
-                    if let syntax { formatButton(on: syntax.on) }
-                    keyButton("↩", L.t("clip_copy", lang), perform: onCopy)
-                    keyButton("⌘↩", L.t(clip.isImage ? "clip_insert_path" : "clip_insert", lang), perform: onInsert)
-                    action(clip.isPinned ? "pin.slash" : "pin", help: L.t(clip.isPinned ? "clip_unpin" : "clip_pin", lang) + " (⌘S)",
-                           tint: clip.isPinned ? Tactile.clip : nil, perform: onTogglePin)
-                    action("xmark", help: L.t("clip_delete", lang) + " (⌘⌫)", tint: nil, perform: onDelete)
+                // кнопки повторяют клавиши: то же действие мышью. Тесно — одни клавиши, без подписей,
+                // чтобы текст записи не сжимался до «С… · 5…»
+                ViewThatFits(in: .horizontal) {
+                    actionButtons(labeled: true)
+                    actionButtons(labeled: false)
                 }
             }
         }
@@ -224,6 +250,30 @@ private struct ClipRow: View {
         .padding(.vertical, 6)
         .background(selected ? Tactile.clip.opacity(0.18) : .clear, in: RoundedRectangle(cornerRadius: 8))
         .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(selected ? Tactile.clip.opacity(0.55) : .clear))
+    }
+
+    private func actionButtons(labeled: Bool) -> some View {
+        let title = { (text: String) in labeled ? text : nil as String? }
+        let pasteTitle = pasteTarget.map { String(format: L.t("clip_paste_into", lang), $0) } ?? L.t("clip_paste", lang)
+        return HStack(spacing: 4) {
+                    // просмотр — там, где он что-то добавляет: картинка или текст длиннее строки записи
+                    if clip.isImage || clip.lineCount > 1 {
+                        keyButton(.previewClip, title(L.t("clip_preview", lang)), perform: onPreview)
+                    }
+                    if let syntax { formatButton(on: syntax.on) }
+                    if pastes {
+                        keyButton(.pasteInto(pasteTarget), title(pasteTitle), perform: onCopy)
+                        keyButton(.copyClipOnly, title(L.t("clip_copy", lang)), perform: onCopyOnly)
+                    } else {
+                        keyButton(.copyClipToPaste, title(L.t("clip_copy", lang)), perform: onCopy)
+                    }
+                    keyButton(clip.isImage ? .insertPath : .insertClip,
+                              title(L.t(clip.isImage ? "clip_insert_path" : "clip_insert", lang)), perform: onInsert)
+                    action(clip.isPinned ? "pin.slash" : "pin", tip: clip.isPinned ? .unpinClip : .pinClip,
+                           tint: clip.isPinned ? Tactile.clip : nil, perform: onTogglePin)
+                    action("xmark", tip: .deleteClip, tint: nil, perform: onDelete)
+        }
+        .fixedSize()
     }
 
     /// Метка формата у строки: JSON, SQL, YAML…
@@ -247,21 +297,29 @@ private struct ClipRow: View {
         }
         .buttonStyle(KeyCapButtonStyle(cornerRadius: 7))
         .overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(on ? Tactile.clip.opacity(0.55) : .clear))
-        .help(L.t("format_toggle_help", lang))
+        .hatchTip(on ? .formatOff : .formatOn, lang)
     }
 
     /// Кнопка-колпачок «клавиша + подпись»: то же, что сочетание клавиш.
-    private func keyButton(_ key: String, _ title: String, perform: @escaping () -> Void) -> some View {
+    /// Клавиша и подпись; без подписи (тесно) — одна клавиша, действие — в подсказке.
+    private func keyButton(_ action: HatchAction, _ title: String?, perform: @escaping () -> Void) -> some View {
+        let key = action.key ?? ""
+        return keyCap(key, title, perform: perform).hatchTip(action, lang)
+    }
+
+    private func keyCap(_ key: String, _ title: String?, perform: @escaping () -> Void) -> some View {
         Button(action: perform) {
             HStack(spacing: 5) {
                 KeyHint(key: key)
-                Text(title)
-                    .font(.system(size: 11.5))
-                    .foregroundStyle(Tactile.keyText)
-                    .lineLimit(1)
+                if let title {
+                    Text(title)
+                        .font(.system(size: 11.5))
+                        .foregroundStyle(Tactile.keyText)
+                        .lineLimit(1)
+                }
             }
             .padding(.leading, 4)
-            .padding(.trailing, 8)
+            .padding(.trailing, title == nil ? 4 : 8)
             .frame(height: 24)
             .contentShape(Rectangle())
         }
@@ -269,7 +327,7 @@ private struct ClipRow: View {
         .fixedSize()
     }
 
-    private func action(_ symbol: String, help: String, tint: Color?, perform: @escaping () -> Void) -> some View {
+    private func action(_ symbol: String, tip: HatchAction, tint: Color?, perform: @escaping () -> Void) -> some View {
         Button(action: perform) {
             Image(systemName: symbol)
                 .font(.system(size: 10.5, weight: .semibold))
@@ -278,7 +336,8 @@ private struct ClipRow: View {
                 .contentShape(Rectangle())
         }
         .buttonStyle(KeyCapButtonStyle(cornerRadius: 7))
-        .help(help)
+        .hatchTip(tip, lang)
+        .accessibilityLabel(tip.text(lang))
     }
 
     private func imageTitle(_ image: ClipImage) -> String {
@@ -286,8 +345,30 @@ private struct ClipRow: View {
     }
 
     /// Две первые строки, пробелы в начале строк сохраняются.
-    private var preview: String {
-        clip.text.split(separator: "\n", maxSplits: 2, omittingEmptySubsequences: false).prefix(2).joined(separator: "\n")
+    static let lineHeight: CGFloat = 17
+
+    /// Высота строки записи с `lines` строками текста (для высоты списка).
+    static func height(lines: Int) -> CGFloat { 46 + CGFloat(max(lines, 1) - 1) * lineHeight }
+
+    static func lineCount(_ text: String) -> Int {
+        text.split(separator: "\n", omittingEmptySubsequences: false).count
+    }
+
+    /// Первые `limit` строк текста с оформлением.
+    static func lines(_ text: AttributedString, limit: Int) -> [AttributedString] {
+        var result: [AttributedString] = []
+        let chars = text.characters
+        var start = chars.startIndex
+        var index = chars.startIndex
+        while index < chars.endIndex, result.count < limit {
+            if chars[index] == "\n" {
+                result.append(AttributedString(text[start..<index]))
+                start = chars.index(after: index)
+            }
+            index = chars.index(after: index)
+        }
+        if result.count < limit, start < chars.endIndex { result.append(AttributedString(text[start..<chars.endIndex])) }
+        return result.isEmpty ? [AttributedString("")] : result
     }
 
     static func relative(_ date: Date, lang: String, now: Date = Date()) -> String {

@@ -256,6 +256,7 @@ final class ProcessRunner {
             s.rawOutputANSI = nil
             s.exitCode = nil
             s.finishedAt = nil
+            s.startedAt = Date()
             s.pid = nil
             s.pgid = nil
             s.directory = directory

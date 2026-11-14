@@ -105,7 +105,7 @@ enum SyntaxDetector {
     }
 
     private static let sqlStart = try! NSRegularExpression(
-        pattern: #"^(select|with|insert\s+into|update|delete\s+from|create\s+(or\s+replace\s+)?(table|index|view|unique|materialized)|alter\s+table|drop\s+(table|index|view)|explain|truncate)\b"#,
+        pattern: #"^(select|with|insert\s+into|update|delete\s+from|create\s+(or\s+replace\s+)?(table|index|view|unique|materialized|schema|sequence|extension)|alter\s+table|drop\s+(table|index|view|schema|sequence|function)|explain|truncate|vacuum|analyze|begin|start\s+transaction|commit|rollback|grant|revoke)\b"#,
         options: [.caseInsensitive])
 
     /// Запрос, а не текст со словом «select»: начинается с команды SQL и у неё есть своя вторая часть.
@@ -120,15 +120,21 @@ enum SyntaxDetector {
         if word.hasPrefix("with") { return has(#"\bas\s*\("#) }
         if word.hasPrefix("insert") { return has(#"\b(values|select)\b"#) }
         if word.hasPrefix("update") { return has(#"\bset\b"#) }
+        // слова из обычной речи («Begin…», «Commit…», «Analyze…») — только инструкцией с «;»
+        if ["begin", "start", "commit", "rollback"].contains(where: word.hasPrefix) {
+            return has(#"^(begin|start\s+transaction|commit|rollback)(\s+(transaction|work))?\s*;"#)
+        }
+        if word.hasPrefix("analyze") { return has(#"^analyze(\s+[\w."]+)?\s*;"#) }
+        if word.hasPrefix("grant") || word.hasPrefix("revoke") { return has(#"\bon\b"#) && has(#"\b(to|from)\b"#) }
         return true
     }
 
-    /// Текст без комментариев SQL в начале (`-- …` и `/* … */`).
+    /// Текст без комментариев SQL в начале (`-- …` и `/* … */`) и команд psql (`\set ON_ERROR_STOP on`).
     static func withoutLeadingComments(_ text: String) -> String {
         var rest = Substring(text)
         while true {
             rest = rest.drop(while: { $0.isWhitespace })
-            if rest.hasPrefix("--") {
+            if rest.hasPrefix("--") || rest.hasPrefix("\\") {
                 rest = rest.drop(while: { !$0.isNewline })
             } else if rest.hasPrefix("/*"), let end = rest.range(of: "*/") {
                 rest = rest[end.upperBound...]

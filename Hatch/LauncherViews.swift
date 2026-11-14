@@ -153,7 +153,8 @@ struct LauncherRootView: View {
                     .hatchPopup(isPresented: $keysOpen) { _ in
                         PopupCard {
                             KeysSheetView(mode: inputMode, hotkey: SystemScreenshotShortcuts.display(settings.hotkeyString),
-                                          tree: SystemScreenshotShortcuts.display(settings.folderTreeShortcut), lang: lang)
+                                          tree: SystemScreenshotShortcuts.display(settings.folderTreeShortcut),
+                                          pastes: pastesOnEnter, lang: lang)
                         }
                     }
             }
@@ -167,7 +168,7 @@ struct LauncherRootView: View {
                              lang: lang,
                              onSubmit: { command in
                                  if searchMode { openFound(); return }
-                                 if clipboardMode { copyClip(nil); return }
+                                 if clipboardMode { pasteClip(nil); return }
                                  navigator.reset()
                                  if performQuickAction(command) { return }
                                  run(command)
@@ -335,15 +336,23 @@ struct LauncherRootView: View {
         }
     }
 
-    /// В поиске над полем: сколько нашлось. Пустой запрос — подсказка, где ищем.
+    /// В поиске над полем: сколько нашлось или «не найдено». Пустой запрос — клавиши поиска
+    /// (что ищем, уже сказано в поле).
     private var searchSummary: some View {
         let query = searchQuery.trimmingCharacters(in: .whitespaces)
         let stats = SearchStats.count(query, in: sessionStore.filteredSessions)
         return Group {
             if query.isEmpty {
-                Text(L.t("search_scope", lang))
+                HStack(spacing: 6) {
+                    KeyHint(key: "↑↓")
+                    Text(L.t("search_keys_blocks", lang))
+                    KeyHint(key: "↩").padding(.leading, 6)
+                    Text(L.t("search_keys_expand", lang))
+                }
+            } else if stats.blocks == 0 {
+                Text(L.t("search_none_in_commands", lang))
             } else {
-                Text(SearchStats.summary(stats, lang: lang)).foregroundStyle(stats.blocks > 0 ? Tactile.search : .secondary)
+                Text(SearchStats.summary(stats, lang: lang)).foregroundStyle(Tactile.search)
             }
         }
         .font(.system(size: 12))
@@ -353,9 +362,12 @@ struct LauncherRootView: View {
 
     private var inputButtons: some View {
         HStack(spacing: 6) {
-            // список избранного — закладки: звёздочка значит «добавить в избранное» (у пути и у блока)
+            // список избранного — закладки: звёздочка значит «добавить в избранное» (у пути и у блока).
+            // В поиске и буфере избранное ни при чём — кнопки нет, поле шире
+            if commandMode {
             GlassIconButton(icon: favoritesOpen ? .bookmarksOn : .bookmarks, color: favoritesOpen ? Tactile.star : nil,
-                            size: LauncherMetrics.inputButton, help: L.t("favorites", lang) + " (⌘E)") { favoritesOpen.toggle() }
+                            size: LauncherMetrics.inputButton, help: L.t("favorites", lang),
+                            tip: HatchAction.favorites.tip(lang)) { favoritesOpen.toggle() }
                 // своё всплывающее окно, сплошное: системное в macOS 26 стеклянное
                 .hatchPopup(isPresented: $favoritesOpen) { _ in
                     PopupCard {
@@ -379,7 +391,9 @@ struct LauncherRootView: View {
                                   onMoveCommand: { settings.moveFavoriteCommand(from: $0, to: $1) })
                     }
                 }
-            GlassIconButton(icon: .gear, size: LauncherMetrics.inputButton, help: L.t("settings", lang) + " (⌘,)") { openSettings() }
+            }
+            GlassIconButton(icon: .gear, size: LauncherMetrics.inputButton, help: L.t("settings", lang),
+                            tip: HatchAction.settings.tip(lang)) { openSettings() }
             // очистка — ⌃L и команда clear, корзины у поля нет: разрушительное действие рядом с настройками
         }
     }
@@ -449,6 +463,7 @@ struct LauncherRootView: View {
             selectedID: navigator.selectedID,
             expandedID: expandedID,
             compactLines: settings.previewLines,
+            compactOlder: settings.compactHistory && !searchMode,
             maxHeight: settings.historyMaxHeight,
             frames: frames,
             terminalFor: { runner.terminal(for: $0) },
@@ -458,6 +473,16 @@ struct LauncherRootView: View {
             onKill: { runner.stop(sessionID: $0.id) },
             onRerun: rerun,
             onCopy: copyOutput,
+            onCopyCommand: { session in
+                Clipboard.copy(session.command)
+                showToast(String(format: L.t("command_copied", lang), session.command))
+            },
+            onInsertCommand: { session in
+                // команда в поле — поправить и запустить заново (как ↑ к ней)
+                collapse()
+                text = session.command
+                inputFocused = true
+            },
             onPin: { sessionStore.togglePin(id: $0.id) },
             onFavorite: toggleFavoriteCommand,
             favoriteCommands: Set(settings.favoriteCommands),
@@ -481,7 +506,8 @@ struct LauncherRootView: View {
             onToggleFormat: { toggleBlockFormat($0) },
             highlight: searchMode ? searchQuery.trimmingCharacters(in: .whitespaces) : nil,
             clipboardMatches: searchMode && !searchQuery.trimmingCharacters(in: .whitespaces).isEmpty
-                ? clipboard.matching(searchQuery.trimmingCharacters(in: .whitespaces), kind: .all).count : 0
+                ? clipboard.matching(searchQuery.trimmingCharacters(in: .whitespaces), kind: .all).count : 0,
+            onSearchClipboard: toggleClipboard
         )
     }
 
@@ -607,13 +633,14 @@ struct LauncherRootView: View {
     private var clipboardFilterBar: some View {
         let counts = clipboard.counts(clipboardQuery)
         let kinds: [(ClipKind, String)] = [(.all, L.t("clip_kind_all", lang)), (.text, L.t("clip_kind_text", lang)),
-                                           (.images, L.t("clip_kind_images", lang)), (.pinned, "📌")]
+                                           (.images, L.t("clip_kind_images", lang)), (.pinned, "")]
         return HStack(spacing: 8) {
             GlassSegmented(options: kinds.map { (id: $0.0.rawValue, title: $0.1) },
                            selection: Binding(get: { clipKind.rawValue },
                                               set: { clipKind = ClipKind(rawValue: $0) ?? .all; clipSelection = 0 }),
                            details: Dictionary(uniqueKeysWithValues: kinds.map { ($0.0.rawValue, "\(counts[$0.0] ?? 0)") }),
-                           compact: true)
+                           compact: true,
+                           icons: [ClipKind.pinned.rawValue: .pin])
                 .help(L.t("clip_kind_help", lang))
             Spacer(minLength: 0)
             Text(String(format: L.t("clip_days", lang), settings.clipboardDays))
@@ -628,9 +655,40 @@ struct LauncherRootView: View {
     }
 
     private var clipboardArea: some View {
+        VStack(spacing: 8) {
+            clipboardList
+            // Enter должен вставлять, но права нет: одна строка с кнопкой, а не молчаливое копирование
+            if settings.clipboardPasteOnEnter && !PasteBack.isTrusted {
+                HStack(spacing: 8) {
+                    Text(L.t("paste_needs_access", lang))
+                        .font(.system(size: 11.5))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                    Spacer(minLength: 8)
+                    Button { PasteBack.requestTrust() } label: {
+                        Text(L.t("paste_allow", lang))
+                            .font(.system(size: 11.5, weight: .semibold))
+                            .foregroundStyle(Tactile.keyText)
+                            .padding(.horizontal, 10)
+                            .frame(height: 22)
+                    }
+                    .buttonStyle(KeyCapButtonStyle(cornerRadius: 6))
+                }
+                .padding(.horizontal, 14)
+            }
+        }
+    }
+
+    /// Enter вставляет сразу: настройка включена и есть право нажать ⌘V за пользователя.
+    private var pastesOnEnter: Bool { settings.clipboardPasteOnEnter && PasteBack.isTrusted }
+
+    private var clipboardList: some View {
         ClipboardListView(clips: visibleClips, total: clipboard.clips.count, query: clipboardQuery,
                           selection: clipSelection, days: settings.clipboardDays, lang: lang,
-                          maxHeight: settings.historyMaxHeight, onCopy: { copyClip($0) },
+                          maxHeight: settings.historyMaxHeight, onCopy: { pasteClip($0) },
+                          pastes: pastesOnEnter, pasteTarget: PasteBack.targetName, rowLines: settings.clipboardRowLines,
+                          onCopyOnly: { copyClip($0) },
                           onSelect: { clipSelection = $0 }, onInsert: { insertClip($0) },
                           onPreview: { clip in
                               // клик по миниатюре открытой картинки: просмотр уже закрыл сам клик мимо
@@ -831,6 +889,16 @@ struct LauncherRootView: View {
         previews.all.filter { $0.model.clipID == clip.id && $0.model.isText }.forEach { $0.model.setFormatted(on) }
     }
 
+    /// Текст записи, как он виден: формат включён — отформатированный (что видно, то и копируется).
+    private func clipShownText(_ clip: Clip) -> String {
+        guard clipFormatted(clip), clip.text.utf8.count <= ClipSyntax.rowLimit else { return clip.text }
+        let options = settings.syntaxOptions
+        let syntax = SyntaxService.shared
+        guard let kind = syntax.kind(of: clip.text, options: options) else { return clip.text }
+        let language = kind == .code ? syntax.codeLanguage(of: clip.text) : nil
+        return SyntaxService.compute(clip.text, kind: kind, mode: .full, options: options, language: language).text
+    }
+
     private func clipFormatted(_ clip: Clip) -> Bool {
         clip.formatted ?? settings.formatsByDefault(bundleID: clip.bundleID)
     }
@@ -843,8 +911,9 @@ struct LauncherRootView: View {
         guard let kind = syntax.kind(of: clip.text, options: options) else { return nil }
         let language = kind == .code ? syntax.codeLanguage(of: clip.text) : nil
         let on = clipFormatted(clip)
-        let compact = on ? syntax.rendered(clip.text, kind: kind, mode: .compact, options: options).map(SyntaxRender.swiftUI) : nil
-        return ClipSyntax(label: kind.label(code: language), on: on, text: compact)
+        // как в окне просмотра: отформатировано по строкам (строка записи показывает до N из них)
+        let formatted = on ? syntax.rendered(clip.text, kind: kind, mode: .full, options: options).map(SyntaxRender.swiftUI) : nil
+        return ClipSyntax(label: kind.label(code: language), on: on, text: formatted)
     }
 
     /// Текст с картинки — в буфер. Из панели: закрывается только просмотр, Hatch остаётся, внизу тост.
@@ -931,9 +1000,11 @@ struct LauncherRootView: View {
     private func toggleClipboard() {
         if clipboardMode { exitClipboard(); return }
         guard settings.clipboardEnabled else { NSSound.beep(); return }
+        // из поиска — с тем же запросом: не нашлось в командах, ищем в скопированном
+        let carried = searchMode ? searchQuery.trimmingCharacters(in: .whitespaces) : ""
         if searchMode { exitSearch() }
         favoritesOpen = false
-        clipboardQuery = ""
+        clipboardQuery = carried
         clipSelection = 0
         clipKind = .all
         withAnimation(.easeOut(duration: 0.2)) { clipboardMode = true }
@@ -979,12 +1050,27 @@ struct LauncherRootView: View {
             guard let url = clipboard.imageURL(clip), Clipboard.copyImage(at: url) else { NSSound.beep(); return }
             showToast(String(format: L.t("clip_image_copied", lang), "\(image.width) × \(image.height)"))
         } else {
-            Clipboard.copy(clip.text)
+            Clipboard.copy(clipShownText(clip), source: clip.text)
             let line = clip.text.split(separator: "\n").first.map(String.init) ?? clip.text
             showToast(String(format: L.t("clip_copied", lang), line))
         }
         exitClipboard()
         NotificationCenter.default.post(name: .hatchRequestHide, object: nil)
+    }
+
+    /// Enter и двойной клик в буфере: скопировать, спрятать панель и вставить в приложение, где был
+    /// пользователь. Нет права или некуда — только скопировать (как ⌘C).
+    private func pasteClip(_ chosen: Clip?) {
+        guard pastesOnEnter, PasteBack.canPaste else { copyClip(chosen); return }
+        guard let clip = chosen ?? selectedClip else { NSSound.beep(); return }
+        if clip.image != nil {
+            guard let url = clipboard.imageURL(clip), Clipboard.copyImage(at: url) else { NSSound.beep(); return }
+        } else {
+            Clipboard.copy(clipShownText(clip), source: clip.text)
+        }
+        exitClipboard()
+        NotificationCenter.default.post(name: .hatchRequestHide, object: nil)
+        PasteBack.pasteIntoTarget()
     }
 
     /// ⌘V в просмотре: выделенный на картинке текст — в поле ввода как команда.
@@ -1178,6 +1264,12 @@ struct LauncherRootView: View {
             case (36, .command) where clipboardMode && !showSettings:
                 insertClip(activeClip)
                 return nil
+            case (8, .command) where clipboardMode && !showSettings
+                && ((event.window?.firstResponder as? NSTextView)?.selectedRange().length ?? 0) == 0
+                && previews.window(for: event.window) == nil:
+                // ⌘C в буфере (в поле ничего не выделено) — только скопировать запись, без вставки
+                copyClip(nil)
+                return nil
             case (1, .command) where clipboardMode && !showSettings:
                 // ⌘S — закрепить или открепить выбранный фрагмент (в окне просмотра ⌘S закрепляет окно)
                 if let clip = activeClip { togglePin(clip) } else { NSSound.beep() }
@@ -1240,6 +1332,16 @@ struct LauncherRootView: View {
             case (51, .command) where clipboardMode && !showSettings:
                 // ⌘⌫ в буфере — удалить выбранный фрагмент (или открытый крупно)
                 if let clip = activeClip { deleteClip(clip) } else { NSSound.beep() }
+                return nil
+            case (51, .command) where !showSettings && !clipboardMode && (navigator.isNavigating || expandedID != nil)
+                && !Self.textViewHasFocus(event):
+                // ⌘⌫ — удалить выбранный стрелками или раскрытый блок (как запись в буфере)
+                if let id = expandedID ?? navigator.selectedID,
+                   let session = sessionStore.filteredSessions.first(where: { $0.id == id }) {
+                    requestDelete(session)
+                } else {
+                    NSSound.beep()
+                }
                 return nil
             case (37, .control) where !showSettings:
                 // в живом терминале ⌃L — очистка его экрана
@@ -1384,7 +1486,13 @@ struct LauncherRootView: View {
         if session.state.isActive {
             pendingDelete = session
         } else {
-            sessionStore.remove(id: session.id)
+            if expandedID == session.id { collapse() }
+            navigator.reset()
+            withAnimation(LayersDepth.spring) { sessionStore.remove(id: session.id) }
+            // как у записи буфера: 5 секунд можно вернуть
+            showToast(L.t("block_deleted", lang), undo: {
+                withAnimation(LayersDepth.spring) { sessionStore.restore([session]) }
+            })
         }
     }
 
@@ -1469,6 +1577,8 @@ struct HistoryListView: View {
     var expandedID: UUID?
     /// Экранных строк вывода в свёрнутом блоке (настройка «Строк в превью»); свежий берёт больше.
     var compactLines = SettingsStore.defaultPreviewLines
+    /// Компактная история: вывод только у свежего, выбранного и закреплённых блоков.
+    var compactOlder = false
     /// Предел высоты истории: дальше прокрутка. Раскрытый терминал занимает его целиком.
     var maxHeight: CGFloat = PanelSize.defaultHistoryHeight
     /// Куда записывать рамки раскрытого блока и полосы прокрутки (клик вне блока его сворачивает).
@@ -1478,6 +1588,8 @@ struct HistoryListView: View {
     var onKill: (Session) -> Void = { _ in }
     var onRerun: (Session) -> Void = { _ in }
     var onCopy: (Session) -> Void = { _ in }
+    var onCopyCommand: (Session) -> Void = { _ in }
+    var onInsertCommand: (Session) -> Void = { _ in }
     var onPin: (Session) -> Void = { _ in }
     /// ★ в кнопках блока: команда в избранное; какие уже там — звезда закрашена.
     var onFavorite: (Session) -> Void = { _ in }
@@ -1493,6 +1605,8 @@ struct HistoryListView: View {
     var highlight: String?
     /// Поиск ничего не нашёл в истории — сколько нашлось бы в буфере.
     var clipboardMatches = 0
+    /// Искать тот же текст в буфере (⌘3).
+    var onSearchClipboard: () -> Void = {}
 
     var body: some View {
         if sessionStore.filteredSessions.isEmpty {
@@ -1501,10 +1615,19 @@ struct HistoryListView: View {
             } else {
                 VStack(spacing: 6) {
                     Text(L.t("search_empty", lang))
-                    // искомое могло быть скопировано, а не выполнено
+                    // искомое могло быть скопировано, а не выполнено: кнопка ищет там же текст (⌘3)
                     if clipboardMatches > 0 {
-                        Text(String(format: L.t("search_in_clipboard", lang), clipboardMatches))
-                            .foregroundStyle(Tactile.clip)
+                        Button(action: onSearchClipboard) {
+                            HStack(spacing: 6) {
+                                Text(String(format: L.t("search_in_clipboard", lang), clipboardMatches))
+                                    .foregroundStyle(Tactile.clip)
+                                KeyHint(key: "⌘3")
+                            }
+                            .padding(.horizontal, 10)
+                            .frame(height: 26)
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(KeyCapButtonStyle(cornerRadius: 7))
                     }
                 }
                 .font(.callout)
@@ -1525,16 +1648,19 @@ struct HistoryListView: View {
                                          isSelected: session.id == selectedID,
                                          isExpanded: session.id == expandedID,
                                          dimmed: expandedID != nil && session.id != expandedID,
-                                         outputLines: session.id == sessions.first?.id
-                                            ? freshBlockLines : compactLines,
+                                         outputLines: outputLines(for: session, first: sessions.first?.id),
                                          terminal: session.id == expandedID ? terminalFor(session.id) : nil,
                                          terminalHeight: LauncherMetrics.terminalHeight(historyHeight: maxHeight),
                                          onToggle: { onToggle(session) },
                                          onKill: { onKill(session) },
                                          onRerun: { onRerun(session) },
                                          onCopy: { onCopy(session) },
+                                         onCopyCommand: { onCopyCommand(session) },
+                                         onInsertCommand: { onInsertCommand(session) },
                                          onPin: { onPin(session) },
                                          isFavorite: favoriteCommands.contains(session.command.trimmingCharacters(in: .whitespacesAndNewlines)),
+                                         compactRow: outputLines(for: session, first: sessions.first?.id) == 0
+                                            || session.output.isEmpty,
                                          onFavorite: { onFavorite(session) },
                                          onDelete: { onDelete(session) },
                                          onOpenDirectory: onOpenDirectory,
@@ -1605,6 +1731,14 @@ extension HistoryListView {
             .filter { seen.insert($0).inserted }
     }
 
+    /// Строк вывода у блока: свежему — свободное место, в компактной истории старым — ни одной
+    /// (кроме выбранного стрелками, закреплённых и идущих).
+    private func outputLines(for session: Session, first: UUID?) -> Int {
+        if session.id == first { return freshBlockLines }
+        if compactOlder, session.id != selectedID, !session.isPinned, !session.state.isActive { return 0 }
+        return compactLines
+    }
+
     /// Сколько строк вывода показать свежему блоку: всё свободное место панели,
     /// которое не заняли остальные блоки, но не меньше обычного.
     private var freshBlockLines: Int {
@@ -1636,8 +1770,12 @@ struct SessionBlockView: View {
     var onKill: () -> Void = {}
     var onRerun: () -> Void = {}
     var onCopy: () -> Void = {}
+    var onCopyCommand: () -> Void = {}
+    var onInsertCommand: () -> Void = {}
     var onPin: () -> Void = {}
     var isFavorite = false
+    /// Компактная история скрыла вывод: заголовок одной строкой.
+    var compactRow = false
     var onFavorite: () -> Void = {}
     var onDelete: () -> Void = {}
     /// Клик по папке в заголовке: перейти в неё, как `cd`.
@@ -1664,14 +1802,21 @@ struct SessionBlockView: View {
     /// Текст подставлен из варианта (TAB, клик) — варианты не пересчитываем.
     @State private var stageApplying = false
     @State private var hovered = false
+    /// Открыто меню действий: кнопкой «⋯» или правым кликом по заголовку.
+    @State private var menuSource: MenuSource?
 
     var body: some View {
         let _ = RenderProbe.hit("SessionBlockView")
         VStack(alignment: .leading, spacing: 8) {
             header
 
+            // шаги конвейера — своей строкой под командой: в заголовке они вытесняли его за край панели
+            if !session.pipeline.isEmpty || editingStage != nil {
+                pipelineRow
+            }
+
             // тонкий разделитель между заголовком и выводом, как между строками системных настроек
-            if isExpanded || !session.output.isEmpty {
+            if isExpanded || showsPreview {
                 Rectangle().fill(.white.opacity(0.05)).frame(height: 1)
                     .padding(.horizontal, -LauncherMetrics.blockPadding)
             }
@@ -1687,7 +1832,7 @@ struct SessionBlockView: View {
 
             if isExpanded {
                 expandedBody
-            } else if !session.output.isEmpty {
+            } else if showsPreview {
                 outputPreview
             }
         }
@@ -1716,10 +1861,15 @@ struct SessionBlockView: View {
 
     private var blockShape: RoundedRectangle { RoundedRectangle(cornerRadius: LauncherMetrics.innerRadius) }
 
+    /// Свёрнутый блок показывает начало и конец вывода; в компактной истории у старых — только заголовок.
+    private var showsPreview: Bool { !session.output.isEmpty && outputLines > 0 }
+
     private struct DepthKey: Equatable { let hovered: Bool, dimmed: Bool, expanded: Bool }
 
 
-    /// Команда и под ней папка·время; справа шаги конвейера и общее место статуса и кнопок.
+    /// Команда, под ней папка · время · длительность · статус. Справа — кнопки (под мышью, у выбранного
+    /// и раскрытого блока), шаги конвейера и «фильтр». Статус больше не уступает место кнопкам,
+    /// а кнопки не держат место, пока их не видно: «фильтр» у всех блоков у правого края.
     private var header: some View {
         HStack(spacing: 8) {
             // треугольник раскрытия, как в списках Finder: поворачивается, когда блок раскрыт
@@ -1729,74 +1879,187 @@ struct SessionBlockView: View {
                 .rotationEffect(.degrees(isExpanded ? 90 : 0))
                 .animation(LayersDepth.spring, value: isExpanded)
 
-            VStack(alignment: .leading, spacing: 2) {
+            if isCompactRow {
+                // старый блок в компактной истории — одна строка: команда слева, папка и статус справа
                 Text(Self.marked(AttributedString(session.command), highlight))
                     .font(.system(size: 13, weight: .semibold))
                     .lineLimit(1)
                     .truncationMode(.tail)
-                HStack(spacing: 8) {
-                    if let directory = session.directory {
-                        directoryLabel(directory)
-                    }
-                    Text(session.createdAt.formatted(date: .omitted, time: .shortened))
-                        .monospacedDigit()
-                        .foregroundStyle(.tertiary)
+                Spacer(minLength: 8)
+                metaRow
+                actionButtons
+                if showActions { filterButton }
+            } else {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(Self.marked(AttributedString(session.command), highlight))
+                        .font(.system(size: 13, weight: .semibold))
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                    metaRow
                 }
-                .font(.system(size: 11.5))
+
+                Spacer(minLength: 4)
+
+                actionButtons
+
+                filterButton
             }
-
-            Spacer(minLength: 4)
-
-            pipelineChips
-
-            statusSlot
         }
         .contentShape(Rectangle())
         // заголовок перехватывает клик у блока, поэтому сам переключает в обе стороны:
         // у свёрнутого блока без вывода, кроме заголовка, кликать не по чему
         .onTapGesture { onToggle() }
         .help(isExpanded ? L.t("collapse", lang) : "")
-    }
-
-    /// Статус и кнопки делят одно место у правого края: при наведении статус перелистывается
-    /// вверх, а кнопки поднимаются снизу по одной — шаги конвейера и «+» остаются на месте.
-    private var statusSlot: some View {
-        let showActions = hovered || isExpanded || isSelected
-        // выбран стрелками и не под мышью — кнопки с клавишами, как у строк буфера: клавиши видны там,
-        // где ими пользуются
-        let keyed = isSelected && !hovered && !isExpanded && session.state.isTerminal
-        let actions = keyed ? blockActions.filter { $0.icon != .rerun && $0.icon != .copy } : blockActions
-        return ZStack(alignment: .trailing) {
-            StatusCapsule(status: BlockStatus(session), lang: lang)
-                .rotation3DEffect(.degrees(showActions ? 75 : 0), axis: (1, 0, 0), anchor: .top, perspective: 0.5)
-                .offset(y: showActions ? -8 : 0)
-                .opacity(showActions ? 0 : 1)
-                .animation(.spring(response: 0.38, dampingFraction: 0.8), value: showActions)
-            HStack(spacing: 4) {
-                if keyed {
-                    keyButton("⌘C", L.t("block_copy_output", lang), perform: onCopy)
-                    keyButton("⌘R", L.t("rerun_short", lang), perform: onRerun)
-                }
-                ForEach(Array(actions.enumerated()), id: \.offset) { index, action in
-                    GlassIconButton(icon: action.icon, color: action.color, size: LauncherMetrics.blockButton,
-                                    help: action.help, action: action.run)
-                        .rotation3DEffect(.degrees(showActions ? 0 : -75), axis: (1, 0, 0), anchor: .bottom, perspective: 0.5)
-                        .offset(y: showActions ? 0 : 8)
-                        .opacity(showActions ? 1 : 0)
-                        .animation(.spring(response: 0.38, dampingFraction: 0.72)
-                                    .delay(showActions ? Double(actions.count - 1 - index) * 0.035 : 0),
-                                   value: showActions)
-                }
-            }
-            .allowsHitTesting(showActions)
+        // правый клик по заголовку — то же меню, что «⋯» (по выводу — меню текста)
+        .hatchPopup(isPresented: Binding(get: { menuSource == .mouse },
+                                         set: { if !$0, menuSource == .mouse { menuSource = nil } }),
+                    placement: .atMouse,
+                    onSecondaryClick: { menuSource = .mouse }) { _ in
+            MenuCard { FolderMenuView(sections: menuSections) }
         }
     }
 
-    /// Кнопка-колпачок «клавиша + подпись» — то же, что сочетание (как у строк буфера).
-    private func keyButton(_ key: String, _ title: String, perform: @escaping () -> Void) -> some View {
+    /// Папка · время · длительность · статус.
+    private var metaRow: some View {
+        HStack(spacing: 8) {
+            if let directory = session.directory {
+                directoryLabel(directory)
+            }
+            Text(Self.whenText(session.createdAt, lang: lang))
+                .monospacedDigit()
+                .foregroundStyle(.secondary)
+                .fixedSize()
+            durationLabel
+            StatusCapsule(status: BlockStatus(session), lang: lang, compact: true)
+        }
+        .font(.system(size: 11.5))
+    }
+
+    /// Сколько шла команда; у идущей — секундомер.
+    @ViewBuilder
+    private var durationLabel: some View {
+        if session.state.isActive {
+            TimelineView(.periodic(from: .now, by: 1)) { context in
+                Text(Self.durationText(session.duration(now: context.date) ?? 0, lang: lang, live: true))
+            }
+            .monospacedDigit()
+            .foregroundStyle(.secondary)
+            .fixedSize()
+        } else if let duration = session.duration() {
+            Text(Self.durationText(duration, lang: lang))
+                .monospacedDigit()
+                .foregroundStyle(.secondary)
+                .fixedSize()
+        }
+    }
+
+    /// Когда запущена: сегодня — время, вчера — «вчера 18:40», раньше — «12 нояб. 18:40».
+    static func whenText(_ date: Date, now: Date = Date(), lang: String, calendar: Calendar = .current) -> String {
+        let time = date.formatted(date: .omitted, time: .shortened)
+        if calendar.isDate(date, inSameDayAs: now) { return time }
+        if let yesterday = calendar.date(byAdding: .day, value: -1, to: now), calendar.isDate(date, inSameDayAs: yesterday) {
+            return L.t("yesterday", lang) + " " + time
+        }
+        let locale = Locale(identifier: lang == "ru" ? "ru_RU" : "en_US")
+        var style = Date.FormatStyle(locale: locale).day().month(.abbreviated)
+        if !calendar.isDate(date, equalTo: now, toGranularity: .year) { style = style.year() }
+        return date.formatted(style) + " " + time
+    }
+
+    /// Длительность: «0,4 с», «12 с», «1:05», «1:02:03». Секундомер идущей команды — без десятых.
+    static func durationText(_ seconds: TimeInterval, lang: String, live: Bool = false) -> String {
+        let value = max(seconds, 0)
+        if value < 60 {
+            let shown: String
+            if value < 10 && !live {
+                let tenths = (value * 10).rounded() / 10
+                shown = String(format: "%.1f", tenths)
+                    .replacingOccurrences(of: ".", with: lang == "ru" ? "," : ".")
+            } else {
+                shown = String(Int(value.rounded(.down)))
+            }
+            return String(format: L.t("duration_seconds", lang), shown)
+        }
+        let total = Int(value.rounded(.down))
+        let h = total / 3600, m = (total % 3600) / 60, s = total % 60
+        return h > 0 ? String(format: "%d:%02d:%02d", h, m, s) : String(format: "%d:%02d", m, s)
+    }
+
+    private enum MenuSource { case button, mouse }
+
+    private var showActions: Bool { hovered || isExpanded || isSelected }
+
+    /// Одна строка вместо двух: в компактной истории у блока без вывода на экране и без шагов конвейера.
+    private var isCompactRow: Bool {
+        compactRow && !isExpanded && session.pipeline.isEmpty && editingStage == nil
+    }
+
+    /// Две главные кнопки с подписью и «⋯» с остальным. Клавиша на кнопке — только там,
+    /// где она сейчас сработает: ⌘C — у выбранного стрелками, ⌘R — у выбранного и раскрытого.
+    @ViewBuilder
+    private var actionButtons: some View {
+        if showActions {
+            HStack(spacing: 4) {
+                // узкая панель или длинная команда — значки без подписей, заголовок не вылезает за край
+                ViewThatFits(in: .horizontal) {
+                    mainButtons(labeled: true)
+                    mainButtons(labeled: false)
+                }
+                GlassIconButton(icon: .more, size: LauncherMetrics.blockButton, help: L.t("block_menu", lang),
+                                tip: HatchAction.blockMenu.tip(lang)) {
+                    menuSource = menuSource == .button ? nil : .button
+                }
+                .hatchPopup(isPresented: Binding(get: { menuSource == .button },
+                                                 set: { if !$0, menuSource == .button { menuSource = nil } })) { _ in
+                    MenuCard { FolderMenuView(sections: menuSections) }
+                }
+            }
+            .transition(.opacity.combined(with: .offset(x: 8)))
+        }
+    }
+
+    /// «вывод» и «повтор» (у идущей — «стоп»): с подписью или одними значками.
+    @ViewBuilder
+    private func mainButtons(labeled: Bool) -> some View {
+        HStack(spacing: 4) {
+            if session.state.isActive {
+                if labeled {
+                    labeledButton(key: nil, icon: .stop, title: L.t("stop", lang).lowercased(), color: LayersPalette.error,
+                                  perform: onKill)
+                        .hatchTip(.stop, lang)
+                } else {
+                    GlassIconButton(icon: .stop, color: LayersPalette.error, size: LauncherMetrics.blockButton,
+                                    help: L.t("stop", lang), tip: HatchAction.stop.tip(lang), action: onKill)
+                }
+            } else if labeled {
+                labeledButton(key: isSelected && !isExpanded ? HatchAction.copyOutput.key : nil, icon: .copy,
+                              title: L.t("block_copy_output", lang), perform: onCopy)
+                    .hatchTip(.copyOutput, lang)
+                labeledButton(key: isSelected || isExpanded ? HatchAction.rerun.key : nil, icon: .rerun,
+                              title: L.t("rerun_short", lang), perform: onRerun)
+                    .hatchTip(.rerun, lang)
+            } else {
+                GlassIconButton(icon: .copy, size: LauncherMetrics.blockButton, help: L.t("copy", lang),
+                                tip: HatchAction.copyOutput.tip(lang), action: onCopy)
+                GlassIconButton(icon: .rerun, size: LauncherMetrics.blockButton, help: L.t("rerun", lang),
+                                tip: HatchAction.rerun.tip(lang), action: onRerun)
+            }
+        }
+        .fixedSize()
+    }
+
+    /// Кнопка-колпачок «клавиша + подпись» (как у строк буфера); без клавиши — значок + подпись.
+    private func labeledButton(key: String?, icon: KeyIcon, title: String, color: Color? = nil,
+                               perform: @escaping () -> Void) -> some View {
         Button(action: perform) {
             HStack(spacing: 5) {
-                KeyHint(key: key)
+                if let key {
+                    KeyHint(key: key)
+                } else {
+                    KeyIconView(icon: icon, size: 12)
+                        .foregroundStyle(color ?? Tactile.keyText)
+                        .padding(.leading, 3)
+                }
                 Text(title)
                     .font(.system(size: 11.5))
                     .foregroundStyle(Tactile.keyText)
@@ -1811,11 +2074,35 @@ struct SessionBlockView: View {
         .fixedSize()
     }
 
-    private struct BlockAction {
-        let icon: KeyIcon
-        var color: Color? = nil
-        let help: String
-        let run: () -> Void
+    /// Все действия блока: меню «⋯» и правого клика. Пункт закрывает меню и делает своё.
+    private var menuSections: [FolderMenuView.Section] {
+        let run = { (action: @escaping () -> Void) in { menuSource = nil; action() } }
+        var main: [FolderMenuView.Item] = []
+        if session.state.isActive {
+            main.append(.init(title: L.t("stop", lang), detail: isExpanded ? HatchAction.stop.key : nil, action: run(onKill)))
+        } else {
+            main.append(.init(title: L.t("menu_copy_output", lang), detail: HatchAction.copyOutput.key, action: run(onCopy)))
+            main.append(.init(title: L.t("menu_rerun", lang), detail: HatchAction.rerun.key, action: run(onRerun)))
+        }
+        main.append(.init(title: L.t("menu_insert_command", lang), action: run(onInsertCommand)))
+        main.append(.init(title: L.t("menu_copy_command", lang), action: run(onCopyCommand)))
+        var output: [FolderMenuView.Item] = []
+        if session.state.isTerminal {
+            output.append(.init(title: L.t("menu_filter", lang), help: L.t("add_pipe_stage", lang),
+                                action: run { startEditing(at: session.pipeline.count, text: "") }))
+        }
+        if let syntax {
+            output.append(.init(title: L.t(syntax.on ? "menu_format_off" : "menu_format_on", lang),
+                                detail: HatchAction.formatOff.key,
+                                action: run(onToggleFormat)))
+        }
+        let keep: [FolderMenuView.Item] = [
+            .init(title: L.t(isFavorite ? "fav_remove" : "menu_fav_add", lang), action: run(onFavorite)),
+            .init(title: L.t(session.isPinned ? "menu_unpin" : "menu_pin", lang), detail: HatchAction.pinClip.key, help: L.t("pin", lang),
+                  action: run(onPin)),
+        ]
+        let remove: [FolderMenuView.Item] = [.init(title: L.t("delete", lang), detail: HatchAction.deleteClip.key, action: run(onDelete))]
+        return [main, output, keep, remove].filter { !$0.isEmpty }.map { FolderMenuView.Section(items: $0) }
     }
 
     /// Что показывать: отформатированный вывод (цветами ANSI) или как есть.
@@ -1825,27 +2112,6 @@ struct SessionBlockView: View {
     }
 
     private var shownIsANSI: Bool { session.outputANSI != nil || (syntax?.on == true && syntax?.ansi != nil) }
-
-    private var blockActions: [BlockAction] {
-        var list: [BlockAction] = []
-        if let syntax {
-            list.append(BlockAction(icon: .braces, color: syntax.on ? Tactile.clip : nil,
-                                    help: "\(syntax.label) · " + L.t("format_toggle_help", lang), run: onToggleFormat))
-        }
-        list += [
-            BlockAction(icon: .rerun, help: L.t("rerun", lang), run: onRerun),
-            BlockAction(icon: .copy, help: L.t("copy", lang), run: onCopy),
-            BlockAction(icon: isFavorite ? .starOn : .star, color: isFavorite ? Tactile.star : nil,
-                        help: L.t(isFavorite ? "fav_remove" : "fav_cmd_toggle", lang), run: onFavorite),
-            BlockAction(icon: session.isPinned ? .pinOn : .pin, color: session.isPinned ? LayersPalette.accent : nil,
-                        help: L.t("pin", lang), run: onPin),
-        ]
-        if session.state.isActive {
-            list.append(BlockAction(icon: .stop, color: LayersPalette.error, help: L.t("stop", lang), run: onKill))
-        }
-        list.append(BlockAction(icon: .trash, help: L.t("delete", lang), run: onDelete))
-        return list
-    }
 
     /// Папка, где выполнялась команда: только имя, полный путь — в подсказке; клик — перейти в неё.
     /// Уступает место команде: не влезает имя — остаётся значок, не влезает и он — ничего.
@@ -1870,17 +2136,27 @@ struct SessionBlockView: View {
 
     /// Шаги конвейера плашками `| grep foo ✕` и «+» для нового шага (только у завершённой команды).
     @ViewBuilder
-    private var pipelineChips: some View {
-        ForEach(Array(session.pipeline.enumerated()), id: \.offset) { index, stage in
-            if editingStage == index {
+    private var pipelineRow: some View {
+        FlowLayout(spacing: 6) {
+            ForEach(Array(session.pipeline.enumerated()), id: \.offset) { index, stage in
+                if editingStage == index {
+                    stageField
+                } else {
+                    stageChip(stage, index: index)
+                }
+            }
+            if editingStage == session.pipeline.count {
                 stageField
-            } else {
-                stageChip(stage, index: index)
             }
         }
-        if editingStage == session.pipeline.count {
-            stageField
-        } else if session.state.isTerminal {
+        // по левому краю команды: после треугольника раскрытия
+        .padding(.leading, 15)
+    }
+
+    /// «фильтр» у правого края заголовка: добавить шаг (поле шага — в строке шагов под командой).
+    @ViewBuilder
+    private var filterButton: some View {
+        if session.state.isTerminal {
             Button {
                 startEditing(at: session.pipeline.count, text: "")
             } label: {
@@ -1901,7 +2177,7 @@ struct SessionBlockView: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(KeyCapButtonStyle(cornerRadius: LauncherMetrics.buttonRadius(LauncherMetrics.blockButton)))
-            .help(L.t("add_pipe_stage", lang))
+            .hatchTip(.addFilter, lang)
         }
     }
 
@@ -2319,9 +2595,11 @@ struct CommandInputView: View {
         .onExitCommand { cancelCompletion() }
         .onChange(of: completer.menu != nil) { _, open in onCompletionMenu(open) }
         .onSubmit {
-            // однозначное начало имени приложения: Enter дописывает, повторный — открывает
+            // однозначное начало имени приложения: Enter сразу открывает его, как Spotlight
+            // (дописать имя, не открывая, — Tab или →)
             if let completion = enterCompletion {
                 text = completion
+                onSubmit(completion)
                 return
             }
             onSubmit(text)
@@ -2366,7 +2644,7 @@ struct CommandInputView: View {
         return String(completion.dropFirst(text.count))
     }
 
-    /// Что Enter допишет вместо запуска: вариант один и виден серым.
+    /// Какое приложение Enter откроет вместо запуска: вариант один и виден серым.
     private var enterCompletion: String? {
         guard appGhost != nil, let suggestion = appSuggestion, suggestion.completesOnEnter else { return nil }
         return suggestion.completion

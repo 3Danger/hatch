@@ -364,10 +364,15 @@ private extension JSONDecoder {
 enum Clipboard {
     static let hatchMarker = NSPasteboard.PasteboardType("io.github.3danger.hatch.copy")
 
-    static func copy(_ text: String, to pasteboard: NSPasteboard = .general) {
+    /// Исходный текст записи, когда в буфер ушёл её отформатированный вид: история поднимает
+    /// ту же запись, а не заводит вторую — отформатированную.
+    static let hatchSource = NSPasteboard.PasteboardType("io.github.3danger.hatch.source")
+
+    static func copy(_ text: String, source: String? = nil, to pasteboard: NSPasteboard = .general) {
         pasteboard.clearContents()
         pasteboard.setString(text, forType: .string)
         pasteboard.setString("", forType: hatchMarker)
+        if let source, source != text { pasteboard.setString(source, forType: hatchSource) }
     }
 
     /// Картинку из буфера Hatch — обратно в системный буфер (PNG и TIFF: вставится куда угодно).
@@ -481,6 +486,10 @@ final class ClipboardWatcher {
         let types = Set((pasteboard.types ?? []).map(\.rawValue))
         guard types.isDisjoint(with: Self.skippedTypes) else { return nil }
         if types.contains(Clipboard.hatchMarker.rawValue) {
+            // скопирован отформатированный вид записи — в истории та же запись, как была
+            if let source = pasteboard.string(forType: Clipboard.hatchSource), !source.isEmpty {
+                return Clip(text: source, app: "Hatch", bundleID: Bundle.main.bundleIdentifier, copiedAt: now)
+            }
             guard let text = pasteboard.string(forType: .string), !text.isEmpty else { return nil }
             return Clip(text: text, app: "Hatch", bundleID: Bundle.main.bundleIdentifier, copiedAt: now)
         }

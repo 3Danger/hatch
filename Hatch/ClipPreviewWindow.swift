@@ -131,7 +131,7 @@ final class ClipPreviewWindow {
     private var toastTask: Task<Void, Never>?
 
     init(model: ClipPreviewModel, lang: String, onTogglePin: @escaping () -> Void, onClose: @escaping () -> Void,
-         onToggleFormat: @escaping () -> Void = {}) {
+         onToggleFormat: @escaping () -> Void = {}, onCopyAll: @escaping () -> Void = {}) {
         self.model = model
         if let size = model.image?.size {
             ratio = size.width > 0 && size.height > 0 ? size.width / size.height : 16 / 10
@@ -155,7 +155,7 @@ final class ClipPreviewWindow {
         let container = NSView()
         let hosting = NSHostingView(rootView: ClipPreviewContent(
             model: model, lang: lang, onTogglePin: onTogglePin, onClose: onClose, onToggleFormat: onToggleFormat,
-            onResetSize: { [weak self] in self?.resetSize() }))
+            onCopyAll: onCopyAll, onResetSize: { [weak self] in self?.resetSize() }))
         // размер окна задаёт само окно (по картинке), а не SwiftUI
         hosting.sizingOptions = []
         hosting.autoresizingMask = [.width, .height]
@@ -350,6 +350,20 @@ final class ClipPreviews {
         preview.show(centeredIn: visible)
     }
 
+    /// Кнопка «Скопировать всё» в шапке: текст — как виден (отформатированный тоже), картинку — целиком.
+    /// Окно и панель остаются: внизу окна — короткий тост.
+    static func copyAll(_ preview: ClipPreviewWindow, lang: String) {
+        if preview.model.image != nil {
+            guard let url = preview.model.url, Clipboard.copyImage(at: url) else { NSSound.beep(); return }
+            preview.showToast(L.t("preview_image_copied", lang))
+        } else {
+            let text = preview.model.shownText
+            guard !text.isEmpty else { NSSound.beep(); return }
+            Clipboard.copy(text)
+            preview.showToast(L.t("preview_text_copied", lang))
+        }
+    }
+
     private func makeWindow(_ model: ClipPreviewModel, lang: String) -> ClipPreviewWindow {
         let preview = ClipPreviewWindow(model: model, lang: lang,
                                         onTogglePin: { [weak self] in self?.togglePinOfModel(model) },
@@ -357,6 +371,10 @@ final class ClipPreviews {
                                         onToggleFormat: { [weak self] in
                                             guard let self, let preview = self.all.first(where: { $0.model === model }) else { return }
                                             self.onToggleFormat(preview)
+                                        },
+                                        onCopyAll: { [weak self] in
+                                            guard let self, let preview = self.all.first(where: { $0.model === model }) else { return }
+                                            Self.copyAll(preview, lang: lang)
                                         })
         model.liveText.menuItems = { [weak self, weak preview] in
             guard let self, let preview else { return ([], []) }
@@ -478,6 +496,8 @@ private struct ClipPreviewContent: View {
     var onTogglePin: () -> Void
     var onClose: () -> Void
     var onToggleFormat: () -> Void = {}
+    /// Скопировать всё, что в окне (текст как виден или картинку); окно остаётся.
+    var onCopyAll: () -> Void = {}
     var onResetSize: () -> Void
 
     var body: some View {
@@ -539,12 +559,12 @@ private struct ClipPreviewContent: View {
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .help(L.t("format_toggle_help", lang))
+                .hatchTip(model.formatted ? .formatOff : .formatOn, lang)
             }
-            button(model.isPinned ? "pin.fill" : "pin",
-                   help: L.t(model.isPinned ? "preview_unpin_help" : "preview_pin_help", lang),
+            button("doc.on.doc", tip: .copyAll, tint: nil, perform: onCopyAll)
+            button(model.isPinned ? "pin.fill" : "pin", tip: model.isPinned ? .unpinWindow : .pinWindow,
                    tint: model.isPinned ? Tactile.clip : nil, perform: onTogglePin)
-            button("xmark", help: L.t("preview_close_help", lang), tint: nil, perform: onClose)
+            button("xmark", tip: .closePreview(pinned: model.isPinned), tint: nil, perform: onClose)
         }
         .padding(.leading, 11)
         // ✕ не под уголком изменения размера
@@ -585,7 +605,7 @@ private struct ClipPreviewContent: View {
         }
     }
 
-    private func button(_ symbol: String, help: String, tint: Color?, perform: @escaping () -> Void) -> some View {
+    private func button(_ symbol: String, tip: HatchAction, tint: Color?, perform: @escaping () -> Void) -> some View {
         Button(action: perform) {
             Image(systemName: symbol)
                 .font(.system(size: 10.5, weight: .semibold))
@@ -595,7 +615,8 @@ private struct ClipPreviewContent: View {
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .help(help)
+        .hatchTip(tip, lang)
+        .accessibilityLabel(tip.text(lang))
     }
 }
 

@@ -2,10 +2,10 @@ import XCTest
 @testable import Hatch
 
 /// Свой формат SQL (бета): случаи из согласованного макета и крайние — что запрос по смыслу не меняется.
-final class HatchSQLTests: XCTestCase {
+final class HatchPGTests: XCTestCase {
     private func check(_ input: String, _ expected: String, dialect: String = "sql", case keywordCase: String = "upper",
                        file: StaticString = #filePath, line: UInt = #line) {
-        let result = HatchSQL.format(input, keywordCase: keywordCase, dialect: dialect)
+        let result = HatchPG.format(input, keywordCase: keywordCase, dialect: dialect)
         XCTAssertEqual(result, expected, "\n--- получилось ---\n\(result ?? "nil")\n", file: file, line: line)
     }
 
@@ -152,10 +152,7 @@ final class HatchSQLTests: XCTestCase {
           WHERE total > 1000
         )
         SELECT b.order_id
-        FROM (
-          SELECT *
-          FROM big
-        ) b
+        FROM (SELECT * FROM big) b
         """)
     }
 
@@ -227,10 +224,10 @@ final class HatchSQLTests: XCTestCase {
     }
 
     func test15UnsupportedFallsBack() {
-        XCTAssertNil(HatchSQL.format("create function f() returns int as $$ begin return 1; end $$ language plpgsql"))
-        XCTAssertNil(HatchSQL.format("select (1 from t"), "скобка не закрыта")
-        XCTAssertNil(HatchSQL.format("select 'oops from t"), "строка не закрыта")
-        XCTAssertNil(HatchSQL.format("vacuum analyze orders"))
+        XCTAssertNil(HatchPG.format("create function f() returns int as $$ begin return 1; end $$ language plpgsql"))
+        XCTAssertNil(HatchPG.format("select (1 from t"), "скобка не закрыта")
+        XCTAssertNil(HatchPG.format("select 'oops from t"), "строка не закрыта")
+        XCTAssertNil(HatchPG.format("vacuum analyze orders"))
     }
 
     // MARK: Крайние случаи
@@ -248,7 +245,7 @@ final class HatchSQLTests: XCTestCase {
 
     /// Однострочный комментарий посреди списка не съедает то, что за ним.
     func testLineCommentInsideList() {
-        let result = HatchSQL.format("select a, -- первый\n b from t group by a, -- c\n b")
+        let result = HatchPG.format("select a, -- первый\n b from t group by a, -- c\n b")
         XCTAssertNotNil(result)
         // проверка на месте: слова те же — значит, комментарий ничего не закомментировал
         XCTAssertTrue(result?.contains("-- первый\n") == true, result ?? "")
@@ -316,11 +313,74 @@ final class HatchSQLTests: XCTestCase {
         FROM u
         WHERE TRUE
           AND NOT EXISTS (
-            SELECT 1
-            FROM o
+            SELECT FROM o
             WHERE o.uid = u.id
           )
           AND u.active
+        """)
+    }
+
+    // MARK: Подзапросы и скобки
+
+    /// Короткий подзапрос (один столбец, одна таблица, без условий) — в строку.
+    func testShortSubqueryStaysInline() {
+        check("delete from retail_reports where guid in (select guid from d_rr);", """
+        DELETE FROM retail_reports
+        WHERE guid IN (SELECT guid FROM d_rr);
+        """)
+        check("select a from t where exists (select 1 from u)", """
+        SELECT a
+        FROM t
+        WHERE EXISTS (SELECT FROM u)
+        """, dialect: "postgresql")
+    }
+
+    /// EXISTS: константа не нужна — `SELECT FROM t`; в MySQL и ClickHouse так нельзя — `SELECT 1` остаётся.
+    func testExistsDropsConstantOnlyWhereValid() {
+        let query = "select c.guid from c where c.a = 1 or c.b = 2 or exists (select 1 from k where k.guid = c.so)"
+        check(query, """
+        SELECT c.guid
+        FROM c
+        WHERE FALSE
+          OR c.a = 1
+          OR c.b = 2
+          OR EXISTS (
+            SELECT FROM k
+            WHERE k.guid = c.so
+          )
+        """, dialect: "postgresql")
+        let mysql = HatchPG.format(query, dialect: "mysql") ?? ""
+        XCTAssertTrue(mysql.contains("SELECT 1\n    FROM k"), mysql)
+        let once = HatchPG.format(query, dialect: "postgresql") ?? ""
+        XCTAssertEqual(HatchPG.format(once, dialect: "postgresql"), once, "второй раз — то же самое")
+    }
+
+    /// Скобки с тремя и больше AND (или AND с подзапросом), в том числе после NOT, — `(TRUE` и `AND …` по строке.
+    func testAndGroupAnchoredWithTrue() {
+        check("select c.guid from c where c.x = 1 and not (c.rr is not null and c.rr <> '0' and exists (select 1 from r where r.guid = c.rr) and not exists (select 1 from d where d.guid = c.rr));", """
+        SELECT c.guid
+        FROM c
+        WHERE TRUE
+          AND c.x = 1
+          AND NOT (TRUE
+                   AND c.rr IS NOT NULL
+                   AND c.rr <> '0'
+                   AND EXISTS (
+                     SELECT FROM r
+                     WHERE r.guid = c.rr
+                   )
+                   AND NOT EXISTS (
+                     SELECT FROM d
+                     WHERE d.guid = c.rr
+                   )
+          );
+        """, dialect: "postgresql")
+        check("select 1 from t where x = 1 and (a = 1 and b = 2)", """
+        SELECT 1
+        FROM t
+        WHERE TRUE
+          AND x = 1
+          AND (a = 1 AND b = 2)
         """)
     }
 
@@ -363,7 +423,7 @@ final class HatchSQLTests: XCTestCase {
     }
 
     func testTrailingSemicolonAfterComment() {
-        let result = HatchSQL.format("select 1 -- x\n;")
+        let result = HatchPG.format("select 1 -- x\n;")
         XCTAssertEqual(result, "SELECT 1 -- x\n;")
     }
 
@@ -383,8 +443,8 @@ final class HatchSQLTests: XCTestCase {
             "-- отчёт\nselect a from t",
         ]
         for input in inputs {
-            let once = try XCTUnwrap(HatchSQL.format(input), input)
-            XCTAssertEqual(HatchSQL.format(once), once, "второй раз — то же самое:\n\(once)")
+            let once = try XCTUnwrap(HatchPG.format(input), input)
+            XCTAssertEqual(HatchPG.format(once), once, "второй раз — то же самое:\n\(once)")
         }
     }
 
@@ -463,8 +523,8 @@ final class HatchSQLTests: XCTestCase {
         )
         RETURNING obtained_at, updated_at;
         """, dialect: "postgresql")
-        let once = HatchSQL.format(Self.sqlcQuery, dialect: "postgresql") ?? ""
-        XCTAssertEqual(HatchSQL.format(once, dialect: "postgresql"), once, "второй раз — то же самое")
+        let once = HatchPG.format(Self.sqlcQuery, dialect: "postgresql") ?? ""
+        XCTAssertEqual(HatchPG.format(once, dialect: "postgresql"), once, "второй раз — то же самое")
     }
 
     /// Короткий список в скобках — по-прежнему в строку.

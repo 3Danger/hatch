@@ -3,7 +3,7 @@ import SwiftUI
 /// Иконки кнопок-колпачков, нарисованные линией 1.5 на сетке 16×16 — как в макете «Системный».
 /// Символы SF толще и другой формы, поэтому кнопки с ними выглядели иначе, чем в макете.
 enum KeyIcon: Hashable {
-    case rerun, copy, pin, pinOn, trash, stop, gear, star, starOn, braces, bookmarks, bookmarksOn
+    case rerun, copy, pin, pinOn, trash, stop, gear, star, starOn, braces, bookmarks, bookmarksOn, more
 
     /// Ширина линии в единицах сетки 16×16.
     var lineWidth: CGFloat {
@@ -14,7 +14,7 @@ enum KeyIcon: Hashable {
         }
     }
 
-    var filled: Bool { self == .stop || self == .pinOn || self == .starOn || self == .bookmarksOn }
+    var filled: Bool { self == .stop || self == .pinOn || self == .starOn || self == .bookmarksOn || self == .more }
 
     var lineCap: CGLineCap { self == .rerun || self == .trash || self == .braces ? .round : .butt }
     var lineJoin: CGLineJoin { [.pin, .pinOn, .star, .starOn, .braces, .bookmarks, .bookmarksOn].contains(self) ? .round : .miter }
@@ -84,6 +84,11 @@ enum KeyIcon: Hashable {
             p.addLines([CGPoint(x: 4, y: 2.5), CGPoint(x: 12, y: 2.5), CGPoint(x: 12, y: 13.5),
                         CGPoint(x: 8, y: 10.9), CGPoint(x: 4, y: 13.5)])
             p.closeSubpath()
+        case .more:
+            // «⋯» — остальные действия блока меню
+            for x in [3.0, 8.0, 13.0] {
+                p.addEllipse(in: CGRect(x: x - 1.25, y: 8 - 1.25, width: 2.5, height: 2.5))
+            }
         }
         return p
     }
@@ -110,7 +115,7 @@ struct KeyIconView: View {
             let shading = GraphicsContext.Shading.foreground
             let shape = icon.path.applying(transform)
             if icon.filled { context.fill(shape, with: shading) }
-            if icon != .stop { context.stroke(shape, with: shading, style: style) }
+            if icon != .stop && icon != .more { context.stroke(shape, with: shading, style: style) }
             if let stem = icon.stem { context.stroke(stem.applying(transform), with: shading, style: style) }
         }
         .frame(width: size, height: size)

@@ -8,7 +8,7 @@ struct SyntaxOptions: Hashable, Sendable {
     var sqlCase: String = "upper"
     /// Диалект sql-formatter: "sql", "postgresql", "mysql", "clickhouse"…
     var sqlDialect: String = "sql"
-    /// Формат SQL: "standard" — sql-formatter, "hatch" — свой (бета, HatchSQL).
+    /// Формат SQL: "standard" — sql-formatter, "hatch" — свой (бета, HatchPG).
     var sqlStyle: String = "standard"
 }
 
@@ -133,7 +133,7 @@ final class SyntaxService {
         case .sql:
             // свой формат — только целиком (в строке списка SQL всё равно в одну строку); не справился — обычный
             if options.sqlStyle == "hatch", mode == .full,
-               let hatch = HatchSQL.format(text, keywordCase: options.sqlCase, dialect: options.sqlDialect) {
+               let hatch = HatchPG.format(text, keywordCase: options.sqlCase, dialect: options.sqlDialect) {
                 return highlight(hatch, "sql")
             }
             let formatted = engine.formatSQL(text, keywordCase: options.sqlCase, dialect: options.sqlDialect) ?? text

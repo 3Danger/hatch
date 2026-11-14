@@ -28,7 +28,7 @@ Close it and you are right back where you were.
 - **Clipboard.** <kbd>⌘3</kbd> shows everything you copied, with search, including screenshots and the text on them. Passwords from password managers are never saved.
 - **Formatting.** JSON, SQL, YAML and XML in the clipboard and in command output, indented and highlighted; a `{}` button on every item and block.
 - **Screenshots.** <kbd>⇧⌘4</kbd> puts a screen area straight into the clipboard and Hatch history; the thumbnail in the bottom-right corner opens it full size.
-- **Apps and a calculator, like Spotlight.** `safari` and Enter opens Safari, `code .` opens the current folder in VS Code. `(1200-150)/3` shows 350 right away, Enter copies the result.
+- **Apps and a calculator, like Spotlight.** `saf` and Enter opens Safari, `code .` opens the current folder in VS Code. `(1200-150)/3` shows 350 right away, Enter copies the result.
 
 ## Installation
 
@@ -66,13 +66,13 @@ macOS will ask for permission to send notifications (when long commands finish) 
 | Tab · ⇧Tab | input field | complete; with several options, the common part first, then cycle forward and back |
 | → | input field | accept the gray suggestion: from history or an app name (Tab completes it too) |
 | ↑ / ↓ | panel | browse command history; the block of that command is selected |
-| ⌘C · ⌘R · ⌘S | selected block | copy its output · rerun it in the same block · pin it |
+| ⌘C · ⌘R · ⌘S · ⌘⌫ | selected block | copy its output · rerun it in the same block · pin it · delete it (can be undone) |
 | ⌃C | expanded block | interrupt the command |
 | ⌘1 · ⌘2 · ⌘3 | panel | commands · search history · clipboard; the current mode's key goes back to commands (⌘F and ⌘4 work too; inside expanded output ⌘F searches that output) |
 | ⌘E | panel | favorites: folders and commands |
 | ↑ / ↓ · ⌘↑ / ⌘↓ · Enter | favorites | select · move up or down (or drag with the mouse) · go to or run |
 | letters · Backspace · Esc | lists | filter favorites, the folder tree and the app picker · delete a letter · clear the filter, a second Esc closes |
-| ↑ / ↓ · Enter · ⌘Enter · Esc | clipboard | move between items · copy and hide the panel · insert into the input field · leave |
+| ↑ / ↓ · Enter · ⌘C · ⌘Enter · Esc | clipboard | move between items · paste into the app you were in · only copy · insert into the input field · leave |
 | Tab · ⇧Tab · ⌘Y | clipboard | next · previous item type · open the item full size |
 | ⇧⌘R | clipboard, block | formatted or as is |
 | ⌘S · ⌘⌫ · ⌃L | clipboard | pin · delete the selected item · clear the clipboard (pinned items stay); in a preview, ⌘S keeps the window on top of others |
@@ -102,16 +102,20 @@ macOS will ask for permission to send notifications (when long commands finish) 
 - A notification when a long command (5 seconds or more) finishes while the panel is not focused.
 
 **History**
-- A block shows the command, folder, time, status and colored output. Long output shows the beginning and the end, the middle is collapsed.
+- A block shows the command and, under it, the folder, the time (with the day for older blocks), how long it ran and its status; a running command shows a stopwatch. Long output shows the beginning and the end, the middle is collapsed.
+- Compact history (on by default): output shows only on the latest, selected, pinned and running blocks, the rest take one line each. Old blocks without visible output take a single line: the command on the left, folder and status on the right. Turn it off in settings.
 - Click a block to expand it: a finished one shows all its output, a running one shows the live terminal.
 - A failed command is marked red with its exit code; one you stopped yourself (<kbd>⌃C</kbd>, Stop) is gray.
-- <kbd>↑</kbd> <kbd>↓</kbd> select a block (its command goes to the input); the selected block shows its keys: <kbd>⌘C</kbd> copy output, <kbd>⌘R</kbd> rerun.
+- <kbd>↑</kbd> <kbd>↓</kbd> select a block (its command goes to the input); the selected block shows its keys: <kbd>⌘C</kbd> copy output, <kbd>⌘R</kbd> rerun. Everything else (copy the command, filter, format, favorites, pin, delete) is in the “⋯” menu and on right-click on the block header.
 - Rerun in the same block, pin, clear by levels. `clear` and <kbd>⌃L</kbd> remove finished blocks, with 5 seconds to undo.
-- Above the input: the current folder (the middle of a long path folds into `…`) and the mode switcher — commands (<kbd>⌘1</kbd>), search (<kbd>⌘2</kbd>), clipboard (<kbd>⌘3</kbd>). Search highlights matches and shows only the matching lines of each block, with a count.
+- Above the input: the current folder (the middle of a long path folds into `…`) and the mode switcher — commands (<kbd>⌘1</kbd>), search (<kbd>⌘2</kbd>), clipboard (<kbd>⌘3</kbd>). Search highlights matches and shows only the matching lines of each block, with a count. If nothing is found but the clipboard has matches, a button (or <kbd>⌘3</kbd>) searches the clipboard for the same text.
 
 **Pipeline**
 - `grep`, `sort` and `jq` steps work on the saved output, so it is safe even for `rm`, `curl -X POST` and deploys.
 - Steps show as chips you can edit or remove. Suggestions: recent steps, common filters, commands and files.
+
+**Buttons**
+- Hovering any button shows what it does and its key, in a small dark tip above it after a third of a second; moving to the next button shows its tip right away.
 
 **Input**
 - Completion for commands, aliases, files and folders, without starting a shell on every keystroke.
@@ -126,7 +130,8 @@ macOS will ask for permission to send notifications (when long commands finish) 
 **Clipboard**
 - <kbd>⌘3</kbd> shows what you copied in any app while Hatch is running: newest first, with the app and time. Typing filters it.
 - Above the field, instead of the path, a filter: all, text (and file paths), images, pinned; <kbd>Tab</kbd> and <kbd>⇧Tab</kbd> switch it.
-- Enter or a double-click copies the item and hides the panel, leaving you to press <kbd>⌘V</kbd>. <kbd>⌘Enter</kbd> inserts the item into the input field. A click only selects a row; the selected and hovered rows show buttons for the same actions.
+- Enter or a double-click pastes the item into the app you were in before Hatch; <kbd>⌘C</kbd> only copies it. Pasting needs Accessibility access: until it is granted, Enter only copies and a line under the list offers to allow it. The setting “Enter pastes” turns this off. <kbd>⌘Enter</kbd> inserts the item into the input field. A click only selects a row; the selected and hovered rows show buttons for the same actions.
+- An item shows up to 10 lines of its text (“Lines on an item” in settings); formatted JSON or SQL shows formatted, as in the preview. The preview window has a Copy all button in its header.
 - Copying something again moves it to the top. Files from Finder are saved as paths.
 - Each row has pin (<kbd>⌘S</kbd>) and delete. Pinned items stay grouped at the top and are never removed by clearing, age or the limit.
 - <kbd>⌃L</kbd> in clipboard mode clears the clipboard (5 seconds to undo), not the command history. Deleting a single item can be undone too.
@@ -139,7 +144,7 @@ macOS will ask for permission to send notifications (when long commands finish) 
 - <kbd>⌘Y</kbd> in the clipboard opens any text in the same window as images: in full, wrapped to the width, selectable with the mouse (<kbd>⌘A</kbd>, <kbd>⌘C</kbd> for the selection, ↩ for the whole text as shown, <kbd>⌘↩</kbd> into the field), <kbd>⌘S</kbd> keeps it on top of other windows, resize by the corners.
 - The `{}` button on an item, in the preview window and on a command block, and <kbd>⇧⌘R</kbd>, switch between formatted and as is; the choice is remembered. What you see is what gets copied.
 - SQL is broken into clauses, with keywords in UPPER CASE by default (lower case or unchanged in settings); dialects: standard, PostgreSQL, MySQL, ClickHouse.
-- “SQL format: Hatch · beta” in settings is Hatch's own style: columns with a leading comma, `JOIN … ON TRUE` and `WHERE TRUE` with `  AND …` conditions one per line, three or more ORs in parentheses as `(FALSE` with `OR …` one per line, CASE across lines. The query never changes in meaning: the result is checked against the original word for word, and if they do not match or a construct is unfamiliar, the standard format is shown.
+- “SQL format: HatchPG · beta” in settings is Hatch's own style for PostgreSQL: columns with a leading comma, `JOIN … ON TRUE` and `WHERE TRUE` with `  AND …` conditions one per line, three or more ORs in parentheses as `(FALSE` with `OR …` one per line, three or more ANDs (or ANDs with a subquery, also after NOT) as `(TRUE` with `AND …` one per line, CASE across lines. A short subquery (one column, one table, no conditions) stays on one line: `IN (SELECT guid FROM d_rr)`. `EXISTS (SELECT 1 …)` becomes `EXISTS (SELECT FROM …)`: PostgreSQL needs no columns there (with the MySQL and ClickHouse dialects `SELECT 1` stays). A script is split at `;`: each query (also after `CREATE [TEMP] TABLE … AS`, one level deeper, and after `EXPLAIN`) is formatted with the comments above it, everything else (psql commands like `\set`, `BEGIN`, `ANALYZE`, `VACUUM`) stays as written, and blank lines between statements stay where they were. The query never changes in meaning: the result is checked against the original word for word (except that dropped constant in EXISTS), and if they do not match or a construct is unfamiliar, the standard format is shown.
 - In settings: whether to format by default, which formats to recognize (“Code” highlights shell, Go, Python and others, off by default), and commands (`cat`, `less`) and apps whose content is shown as is. Anything over 1 MB is shown as is.
 
 **Screenshots**
@@ -151,7 +156,7 @@ macOS will ask for permission to send notifications (when long commands finish) 
 
 **Apps and calculator**
 - An app name and Enter opens the app: `safari`, `calculator`, `visual studio code`. The right side of the field shows in advance what will happen; launches do not go into history.
-- The first letters get a suggestion: `saf` completes to `safari` with Tab or →. If there is only one option, Enter completes it too, and a second Enter opens the app.
+- The first letters get a suggestion: `saf` completes to `safari` with Tab or →. If there is only one option and it is not a shell command, Enter opens the app right away, like Spotlight.
 - A name with paths opens them in the app: `code .`, `zed ~/proj`. If the argument is not an existing path (`docker ps`), it is a command.
 - When a name matches both an app and a command, the app wins. Names that should stay commands go into the exceptions in settings; by default those are `claude`, `ollama` and `opencode`.
 - App aliases are configurable; by default `code` and `vscode` mean VS Code.

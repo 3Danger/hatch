@@ -65,8 +65,17 @@ struct Session: Identifiable, Codable, Equatable, Hashable {
     var isProvisional: Bool?
     /// Форматирование вывода включили или выключили кнопкой {} (⌘R); nil — как в настройках.
     var formatted: Bool?
+    /// Когда команда запущена последний раз (повтор ⌘R — заново); nil — как `createdAt`.
+    var startedAt: Date?
 
     var pipeline: [String] { pipeStages ?? [] }
+
+    /// Сколько шла команда: от запуска (или повтора) до конца; у идущей — до `now`.
+    func duration(now: Date = Date()) -> TimeInterval? {
+        let start = startedAt ?? createdAt
+        if let finishedAt { return max(finishedAt.timeIntervalSince(start), 0) }
+        return state.isActive ? max(now.timeIntervalSince(start), 0) : nil
+    }
 
     init(id: UUID = UUID(),
          command: String,

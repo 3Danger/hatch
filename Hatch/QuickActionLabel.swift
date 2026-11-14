@@ -15,6 +15,9 @@ struct QuickActionLabel: View {
                 AppIconView(app: suggestion.app)
                 if suggestion.completesOnEnter {
                     name(String(format: L.t("quick_complete", lang), suggestion.name)).foregroundStyle(.secondary)
+                    // дописать имя, не открывая, — Tab
+                    KeyHint(key: "⇥").padding(.leading, 4)
+                    Text(L.t("quick_complete_tab", lang)).font(.system(size: 12)).foregroundStyle(.secondary).fixedSize()
                 } else if suggestion.others > 0 {
                     name(String(format: L.t("quick_more", lang), suggestion.name, suggestion.others)).foregroundStyle(.secondary)
                 } else {

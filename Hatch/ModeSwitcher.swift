@@ -85,7 +85,7 @@ struct ModeSwitcher: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .help(Self.help(item, lang))
+        .hatchTip(Self.action(item), lang)
         .accessibilityLabel(Self.title(item, lang))
         .accessibilityAddTraits(on ? .isSelected : [])
     }
@@ -106,11 +106,11 @@ struct ModeSwitcher: View {
         }
     }
 
-    static func help(_ mode: InputMode, _ lang: String) -> String {
+    static func action(_ mode: InputMode) -> HatchAction {
         switch mode {
-        case .command: L.t("mode_commands", lang) + " (⌘1)"
-        case .search: L.t("search", lang) + " (⌘2)"
-        case .clipboard: L.t("clip_mode", lang) + " (⌘3)"
+        case .command: .modeCommands
+        case .search: .modeSearch
+        case .clipboard: .modeClipboard
         }
     }
 

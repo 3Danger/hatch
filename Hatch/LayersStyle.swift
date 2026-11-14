@@ -221,6 +221,8 @@ enum HotKeyCaps {
 struct StatusCapsule: View {
     let status: BlockStatus
     let lang: String
+    /// В строке под командой: мельче, по размеру подписи папки и времени.
+    var compact = false
 
     var body: some View {
         HStack(spacing: 5) {
@@ -231,7 +233,7 @@ struct StatusCapsule: View {
                 Image(systemName: "checkmark.circle.fill")
                     .symbolRenderingMode(.palette)
                     .foregroundStyle(.white, Tactile.green)
-                    .font(.system(size: 13))
+                    .font(.system(size: compact ? 11.5 : 13))
                     .symbolEffect(.bounce, value: status)
             case .failed(let code):
                 Text("\(code)")
@@ -244,12 +246,12 @@ struct StatusCapsule: View {
                 // остановил пользователь — серый квадрат «стоп», не путать с красной ошибкой
                 Image(systemName: "stop.circle.fill")
                     .foregroundStyle(.secondary)
-                    .font(.system(size: 13))
+                    .font(.system(size: compact ? 11.5 : 13))
             }
             Text(status.label(lang))
                 .foregroundStyle(textColor)
         }
-        .font(.system(size: 12))
+        .font(.system(size: compact ? 11.5 : 12))
         .padding(.horizontal, 2)
         .fixedSize()
         .offset(x: shake)
@@ -327,6 +329,8 @@ struct GlassIconButton: View {
     var color: Color? = nil
     var size: CGFloat = 26
     let help: String
+    /// Подсказка Hatch при наведении (вместо системной `.help`).
+    var tip: HatchTip? = nil
     let action: () -> Void
     @State private var hovered = false
 
@@ -339,7 +343,8 @@ struct GlassIconButton: View {
         }
         .buttonStyle(KeyCapButtonStyle(cornerRadius: LauncherMetrics.buttonRadius(size), hovered: hovered))
         .onHover { hovered = $0 }
-        .help(help)
+        .help(tip == nil ? help : "")
+        .hatchTip(tip)
         .accessibilityLabel(help)
     }
 }

@@ -121,6 +121,8 @@ final class FloatingWindowController {
     }
 
     func show() {
+        // куда вставлять запись буфера по Enter — приложение, которое было впереди до панели
+        PasteBack.rememberFrontmost()
         positionPanel()
         panel.orderFrontRegardless()
         panel.makeKeyAndOrderFront(nil)

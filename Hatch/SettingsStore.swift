@@ -16,6 +16,8 @@ final class SettingsStore {
     /// Сколько экранных строк вывода в свёрнутом блоке (включая строку «скрыто N»).
     var previewLines: Int { didSet { defaults.set(previewLines, forKey: Keys.previewLines) } }
     static let previewLinesRange = 3...30
+    /// Вывод только у свежего, выбранного и закреплённых блоков; остальные — одной строкой.
+    var compactHistory: Bool { didSet { defaults.set(compactHistory, forKey: Keys.compactHistory) } }
     static let defaultPreviewLines = 10
     /// Шелл для скрытого запуска.
     var shellPath: String { didSet { defaults.set(shellPath, forKey: Keys.shell) } }
@@ -63,6 +65,8 @@ final class SettingsStore {
     private(set) var appExclusions: [String] { didSet { defaults.set(appExclusions, forKey: Keys.appExclusions) } }
     /// История буфера обмена (⌘4): слежение за копированием в любых приложениях.
     var clipboardEnabled: Bool { didSet { defaults.set(clipboardEnabled, forKey: Keys.clipboardEnabled) } }
+    /// Enter в буфере вставляет запись в приложение, где был пользователь (нужен «Универсальный доступ»).
+    var clipboardPasteOnEnter: Bool { didSet { defaults.set(clipboardPasteOnEnter, forKey: Keys.clipboardPaste) } }
     /// Сколько дней хранить скопированное.
     var clipboardDays: Int { didSet { defaults.set(clipboardDays, forKey: Keys.clipboardDays) } }
     /// Сохранять картинки (скриншоты, «Скопировать изображение»), если в буфере нет текста.
@@ -70,6 +74,10 @@ final class SettingsStore {
     /// Распознавать текст на картинках — для поиска (встроенное распознавание macOS, без сети).
     var clipboardRecognizeText: Bool { didSet { defaults.set(clipboardRecognizeText, forKey: Keys.clipboardOCR) } }
     static let clipboardDaysRange = 1...30
+    /// Сколько строк текста видно у записи буфера; длиннее — начало, целиком — в просмотре ⌘Y.
+    var clipboardRowLines: Int { didSet { defaults.set(clipboardRowLines, forKey: Keys.clipboardRowLines) } }
+    static let clipboardRowLinesRange = 1...30
+    static let defaultClipboardRowLines = 10
     static let defaultClipboardDays = 7
     /// Скриншоты Hatch: область экрана по сочетанию — в буфер и в историю, миниатюра справа внизу.
     var screenshotsEnabled: Bool { didSet { defaults.set(screenshotsEnabled, forKey: Keys.screenshotsEnabled) } }
@@ -117,6 +125,7 @@ final class SettingsStore {
         static let historyLimit = "settings.historyLimit"
         static let shell = "settings.shell"
         static let previewLines = "settings.previewLines"
+        static let compactHistory = "settings.compactHistory"
         static let timeout = "settings.timeout"
         static let latinLayout = "settings.latinLayoutInInput"
         static let currentDirectory = "settings.currentDirectory"
@@ -135,7 +144,9 @@ final class SettingsStore {
         static let appAliases = "settings.appAliases"
         static let appExclusions = "settings.appExclusions"
         static let clipboardEnabled = "settings.clipboardEnabled"
+        static let clipboardPaste = "settings.clipboardPasteOnEnter"
         static let clipboardDays = "settings.clipboardDays"
+        static let clipboardRowLines = "settings.clipboardRowLines"
         static let clipboardExcluded = "settings.clipboardExcludedApps"
         static let clipboardImages = "settings.clipboardImages"
         static let clipboardOCR = "settings.clipboardRecognizeText"
@@ -160,6 +171,7 @@ final class SettingsStore {
         self.languageCode = defaults.string(forKey: Keys.language) ?? "en"
         let limit = defaults.object(forKey: Keys.historyLimit) as? Int
         self.historyLimit = limit ?? 50
+        self.compactHistory = defaults.object(forKey: Keys.compactHistory) as? Bool ?? true
         let preview = defaults.object(forKey: Keys.previewLines) as? Int
         self.previewLines = min(max(preview ?? Self.defaultPreviewLines, Self.previewLinesRange.lowerBound),
                                 Self.previewLinesRange.upperBound)
@@ -182,8 +194,11 @@ final class SettingsStore {
         self.appAliases = defaults.dictionary(forKey: Keys.appAliases) as? [String: String] ?? Self.defaultAppAliases
         self.appExclusions = defaults.stringArray(forKey: Keys.appExclusions) ?? Self.defaultAppExclusions
         self.clipboardEnabled = defaults.object(forKey: Keys.clipboardEnabled) as? Bool ?? true
+        self.clipboardPasteOnEnter = defaults.object(forKey: Keys.clipboardPaste) as? Bool ?? true
         let days = defaults.object(forKey: Keys.clipboardDays) as? Int ?? Self.defaultClipboardDays
         self.clipboardDays = min(max(days, Self.clipboardDaysRange.lowerBound), Self.clipboardDaysRange.upperBound)
+        let rowLines = defaults.object(forKey: Keys.clipboardRowLines) as? Int ?? Self.defaultClipboardRowLines
+        self.clipboardRowLines = min(max(rowLines, Self.clipboardRowLinesRange.lowerBound), Self.clipboardRowLinesRange.upperBound)
         self.clipboardExcludedApps = defaults.stringArray(forKey: Keys.clipboardExcluded) ?? Self.defaultClipboardExcludedApps
         self.clipboardImages = defaults.object(forKey: Keys.clipboardImages) as? Bool ?? true
         self.clipboardRecognizeText = defaults.object(forKey: Keys.clipboardOCR) as? Bool ?? true
@@ -399,6 +414,7 @@ final class SettingsStore {
         languageCode = "en"
         historyLimit = 50
         previewLines = Self.defaultPreviewLines
+        compactHistory = true
         shellPath = "/bin/zsh"
         timeoutSeconds = 0
         latinLayoutInInput = true
@@ -418,7 +434,9 @@ final class SettingsStore {
         screenshotShortcut = Self.defaultScreenshotShortcut
         screenshotThumbnailSeconds = Self.defaultScreenshotSeconds
         clipboardEnabled = true
+        clipboardPasteOnEnter = true
         clipboardDays = Self.defaultClipboardDays
+        clipboardRowLines = Self.defaultClipboardRowLines
         clipboardImages = true
         clipboardRecognizeText = true
         folderTreeShortcut = Self.defaultFolderTreeShortcut

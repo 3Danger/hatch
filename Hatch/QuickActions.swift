@@ -107,13 +107,13 @@ struct AppSuggestion: Equatable {
     let name: String
     /// Сколько ещё приложений начинаются так же («te»: Telegram и ещё 2).
     let others: Int
-    /// Вариант один и набранное ни с чем не совпадает полностью — Enter дописывает имя.
+    /// Вариант один и набранное не команда шелла — Enter сразу открывает приложение.
     let completesOnEnter: Bool
 }
 
 /// Что сделает Enter для набранного (подпись справа в поле). nil — выполнить как команду.
 enum QuickAction: Equatable {
-    /// По началу имени: Tab или → дописывают имя; Enter — тоже, если вариант один.
+    /// По началу имени: Tab или → дописывают имя; Enter открывает, если вариант один.
     case suggestApp(AppSuggestion)
     case openApp(AppEntry)
     /// Имя и существующие пути: `code .` открывает текущую папку в VS Code.
@@ -142,7 +142,7 @@ struct QuickActionResolver {
     var decimalSeparator: Character = "."
     /// Всегда `decimalSeparator`, как бы ни было набрано.
     var forceDecimalSeparator = false
-    /// Шелл знает это имя (команда, алиас, функция): тогда Enter его выполняет, а не дописывает.
+    /// Шелл знает это имя (команда, алиас, функция): тогда Enter его выполняет, а не открывает приложение.
     var isCommand: (String) -> Bool = { _ in false }
     /// С какого числа букв подсказывать приложение по началу имени.
     static let minimumPrefix = 2

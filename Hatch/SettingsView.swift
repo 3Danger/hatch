@@ -171,6 +171,8 @@ struct GlassSegmented: View {
     var details: [String: String] = [:]
     /// Мельче — для строки над полем ввода (фильтр буфера), той же высоты, что путь.
     var compact = false
+    /// Значок перед названием (закреплённые в фильтре буфера — булавка, как везде в Hatch).
+    var icons: [String: KeyIcon] = [:]
     /// Рамки сегментов в координатах самой полоски — по ним стоит бегунок.
     @State private var frames: [String: CGRect] = [:]
     /// Где стоит бегунок. Анимируется отдельно от выбора — см. `.onChange(of: selection)`.
@@ -185,8 +187,14 @@ struct GlassSegmented: View {
                 Button { selection = option.id } label: {
                     // как в макете: шрифт 13 без жирности, выбранный — белый, бегунок — колпачок
                     HStack(spacing: 4) {
-                        Text(option.title)
-                            .foregroundStyle(selected ? Tactile.keyTextHover : .secondary)
+                        if let icon = icons[option.id] {
+                            KeyIconView(icon: selected ? .pinOn : icon, size: compact ? 11 : 13)
+                                .foregroundStyle(selected ? Tactile.keyTextHover : .secondary)
+                        }
+                        if !option.title.isEmpty {
+                            Text(option.title)
+                                .foregroundStyle(selected ? Tactile.keyTextHover : .secondary)
+                        }
                         if let detail = details[option.id] {
                             Text(detail).foregroundStyle(.tertiary).monospacedDigit()
                         }
@@ -514,6 +522,12 @@ extension SettingsView {
     @ViewBuilder fileprivate var clipboardRows: some View {
         row(L.t("clipboard", lang), hint: L.t("clipboard_hint", lang), first: true) {
             Toggle("", isOn: binding(\.clipboardEnabled)).toggleStyle(GlassSwitchStyle()).labelsHidden()
+        }
+        row(L.t("clipboard_paste", lang), hint: L.t("clipboard_paste_hint", lang)) {
+            Toggle("", isOn: binding(\.clipboardPasteOnEnter)).toggleStyle(GlassSwitchStyle()).labelsHidden()
+        }
+        row(L.t("clipboard_row_lines", lang), hint: L.t("clipboard_row_lines_hint", lang)) {
+            GlassStepper(value: binding(\.clipboardRowLines), range: SettingsStore.clipboardRowLinesRange)
         }
         row(L.t("clipboard_days", lang), hint: L.t("clipboard_days_hint", lang)) {
             GlassStepper(value: binding(\.clipboardDays), range: SettingsStore.clipboardDaysRange)
@@ -915,7 +929,10 @@ extension SettingsView {
 
     @ViewBuilder fileprivate var commandRows: some View {
                 row(L.t("history_limit", lang), first: true) { GlassStepper(value: binding(\.historyLimit), range: 10...500, step: 10) }
-                row(L.t("preview_lines", lang)) {
+                row(L.t("compact_history", lang), hint: L.t("compact_history_hint", lang)) {
+                    Toggle("", isOn: binding(\.compactHistory)).toggleStyle(GlassSwitchStyle()).labelsHidden()
+                }
+                row(L.t("preview_lines", lang), hint: L.t("preview_lines_hint", lang)) {
                     GlassStepper(value: binding(\.previewLines), range: SettingsStore.previewLinesRange)
                 }
                 row(L.t("shell", lang)) {
