@@ -655,7 +655,7 @@ enum HatchPG {
 
         // MARK: WITH
 
-        /// `WITH a AS (` … `)`, следующие — `, b AS (` с новой строки.
+        /// `WITH a AS (` … `)`, следующие — `), b AS (`: запятая сразу за скобкой предыдущего.
         mutating func with(_ body: [Node], indent: Int) throws {
             var items = body
             if let first = items.first, first.isWord("RECURSIVE") {
@@ -666,7 +666,8 @@ enum HatchPG {
             guard !definitions.terms.isEmpty else { throw Failure.unsupported }
             for (index, definition) in definitions.terms.enumerated() {
                 if index > 0 {
-                    out.newline(indent)
+                    // после «-- …» за скобкой запятая переносится — на уровень WITH
+                    out.continuation = indent
                     emit(definitions.separators[index - 1], space: false)
                 }
                 guard let last = definition.lastIndex(where: { !$0.isComment }),

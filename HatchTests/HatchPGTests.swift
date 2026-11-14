@@ -145,14 +145,44 @@ final class HatchPGTests: XCTestCase {
                , SUM(amount) AS total
           FROM payments
           GROUP BY order_id
-        )
-        , big AS (
+        ), big AS (
           SELECT *
           FROM paid
           WHERE total > 1000
         )
         SELECT b.order_id
         FROM (SELECT * FROM big) b
+        """)
+    }
+
+    /// Следующий CTE — `), b AS (` сразу за скобкой; в `CREATE … AS` всё на уровень глубже.
+    func test09bCTEInCreateAs() {
+        check("create temp table t as with a as (select id from x), b as (select id from a) select id from b", """
+        CREATE TEMP TABLE t AS
+          WITH a AS (
+            SELECT id
+            FROM x
+          ), b AS (
+            SELECT id
+            FROM a
+          )
+          SELECT id
+          FROM b
+        """)
+    }
+
+    /// Комментарий «--» за скобкой CTE: запятая уходит на следующую строку, а не в комментарий.
+    func test09cCommentBetweenCTE() {
+        check("with a as (select 1) -- первый\n, b as (select 2) select * from a, b", """
+        WITH a AS (
+          SELECT 1
+        ) -- первый
+        , b AS (
+          SELECT 2
+        )
+        SELECT *
+        FROM a
+           , b
         """)
     }
 
